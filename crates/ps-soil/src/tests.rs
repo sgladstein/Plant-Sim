@@ -1,5 +1,6 @@
 use super::*;
 use proptest::prelude::*;
+use ps_units::{KgPerMH, M2PerHour};
 
 const T20: Celsius = Celsius(20.0);
 
@@ -137,7 +138,8 @@ fn evaporation_takes_from_top_only_and_stops_dry() {
 #[test]
 fn ftsw_and_stress() {
     let mut g = column(Texture::Loam, 2);
-    let roots = vec![Meters(1.0), Meters(3.0)];
+    let roots = RootCells::from_pairs(vec![(1, Meters(2.0)), (0, Meters(1.0)), (1, Meters(1.0))]);
+    assert_eq!(roots.cells(), &[(0, Meters(1.0)), (1, Meters(3.0))]);
     assert!((g.ftsw(&roots).unwrap() - 1.0).abs() < 1e-12);
     g.fill_to(Texture::Loam.hydraulics().wilting_point);
     assert!(g.ftsw(&roots).unwrap().abs() < 1e-12);
@@ -147,24 +149,65 @@ fn ftsw_and_stress() {
     assert!((stress_factor(0.2, 0.4) - 0.5).abs() < 1e-15);
     assert!((stress_factor(0.6, 0.4) - 1.0).abs() < 1e-15);
     assert!(stress_factor(0.0, 0.4).abs() < 1e-15);
-    assert!(g.ftsw(&[Meters(0.0)]).is_err());
-    assert!((g.ftsw(&[Meters(0.0), Meters(0.0)]).unwrap() - 1.0).abs() < 1e-15);
+    assert!(matches!(
+        g.ftsw(&RootCells::from_pairs(vec![(2, Meters(1.0))])),
+        Err(SoilError::RootCell { cell: 2, cells: 2 })
+    ));
+    let none = RootCells::from_pairs(vec![(0, Meters(0.0))]);
+    assert!(none.cells().is_empty());
+    assert!((g.ftsw(&none).unwrap() - 1.0).abs() < 1e-15);
+}
+
+fn one(demand: f64, roots: &RootCells, max: f64) -> PlantUptake<'_> {
+    PlantUptake {
+        demand: KgWater(demand),
+        roots,
+        rate: M2PerHour(1e-5),
+        max_per_length: KgPerMH(max),
+    }
 }
 
 #[test]
 fn uptake_is_proportional_and_limited() {
     let mut g = column(Texture::Loam, 2);
-    let roots = vec![Meters(1.0), Meters(0.0)];
-    let u = g.take_up(KgWater(1e-5), &roots, 1e-5).unwrap();
+    let roots = RootCells::from_pairs(vec![(0, Meters(1.0))]);
+    let j = g.take_up(&[one(1e-5, &roots, 1.0)]).unwrap();
+    let u = &j.plants[0];
     assert!((u.actual.0 - 1e-5).abs() < 1e-18);
-    assert_eq!(u.per_cell[1], KgWater::ZERO);
-    assert!(u.ledger.relative_residual() < 1e-9);
+    assert_eq!(u.per_cell.len(), 1);
+    assert!(j.ledger.relative_residual() < 1e-9);
     // Huge demand: limited to the potential, never below wilting point.
     for _ in 0..10_000 {
-        let u = g.take_up(KgWater(1.0), &roots, 1e-5).unwrap();
-        assert!(u.shortfall.0 > 0.0);
+        let j = g.take_up(&[one(1.0, &roots, 1.0)]).unwrap();
+        assert!(j.plants[0].shortfall.0 > 0.0);
     }
     assert!(g.theta(0) >= Texture::Loam.hydraulics().wilting_point - 1e-12);
+    // The per-length ceiling binds in wet soil.
+    g.fill_to(Texture::Loam.hydraulics().field_capacity);
+    let j = g.take_up(&[one(1.0, &roots, 1e-6)]).unwrap();
+    assert!((j.plants[0].actual.0 - 1e-6).abs() < 1e-18);
+}
+
+/// Decision 0012: plants share a cell from the same state, so their order does not
+/// matter, and together they never take more than its available water.
+#[test]
+fn joint_uptake_shares_cells_fairly() {
+    let mut a = column(Texture::Loam, 2);
+    a.fill_to(Texture::Loam.hydraulics().field_capacity);
+    let mut b = a.clone();
+    let wp = a.capacity(Texture::Loam.hydraulics().wilting_point);
+    let avail = (a.water(0) - wp).0;
+    let p = RootCells::from_pairs(vec![(0, Meters(1e4)), (1, Meters(1.0))]);
+    let q = RootCells::from_pairs(vec![(0, Meters(1e4))]);
+    let ja = a.take_up(&[one(1.0, &p, 1.0), one(1.0, &q, 1.0)]).unwrap();
+    let jb = b.take_up(&[one(1.0, &q, 1.0), one(1.0, &p, 1.0)]).unwrap();
+    assert_eq!(ja.plants[0], jb.plants[1]);
+    assert_eq!(ja.plants[1], jb.plants[0]);
+    assert_eq!(a.water(0), b.water(0));
+    // Both asked for all of cell 0; each gets half of it.
+    assert!((ja.plants[1].actual.0 - 0.5 * avail).abs() < 1e-12 * avail);
+    assert!((a.water(0) - wp).0.abs() < 1e-12 * avail);
+    assert!(ja.ledger.relative_residual() < 1e-9);
 }
 
 #[test]
@@ -229,12 +272,12 @@ proptest! {
         texture in prop_oneof![Just(Texture::Loam), Just(Texture::Sand), Just(Texture::Clay)],
     ) {
         let mut g = SoilGrid::new_pot(Meters(0.12), Meters(0.10), Meters(0.02), texture, T20).unwrap();
-        let roots: Vec<Meters> = (0..g.len()).map(|i| Meters(if i % 3 == 0 { 0.5 } else { 0.0 })).collect();
+        let roots = RootCells::from_pairs((0..g.len()).filter(|i| i % 3 == 0).map(|i| (i, Meters(0.5))).collect());
         let sat = texture.hydraulics().saturation;
         for (mm, rad, t, demand) in hours {
             let l = g.step_hour(&SoilHour { water_in: Millimeters(mm), surface_radiation: WPerM2(rad), t_air: Celsius(t) });
             prop_assert!(l.relative_residual() < 1e-9, "{l:?}");
-            let u = g.take_up(KgWater(demand), &roots, 1e-5).unwrap();
+            let u = g.take_up(&[one(demand, &roots, 1e-3), one(demand, &roots, 1e-4)]).unwrap();
             prop_assert!(u.ledger.relative_residual() < 1e-9);
             for i in 0..g.len() {
                 let th = g.theta(i);

@@ -79,7 +79,8 @@ late leaves, smaller leaves after a dull week.
 ## Known limits
 - Transport is diffusion of sugar concentration, not pressure-driven mass flow, so it
   fades with distance along an axis; how far carbon reaches in an hour is set by the
-  conductance `K`, a WP12 tuning parameter. If tuning cannot make it plausible, the
+  conductance `K` alone, a WP12 tuning parameter (at K = 500, `k/W` is about 0.07 to
+  0.35 per hour for a 2 mm, 4.5 cm internode against 0.1 to 0.5 g organs). If tuning cannot make it plausible, the
   three-pool fallback of §3.9 is pre-decided.
 - Mature leaves import carbon like any other organ when their reserve is lower than
   their neighbors' (real mature leaves mostly do not), which makes shaded leaves

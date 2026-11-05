@@ -48,6 +48,7 @@ Species(
     seed_fill: (value: 280.0, unit: "Cd", source: "~ (about 20 days at 14 Cd/day, design plan §3.11)"),
     specific_root_length: (value: 70.0, unit: "m/g", source: "~ (design plan §3.7, §3.16)"),
     root_uptake_rate: (value: 1e-05, unit: "m2/h", source: "~ (1 cm/cm3 of roots gives 10% of available water per hour)"),
+    root_uptake_max: (value: 1.25e-4, unit: "kg/m/h", source: "~ (0.03 cm3 water per cm of root per day, research thread pending its cited report; decision 0012)"),
     stem_density: (value: 150000.0, unit: "g/m3", source: "~"),
     root_density: (value: 100000.0, unit: "g/m3", source: "~"),
     bulk_density: (value: 300000.0, unit: "g/m3", source: "~"),

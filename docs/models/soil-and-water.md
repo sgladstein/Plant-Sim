@@ -22,8 +22,13 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 6. **FTSW** over root-occupied cells: `Σ L_i (W_i − W_wp) / Σ L_i (W_fc − W_wp)` in [0, 1];
    1 with no roots.
 7. **Stress factor**: `min(1, FTSW / 0.4)` (threshold is a species parameter).
-8. **Uptake**: potential `P_i = min(1, k L_i / V) · (W_i − W_wp)⁺`; actual `U = min(demand, Σ P)`,
-   from each cell in proportion to `P_i`; the shortfall is logged.
+8. **Uptake**, one call per hour for all plants in the grid (decision 0012). Each
+   plant's potential in each of its root cells is
+   `P_i = min(k L_i / V · (W_i − W_wp)⁺, u_max L_i, (W_i − W_wp)⁺)`; it asks each cell
+   for `P_i · min(demand, Σ P) / Σ P`. Every plant computes from the same soil state, so
+   plant order does not matter; where the requests to a cell exceed its available water,
+   all of them are scaled by the same factor. The shortfall is logged. Roots are sparse
+   `(cell, length)` lists sorted by cell.
 
 ## Parameters
 | Name | Value | Unit | Source |
@@ -37,7 +42,8 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Damping depth | 0.10 | m | ~ (typical moist loam) |
 | Cell size, pots | 0.02 | m | design plan §3.6 |
 | FTSW threshold | 0.4 | - | species file |
-| Root uptake rate | 1e-5 | m2/h | species file, ~ |
+| Root uptake rate `k` | 1e-5 | m2/h | species file, ~ |
+| Root uptake ceiling `u_max` | 1.25e-4 | kg/m/h | species file, ~ (0.03 cm³ per cm of root per day; decision 0012) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -65,7 +71,8 @@ cascade, faster than real soils. Evaporation ignores humidity and wind.
 - `ps_soil::tests::random_hours_conserve`: property test, random rain, radiation, temperature and uptake.
 - `infiltration_fills_from_the_top`, `excess_runs_off_when_saturated`,
   `lateral_redistribution_smooths_and_conserves`, `evaporation_takes_from_top_only_and_stops_dry`,
-  `ftsw_and_stress`, `uptake_is_proportional_and_limited`, `deeper_soil_is_damped_and_lagged`,
+  `ftsw_and_stress`, `uptake_is_proportional_and_limited`, `joint_uptake_shares_cells_fairly`,
+  `deeper_soil_is_damped_and_lagged`,
   `pot_mask_area_is_close_to_circle`.
 
 ## References

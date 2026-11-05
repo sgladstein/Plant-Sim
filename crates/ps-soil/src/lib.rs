@@ -13,13 +13,14 @@
 //! 4. evaporation from the top layer only, reduced as it dries;
 //! 5. soil temperature by layer from lagged, damped air temperature.
 //!
-//! Uptake (step 7) is [`SoilGrid::take_up`]; FTSW and the stress factor (step 5) are
-//! [`SoilGrid::ftsw`] and [`stress_factor`]. Every flux is booked in a [`WaterLedger`];
+//! Uptake (step 7) is [`SoilGrid::take_up`], one call per hour for every plant in the
+//! grid; FTSW and the stress factor (step 5) are [`SoilGrid::ftsw`] and
+//! [`stress_factor`]. Roots enter as sparse [`RootCells`] lists. Every flux is booked in a [`WaterLedger`];
 //! debug builds assert closure to 1e-9 relative.
 //!
 //! Model card: docs/models/soil-and-water.md.
 
-use ps_units::{Celsius, KgWater, Meters, Millimeters, WPerM2};
+use ps_units::{Celsius, KgPerMH, KgWater, M2PerHour, Meters, Millimeters, WPerM2};
 use serde::{Deserialize, Serialize};
 
 /// Latent heat of vaporization, J kg⁻¹ (at about 20 °C).
@@ -165,16 +166,72 @@ pub struct SoilHour {
     pub t_air: Celsius,
 }
 
-/// Result of a root uptake request.
+/// One plant's root length per soil cell: `(cell index, length)` pairs sorted by cell,
+/// each cell once, lengths positive. Sums over it equal sums over a dense per-cell array.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RootCells(Vec<(usize, Meters)>);
+
+impl RootCells {
+    /// Builds the list from pairs in any order: sorts by cell (stable), adds the lengths
+    /// of repeated cells in input order, and drops cells with no positive length.
+    #[must_use]
+    pub fn from_pairs(mut pairs: Vec<(usize, Meters)>) -> Self {
+        pairs.sort_by_key(|p| p.0);
+        let mut out: Vec<(usize, Meters)> = Vec::with_capacity(pairs.len());
+        for (i, l) in pairs {
+            match out.last_mut() {
+                Some(last) if last.0 == i => last.1 += l,
+                _ => out.push((i, l)),
+            }
+        }
+        out.retain(|p| p.1.0 > 0.0);
+        Self(out)
+    }
+
+    /// The pairs, sorted by cell.
+    #[must_use]
+    pub fn cells(&self) -> &[(usize, Meters)] {
+        &self.0
+    }
+
+    /// Total root length.
+    #[must_use]
+    pub fn total(&self) -> Meters {
+        self.0.iter().map(|p| p.1).sum()
+    }
+}
+
+/// One plant's request in the hour's joint uptake.
+#[derive(Copy, Clone, Debug)]
+pub struct PlantUptake<'a> {
+    /// Water the plant asks for this hour (its transpiration demand).
+    pub demand: KgWater,
+    /// Its roots.
+    pub roots: &'a RootCells,
+    /// Species uptake coefficient (root length density times it is the hourly fraction
+    /// of a cell's available water the roots can take).
+    pub rate: M2PerHour,
+    /// Species ceiling on uptake per meter of root per hour.
+    pub max_per_length: KgPerMH,
+}
+
+/// What one plant got from the joint uptake.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Uptake {
     /// Water actually removed.
     pub actual: KgWater,
     /// Demand that could not be met (logged, not penalized again, §3.2 step 7).
     pub shortfall: KgWater,
-    /// Water removed per cell, indexed like the grid.
-    pub per_cell: Vec<KgWater>,
-    /// Ledger of this uptake.
+    /// Water removed per root cell, in the order of the plant's [`RootCells`].
+    pub per_cell: Vec<(usize, KgWater)>,
+}
+
+/// Result of the hour's joint uptake.
+#[derive(Clone, Debug, PartialEq)]
+pub struct JointUptake {
+    /// One entry per plant, in request order.
+    pub plants: Vec<Uptake>,
+    /// Ledger of the whole uptake.
     pub ledger: WaterLedger,
 }
 
@@ -191,6 +248,14 @@ pub enum SoilError {
         expected: usize,
         /// Length given.
         found: usize,
+    },
+    /// A root list names a cell outside the grid.
+    #[error("root cell {cell} outside a grid of {cells} cells")]
+    RootCell {
+        /// The cell index.
+        cell: usize,
+        /// Cells in the grid.
+        cells: usize,
     },
 }
 
@@ -553,18 +618,19 @@ impl SoilGrid {
 
     /// Fraction of transpirable soil water over root-occupied cells, weighted by root
     /// length: `Σ L (W − W_wp) / Σ L (W_fc − W_wp)`, clipped to [0, 1]. Returns 1 when
-    /// there are no roots (a seed in moist soil is not stressed).
+    /// there are no roots (a seed in moist soil is not stressed). Inactive cells are
+    /// skipped.
     ///
     /// # Errors
-    /// [`SoilError::Length`] if `root_length` does not have one entry per cell.
-    pub fn ftsw(&self, root_length: &[Meters]) -> Result<f64, SoilError> {
-        self.check_len(root_length.len())?;
+    /// [`SoilError::RootCell`] if a root cell is outside the grid.
+    pub fn ftsw(&self, roots: &RootCells) -> Result<f64, SoilError> {
+        self.check_roots(roots)?;
         let hy = self.texture.hydraulics();
         let wp = self.capacity(hy.wilting_point);
         let span = self.capacity(hy.field_capacity) - wp;
         let (mut num, mut den) = (0.0, 0.0);
-        for (i, l) in root_length.iter().enumerate() {
-            if !self.active[i] || l.0 <= 0.0 {
+        for &(i, l) in roots.cells() {
+            if !self.active[i] {
                 continue;
             }
             num += l.0 * (self.water[i] - wp).0.max(0.0);
@@ -586,70 +652,113 @@ impl SoilGrid {
         ((self.water[i] - wp) / span).clamp(0.0, 1.0)
     }
 
-    fn check_len(&self, n: usize) -> Result<(), SoilError> {
-        if n == self.water.len() {
-            Ok(())
-        } else {
-            Err(SoilError::Length {
-                expected: self.water.len(),
-                found: n,
-            })
+    fn check_roots(&self, roots: &RootCells) -> Result<(), SoilError> {
+        match roots.cells().last() {
+            Some(&(i, _)) if i >= self.water.len() => Err(SoilError::RootCell {
+                cell: i,
+                cells: self.water.len(),
+            }),
+            _ => Ok(()),
         }
     }
 
-    /// Root water uptake (§3.2 step 7, §3.6). Potential uptake per cell is
-    /// `rate × L / V × (W − W_wp)`, with root length `L` in the cell of volume `V`; the
-    /// actual uptake is `min(demand, Σ potential)`, taken from cells in proportion to
-    /// their potential.
+    /// Root water uptake for every plant in the grid, once per hour (§3.2 step 7, §3.6;
+    /// decision 0012). All plants see the same soil state, so their order does not
+    /// matter.
     ///
-    /// `rate` is the species uptake coefficient in m² h⁻¹ (root length density times
-    /// rate is the hourly fraction of available water a cell can give).
+    /// 1. Each plant's potential in each of its cells is
+    ///    `min(rate · L / V · (W − W_wp)⁺, max_per_length · L, (W − W_wp)⁺)`.
+    /// 2. It asks each cell for `min(demand, Σ potential) / Σ potential` of its potential.
+    /// 3. Where the plants together ask a cell for more than its available water, every
+    ///    request in that cell is scaled down by the same factor.
     ///
     /// # Errors
-    /// [`SoilError::Length`] if `root_length` does not have one entry per cell.
-    pub fn take_up(
-        &mut self,
-        demand: KgWater,
-        root_length: &[Meters],
-        rate_m2_per_h: f64,
-    ) -> Result<Uptake, SoilError> {
-        self.check_len(root_length.len())?;
+    /// [`SoilError::RootCell`] if a root cell is outside the grid.
+    pub fn take_up(&mut self, plants: &[PlantUptake<'_>]) -> Result<JointUptake, SoilError> {
+        for p in plants {
+            self.check_roots(p.roots)?;
+        }
         let before = self.total_water();
         let wp = self.capacity(self.texture.hydraulics().wilting_point);
         let v = self.cell_volume();
-        let potential: Vec<KgWater> = self
-            .water
-            .iter()
-            .zip(root_length)
-            .zip(&self.active)
-            .map(|((w, l), a)| {
-                if *a && l.0 > 0.0 {
-                    let avail = (*w - wp).max(KgWater(0.0));
-                    (avail * (rate_m2_per_h * l.0 / v).min(1.0)).min(avail)
-                } else {
-                    KgWater(0.0)
+        let avail = |w: KgWater| (w - wp).max(KgWater(0.0));
+        // Requests per plant per root cell, from the same state.
+        let mut asked: Vec<Vec<f64>> = Vec::with_capacity(plants.len());
+        let mut cell_total: Vec<(usize, f64)> = Vec::new();
+        for p in plants {
+            let pot: Vec<f64> = p
+                .roots
+                .cells()
+                .iter()
+                .map(|&(i, l)| {
+                    if !self.active[i] {
+                        return 0.0;
+                    }
+                    let a = avail(self.water[i]).0;
+                    (a * (p.rate.0 * l.0 / v))
+                        .min(p.max_per_length.0 * l.0)
+                        .min(a)
+                })
+                .collect();
+            let total: f64 = pot.iter().sum();
+            let want = p.demand.0.max(0.0).min(total);
+            let share = if total > 0.0 { want / total } else { 0.0 };
+            let req: Vec<f64> = pot.iter().map(|x| x * share).collect();
+            for (&(i, _), r) in p.roots.cells().iter().zip(&req) {
+                if *r > 0.0 {
+                    cell_total.push((i, *r));
                 }
-            })
-            .collect();
-        let total: KgWater = potential.iter().copied().sum();
-        let want = demand.max(KgWater(0.0));
-        let actual = want.min(total);
-        let share = if total.0 > 0.0 { actual / total } else { 0.0 };
-        let per_cell: Vec<KgWater> = potential.iter().map(|p| *p * share).collect();
-        for (w, u) in self.water.iter_mut().zip(&per_cell) {
-            *w -= *u;
+            }
+            asked.push(req);
+        }
+        // Total request per cell, summed in a fixed order (plant, then cell).
+        cell_total.sort_by_key(|c| c.0);
+        let mut scale: Vec<(usize, f64)> = Vec::new();
+        for (i, r) in cell_total {
+            match scale.last_mut() {
+                Some(last) if last.0 == i => last.1 += r,
+                _ => scale.push((i, r)),
+            }
+        }
+        for s in &mut scale {
+            let a = avail(self.water[s.0]).0;
+            s.1 = if s.1 > a { a / s.1 } else { 1.0 };
+        }
+        let factor = |i: usize| {
+            scale
+                .binary_search_by_key(&i, |s| s.0)
+                .map_or(1.0, |k| scale[k].1)
+        };
+        let mut out = Vec::with_capacity(plants.len());
+        let mut uptake = KgWater(0.0);
+        for (p, req) in plants.iter().zip(&asked) {
+            let per_cell: Vec<(usize, KgWater)> = p
+                .roots
+                .cells()
+                .iter()
+                .zip(req)
+                .map(|(&(i, _), r)| (i, KgWater(r * factor(i))))
+                .collect();
+            for &(i, u) in &per_cell {
+                self.water[i] -= u;
+            }
+            let actual: KgWater = per_cell.iter().map(|c| c.1).sum();
+            uptake += actual;
+            out.push(Uptake {
+                actual,
+                shortfall: p.demand.max(KgWater(0.0)) - actual,
+                per_cell,
+            });
         }
         let ledger = WaterLedger {
-            uptake: per_cell.iter().copied().sum(),
+            uptake,
             storage_before: before,
             storage_after: self.total_water(),
             ..WaterLedger::default()
         };
         debug_assert!(ledger.relative_residual() < CLOSURE_TOLERANCE, "{ledger:?}");
-        Ok(Uptake {
-            actual: ledger.uptake,
-            shortfall: want - ledger.uptake,
-            per_cell,
+        Ok(JointUptake {
+            plants: out,
             ledger,
         })
     }

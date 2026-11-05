@@ -4,7 +4,7 @@
 //! are deterministic and built without randomness, so numbers compare across commits.
 
 use ps_light::LeafPoint;
-use ps_soil::{SoilGrid, SoilHour, Texture};
+use ps_soil::{RootCells, SoilGrid, SoilHour, Texture};
 use ps_units::{Celsius, M2, Meters, Millimeters, WPerM2};
 
 /// Plants in the M2 plot budget (design plan §7, WP21: 30 plants under 20 ms per sim-day).
@@ -45,24 +45,24 @@ pub fn plot() -> SoilGrid {
     SoilGrid::new_box(60, 60, 20, Meters(0.05), Texture::Loam, Celsius(15.0)).expect("valid plot")
 }
 
-/// Dense per-cell root length arrays (today's `ftsw` and `take_up` input) for `plants`
-/// plants on a grid: plant `p` has 0.3 m of root in each cell of its own 30 cm × 30 cm
-/// × 50 cm block, laid out 6 × 5 across a 60-cell-wide plot.
+/// Sparse root lists (the `ftsw` and `take_up` input) for `plants` plants on a grid:
+/// plant `p` has 0.3 m of root in each cell of its own 30 cm × 30 cm × 50 cm block,
+/// laid out 6 × 5 across a 60-cell-wide plot.
 #[must_use]
-pub fn dense_roots(grid: &SoilGrid, plants: usize) -> Vec<Vec<Meters>> {
+pub fn plant_roots(grid: &SoilGrid, plants: usize) -> Vec<RootCells> {
     let (nx, ny, nz) = grid.dims();
     (0..plants)
         .map(|p| {
             let (bx, by) = (p % 6, p / 6);
-            let mut r = vec![Meters(0.0); nx * ny * nz];
+            let mut r = Vec::new();
             for z in 0..nz.min(10) {
                 for y in (by * 6)..((by + 1) * 6).min(ny) {
                     for x in (bx * 6)..((bx + 1) * 6).min(nx) {
-                        r[(z * ny + y) * nx + x] = Meters(0.3);
+                        r.push(((z * ny + y) * nx + x, Meters(0.3)));
                     }
                 }
             }
-            r
+            RootCells::from_pairs(r)
         })
         .collect()
 }

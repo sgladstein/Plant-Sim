@@ -353,6 +353,18 @@ quantity!(
     "J/mol/K"
 );
 quantity!(
+    /// Area per hour, m² h⁻¹ (the root uptake coefficient: root length density times it
+    /// is the hourly fraction of a cell's available water the roots can take).
+    M2PerHour,
+    "m2/h"
+);
+quantity!(
+    /// Mass flux per unit length, kg m⁻¹ h⁻¹ (most water a meter of root can take up in
+    /// an hour).
+    KgPerMH,
+    "kg/m/h"
+);
+quantity!(
     /// Angle in degrees.
     Degrees,
     "deg"
