@@ -240,6 +240,7 @@ mod tests {
             thermal_age: 0.0,
             attach: 1.0,
             copies: 1,
+            coil: None,
         }
     }
 
@@ -256,6 +257,7 @@ mod tests {
             organ_values: std::collections::BTreeMap::new(),
             soil_water: crate::garden::SoilFace::default(),
             container: true,
+            supports: Vec::new(),
         }
     }
 

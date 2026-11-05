@@ -142,7 +142,7 @@ pub(crate) fn orbit_input(
         MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
     };
     if lines != 0.0 {
-        rig.distance = (rig.distance * (1.0 - 0.1 * lines)).clamp(0.03, 20.0);
+        rig.distance = (rig.distance * (1.0 - 0.1 * lines)).clamp(0.03, 40.0);
         rig.auto_frame = false;
     }
 }
@@ -152,7 +152,7 @@ pub(crate) fn orbit_input(
 pub(crate) fn apply_rig(
     mut rig: ResMut<CameraRig>,
     time: Res<Time>,
-    mut cameras: Query<&mut Transform, With<OrbitCamera>>,
+    mut cameras: Query<(&mut Transform, Option<&mut bevy::pbr::DistanceFog>), With<OrbitCamera>>,
 ) {
     if rig.auto_frame
         && let Some(bounds) = rig.frame_bounds
@@ -162,8 +162,24 @@ pub(crate) fn apply_rig(
         rig.target = rig.target.lerp(target, k);
         rig.distance += (distance - rig.distance) * k;
     }
-    for mut t in &mut cameras {
+    for (mut t, fog) in &mut cameras {
         *t = Transform::from_translation(rig.eye()).looking_at(rig.target, Vec3::Y);
+        // The haze starts behind the scene however far out the camera is (a wide
+        // garden frames from beyond the default fog's end).
+        if let Some(mut fog) = fog {
+            fog.falloff = fog_falloff(rig.distance);
+        }
+    }
+}
+
+/// Linear haze from just behind the framed scene to well beyond it: 3 to 14 m for a
+/// camera within 1.5 m, pushed back with the camera.
+#[must_use]
+pub fn fog_falloff(distance: f32) -> bevy::pbr::FogFalloff {
+    let d = distance.max(1.5);
+    bevy::pbr::FogFalloff::Linear {
+        start: d + 1.5,
+        end: d + 12.5,
     }
 }
 

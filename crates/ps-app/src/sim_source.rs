@@ -23,11 +23,11 @@ use anyhow::{Context as _, Result, bail};
 use bevy::math::Vec3;
 use bevy::prelude::{ResMut, Resource};
 use ps_graph::OrganKind;
-use ps_mesh::Skeleton;
+use ps_mesh::{Coil, Skeleton};
 use ps_session::{Session, SessionOptions, Snapshot, TimeCommand as SimCommand};
 use ps_ui::{Chart, Charts, Series, TimeCommand, TimeControl};
 use ps_units::{Hours, WPerM2};
-use ps_view::{Garden, Lens, PotShape, PotSize, PotView, SkyState, SoilFace};
+use ps_view::{Garden, Lens, PotShape, PotSize, PotView, SkyState, SoilFace, SupportView};
 use ps_weather::{HourWeather, WeatherSeries};
 use ps_world::{Catalog, DayRow, PlantEntry, Scenario, SoilEntry, World};
 
@@ -92,6 +92,8 @@ struct PotInfo {
     radiation_fraction: f64,
     /// A plot: many plants share this soil, and only the first draws the bed and label.
     shared: bool,
+    /// Stakes and strings in this soil, relative to its center.
+    supports: Vec<SupportView>,
 }
 
 /// One plant's skeletons: the hour before the current tick and the current tick.
@@ -277,6 +279,16 @@ fn pot_infos(
                     label,
                     center: [(p.0 - mean_x) as f32, (p.1 - mean_y) as f32],
                     shared: plot.is_some(),
+                    supports: scenario
+                        .supports
+                        .iter()
+                        .filter(|s| s.soil == e.id)
+                        .map(|s| SupportView {
+                            base: [(s.offset_cm.0 * 0.01) as f32, (s.offset_cm.1 * 0.01) as f32],
+                            height: (s.height_cm * 0.01) as f32,
+                            diameter: (s.diameter_cm * 0.01) as f32,
+                        })
+                        .collect(),
                     size: PotSize {
                         // Pots are cylinders (`SoilSpec::Pot`); plots are rectangular
                         // beds with a glass front (`SoilSpec::Plot`).
@@ -316,7 +328,19 @@ fn skeleton_of(p: &PlantEntry, size: PotSize) -> Skeleton {
         c[1] - f64::from(size.depth) * 0.5,
         c[2],
     ];
-    Skeleton::from_arena_with(&plant.arena, origin, &attach, &mult)
+    let mut skeleton = Skeleton::from_arena_with(&plant.arena, origin, &attach, &mult);
+    // Twining internodes coil around their support (WP22). The skeleton frame is the
+    // soil frame shifted so the soil surface's center is at the origin.
+    let shift = bevy::math::Vec2::new(size.width * 0.5, size.depth * 0.5);
+    for (placement, meta) in skeleton.organs.iter_mut().zip(&plant.meta) {
+        placement.coil = meta.twine.as_ref().map(|t| Coil {
+            center: bevy::math::Vec2::new(t.center[0] as f32, t.center[1] as f32) - shift,
+            radius: t.radius as f32,
+            inclination: t.inclination as f32,
+        });
+    }
+    skeleton.relayout();
+    skeleton
 }
 
 /// FTSW on the vertical west-east slice of the grid at `collar_y` (m from the south edge).
@@ -624,6 +648,11 @@ pub fn drive(
                     p.plant.collar_position[1]
                 },
             ),
+            supports: if container {
+                info.supports.clone()
+            } else {
+                Vec::new()
+            },
             container,
         });
     }
@@ -713,6 +742,107 @@ mod tests {
                 let t = Vec3::new(t[0] as f32, t[1] as f32, t[2] as f32) + shift;
                 assert!((o.base - b).length() < 1e-4, "base {:?} vs {b:?}", o.base);
                 assert!((o.tip() - t).length() < 1e-4, "tip {:?} vs {t:?}", o.tip());
+            }
+        }
+    }
+
+    #[test]
+    fn twining_stems_follow_their_coils() {
+        for scenario in ["pole_row_trellis", "pole_trellis"] {
+            twining_stems_follow_their_coils_in(scenario);
+        }
+    }
+
+    fn twining_stems_follow_their_coils_in(scenario: &str) {
+        let data = find_data_dir(None).unwrap_or_else(|e| unreachable!("{e}"));
+        let path = format!("scenarios/m2/{scenario}.ron");
+        let (mut w, _) =
+            load_world(&data, Path::new(&path)).unwrap_or_else(|e| unreachable!("{e:#}"));
+        w.run_days(45).unwrap_or_else(|e| unreachable!("{e}"));
+        let soil = &w.state().soils[0];
+        assert!(w.state().plants.iter().all(|p| p.soil == 0) || scenario == "pole_trellis");
+        let (nx, ny, nz) = soil.grid.dims();
+        let cell = soil.grid.cell_size().0 as f32;
+        let size = PotSize {
+            shape: PotShape::Box,
+            width: nx as f32 * cell,
+            depth: ny as f32 * cell,
+            soil_depth: nz as f32 * cell,
+        };
+        let shift = Vec3::new(-size.width / 2.0, -size.depth / 2.0, 0.0);
+        let mut coiled = 0;
+        for p in &w.state().plants {
+            let s = skeleton_of(p, size);
+            assert!(
+                s.bounds()
+                    .is_some_and(|(a, b)| a.is_finite() && b.is_finite())
+            );
+            let layout =
+                ps_arch::geometry::layout(&p.plant.arena, &p.plant.meta, p.plant.collar_position);
+            for (o, (b, t)) in s.organs.iter().zip(&layout) {
+                let b = Vec3::new(b[0] as f32, b[1] as f32, b[2] as f32) + shift;
+                let t = Vec3::new(t[0] as f32, t[1] as f32, t[2] as f32) + shift;
+                assert!((o.base - b).length() < 1e-3, "base {:?} vs {b:?}", o.base);
+                assert!((o.tip() - t).length() < 1e-3, "tip {:?} vs {t:?}", o.tip());
+                coiled += usize::from(o.coil.is_some());
+            }
+            for axis in ps_mesh::axes(&s, true) {
+                // The scene colors one ring per node: the counts must agree.
+                let rings: usize = 1 + axis
+                    .organs
+                    .iter()
+                    .filter_map(|id| s.get(*id))
+                    .map(ps_mesh::nodes_after_base)
+                    .sum::<usize>();
+                let nodes = ps_mesh::axis_nodes(&s, &axis, ps_mesh::AxisStyle::STEM);
+                assert_eq!(nodes.len(), rings);
+                for n in nodes {
+                    assert!(n.position.is_finite() && n.radius.is_finite());
+                    assert!(n.position.abs().max_element() < 3.0, "{n:?}");
+                }
+            }
+        }
+        assert!(coiled > 0, "no twining internodes after 40 days");
+        for p in &w.state().plants {
+            let s = skeleton_of(p, size);
+            for axis in ps_mesh::axes(&s, true) {
+                let style = if axis.kind == ps_mesh::AxisKind::Root {
+                    ps_mesh::AxisStyle::ROOT
+                } else {
+                    ps_mesh::AxisStyle::STEM
+                };
+                let m = ps_mesh::axis_mesh(&s, &axis, style);
+                for tri in m.indices.chunks(3) {
+                    let v: Vec<Vec3> = tri
+                        .iter()
+                        .map(|&k| m.positions[k as usize].into())
+                        .collect();
+                    let e = (v[0] - v[1])
+                        .length()
+                        .max((v[1] - v[2]).length())
+                        .max((v[0] - v[2]).length());
+                    assert!(
+                        e < 0.3,
+                        "axis {:?} order {} edge {e} at {:?}",
+                        axis.kind,
+                        axis.axis_order,
+                        v
+                    );
+                }
+            }
+            for i in ps_mesh::instances(&s, ps_mesh::InstanceOptions::default()) {
+                let o = &s.organs[i.organ.index()];
+                assert!(
+                    i.scale.max_element() < 0.3 && i.translation.is_finite(),
+                    "{:?} {:?} len {} r {} area {} scale {:?} at {:?}",
+                    i.key,
+                    o.kind,
+                    o.length,
+                    o.radius,
+                    o.area,
+                    i.scale,
+                    i.translation
+                );
             }
         }
     }
