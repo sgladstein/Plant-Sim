@@ -252,6 +252,7 @@ mod tests {
             skeleton: Skeleton {
                 origin: Vec3::ZERO,
                 organs,
+                blade_aspect: None,
             },
             water_stress: 1.0,
             organ_values: std::collections::BTreeMap::new(),

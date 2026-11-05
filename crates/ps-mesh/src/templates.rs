@@ -12,6 +12,8 @@
 //! | Seed | semi-axes 0.5, 1, 1, centered | `(length, radius, radius)` |
 //! | Flower | length about 1 | `length` |
 //! | Bud | unit sphere | `radius` |
+//! | `GrassBlade` | arc length 1 along x, base width 1 | `(length, width, length)` |
+//! | `WheatEar` | length 1 along x, peak radius 1 | `(length, radius, radius)` |
 //!
 //! Leaf blades are two-sided: the back is a copy of the front with flipped normals and
 //! winding, so back-face culling shows the right side with the right lighting. Wilting
@@ -44,11 +46,15 @@ pub enum Template {
     Seed,
     /// Bud.
     Bud,
+    /// A grass blade: a long strap arching over toward its tip.
+    GrassBlade,
+    /// A wheat ear: two rows of plump spikelets with short awns.
+    WheatEar,
 }
 
 impl Template {
     /// All templates, in a fixed order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::Cotyledon,
         Self::Unifoliate,
         Self::Trifoliate,
@@ -56,12 +62,14 @@ impl Template {
         Self::Pod,
         Self::Seed,
         Self::Bud,
+        Self::GrassBlade,
+        Self::WheatEar,
     ];
 
     /// True for templates that have droop variants.
     #[must_use]
     pub fn droops(self) -> bool {
-        matches!(self, Self::Unifoliate | Self::Trifoliate)
+        matches!(self, Self::Unifoliate | Self::Trifoliate | Self::GrassBlade)
     }
 }
 
@@ -112,7 +120,119 @@ pub fn build_template(key: TemplateKey) -> MeshData {
             ellipsoid(&mut m, Vec3::ZERO, Vec3::ONE, 6, 8);
             m
         }
+        Template::GrassBlade => grass_blade(droop),
+        Template::WheatEar => wheat_ear(),
     }
+}
+
+/// How far a turgid grass blade's centerline turns down from base to tip, rad (the sim's
+/// `grass::BLADE_DROOP`).
+pub const BLADE_ARCH: f32 = 0.6;
+
+/// Blade area over length × base width for [`grass_blade`]'s `1 − u³` outline (the sim's
+/// `grass::BLADE_SHAPE`).
+pub const BLADE_SHAPE: f32 = 0.75;
+
+/// A two-sided grass blade of arc length 1 and base width 1 along x, its centerline turning
+/// down by [`BLADE_ARCH`] (more as it wilts), folded slightly along the midrib. Scale it
+/// by `(length, width, length)`.
+fn grass_blade(droop: f32) -> MeshData {
+    const NU: u32 = 16;
+    const NV: u32 = 4;
+    let arch = BLADE_ARCH + 1.2 * droop;
+    // Centerline points and directions by arc length.
+    let mut center = Vec::with_capacity(NU as usize + 1);
+    let mut p = Vec3::ZERO;
+    for i in 0..=NU {
+        let u = i as f32 / NU as f32;
+        let angle = -arch * u;
+        center.push((p, Vec3::new(angle.cos(), 0.0, angle.sin())));
+        let mid = -arch * (u + 0.5 / NU as f32);
+        p += Vec3::new(mid.cos(), 0.0, mid.sin()) / NU as f32;
+    }
+    let mut mesh = MeshData::new();
+    let points: Vec<Vec3> = (0..=NU)
+        .flat_map(|i| {
+            let (c, d) = center[i as usize];
+            let u = i as f32 / NU as f32;
+            let half = 0.5 * (1.0 - u * u * u);
+            let up = Vec3::Y.cross(d) * -1.0;
+            (0..=NV).map(move |j| {
+                let v = 2.0 * j as f32 / NV as f32 - 1.0;
+                // The margins stand a little above the midrib.
+                c + Vec3::Y * (v * half) + up * (0.12 * half * v.abs())
+            })
+        })
+        .collect();
+    let at = |i: u32, j: u32| points[(i * (NV + 1) + j) as usize];
+    let front = mesh.positions.len() as u32;
+    for i in 0..=NU {
+        for j in 0..=NV {
+            let du = at((i + 1).min(NU), j) - at(i.saturating_sub(1), j);
+            let dv = at(i, (j + 1).min(NV)) - at(i, j.saturating_sub(1));
+            let n = du.cross(dv).normalize_or(Vec3::Z);
+            let uv = Vec2::new(j as f32 / NV as f32, i as f32 / NU as f32);
+            mesh.push_vertex(at(i, j), n, uv);
+        }
+    }
+    let back = mesh.positions.len() as u32;
+    for k in front as usize..back as usize {
+        let (q, n, uv) = (mesh.positions[k], mesh.normals[k], mesh.uvs[k]);
+        mesh.push_vertex(Vec3::from(q), -Vec3::from(n), Vec2::from(uv));
+    }
+    for i in 0..NU {
+        for j in 0..NV {
+            let idx = |ii: u32, jj: u32| ii * (NV + 1) + jj;
+            let (a, b, c, d) = (idx(i, j), idx(i + 1, j), idx(i, j + 1), idx(i + 1, j + 1));
+            mesh.push_triangle(front + a, front + b, front + c);
+            mesh.push_triangle(front + b, front + d, front + c);
+            mesh.push_triangle(back + a, back + c, back + b);
+            mesh.push_triangle(back + b, back + c, back + d);
+        }
+    }
+    mesh
+}
+
+/// A wheat ear of length 1 along x and peak radius 1: spikelets alternating on two sides
+/// of the rachis, tapering at both ends, with short awns from the upper spikelets.
+fn wheat_ear() -> MeshData {
+    const SPIKELETS: u32 = 16;
+    let mut m = MeshData::new();
+    // The rachis.
+    let rachis = [
+        TubeNode {
+            position: Vec3::ZERO,
+            radius: 0.25,
+        },
+        TubeNode {
+            position: Vec3::X,
+            radius: 0.12,
+        },
+    ];
+    tube(&rachis, 6, true, Vec3::X, &mut m);
+    for k in 0..SPIKELETS {
+        let u = (k as f32 + 0.5) / SPIKELETS as f32;
+        // Fullest a third of the way up, smaller at the base and tip.
+        let size = (PI * u.powf(0.8)).sin().max(0.25);
+        let side = if k % 2 == 0 { 1.0 } else { -1.0 };
+        let c = Vec3::new(u * 0.95, side * 0.45 * size, 0.0);
+        ellipsoid(&mut m, c, Vec3::new(0.09, 0.55, 0.75) * size, 5, 7);
+        if u > 0.3 {
+            let tip = c + Vec3::new(0.22, side * 0.35, 0.0) * (0.6 + u);
+            let awn = [
+                TubeNode {
+                    position: c + Vec3::X * 0.05,
+                    radius: 0.05,
+                },
+                TubeNode {
+                    position: tip,
+                    radius: 0.01,
+                },
+            ];
+            tube(&awn, 3, false, Vec3::X, &mut m);
+        }
+    }
+    m
 }
 
 #[derive(Copy, Clone, PartialEq)]

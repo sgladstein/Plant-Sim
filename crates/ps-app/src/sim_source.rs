@@ -340,6 +340,8 @@ fn skeleton_of(p: &PlantEntry, size: PotSize) -> Skeleton {
         });
     }
     skeleton.relayout();
+    // A grass draws blades and ears (WP23).
+    skeleton.blade_aspect = plant.params.grass.as_ref().map(|g| g.blade_aspect as f32);
     skeleton
 }
 
