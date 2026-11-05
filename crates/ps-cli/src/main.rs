@@ -6,12 +6,14 @@
 //! ps-cli bench  SCENARIO... [--data DIR] [--days N] [--repeat N]
 //! ps-cli replay SCENARIO LOG [--data DIR] [--until-tick T] [--out DIR]
 //! ps-cli replay --snapshot FILE [--out DIR]
+//! ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]
 //! ```
 //!
 //! `run` writes `daily.csv`, `organs.csv`, `hashes.csv` and `log.ron` for each scenario
 //! into `OUT/<scenario file stem>/` (default `out/`), running the scenarios in parallel.
 //! Golden hash files live at `DIR/<os>-<arch>/<stem>.csv`.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant; // determinism: allow (bench timing only; never reaches the sim)
 
@@ -23,7 +25,8 @@ const USAGE: &str = "usage:
   ps-cli hash   SCENARIO... [--data DIR] [--days N] [--write-golden DIR] [--check-golden DIR [--allow-missing]]
   ps-cli bench  SCENARIO... [--data DIR] [--days N] [--repeat N]
   ps-cli replay SCENARIO LOG [--data DIR] [--until-tick T] [--out DIR]
-  ps-cli replay --snapshot FILE [--out DIR]";
+  ps-cli replay --snapshot FILE [--out DIR]
+  ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]";
 
 /// Options that take no value.
 const FLAGS: [&str; 1] = ["allow-missing"];
@@ -324,6 +327,139 @@ fn cmd_replay(a: &Args) -> Result<()> {
     Ok(())
 }
 
+/// Scenarios every validation runs, for the report's plots, besides those the data names.
+const VALIDATION_SCENARIOS: [&str; 5] = [
+    "single_pot",
+    "response/control",
+    "response/drought_from_flowering",
+    "response/heat_at_flowering",
+    "response/shade_50",
+];
+
+/// Day of the organ snapshot the report draws in 3D.
+const SNAPSHOT_DAY: u32 = 45;
+
+fn scenario_path(data: &Path, name: &str) -> Result<PathBuf> {
+    let p = data.join("scenarios").join(format!("{name}.ron"));
+    if p.exists() {
+        return Ok(p);
+    }
+    bail!(
+        "no scenario file for {name:?} under {}",
+        data.join("scenarios").display()
+    )
+}
+
+/// Prints the build-failing misses and the fixed known misses; returns the miss count.
+fn print_misses(outcomes: &[ps_validate::Outcome], known_path: &Path) -> usize {
+    let failing: Vec<&ps_validate::Outcome> = outcomes.iter().filter(|o| o.fails_build()).collect();
+    for o in &failing {
+        eprintln!(
+            "MISS {} ({}, {} {}): expected {}, sim {}",
+            o.id,
+            o.scenario,
+            o.variable,
+            o.at,
+            o.expected,
+            o.got.map_or_else(
+                || "-".into(),
+                |v| if o.kind == "response" {
+                    format!("{:+.0}%", v * 100.0)
+                } else {
+                    ps_validate::fmt_num(v)
+                }
+            )
+        );
+    }
+    for o in outcomes
+        .iter()
+        .filter(|o| o.verdict == ps_validate::Verdict::Fixed)
+    {
+        eprintln!("FIXED {}: remove it from {}", o.id, known_path.display());
+    }
+    failing.len()
+}
+
+fn cmd_validate(a: &Args) -> Result<()> {
+    a.check_keys(&["data", "validation", "known", "out"])?;
+    let data = a.data_dir();
+    let vdir = a
+        .get("validation")
+        .map_or_else(|| data.join("validation"), PathBuf::from);
+    let known_path = PathBuf::from(a.get("known").unwrap_or("validation/known_misses.ron"));
+    let out = PathBuf::from(a.get("out").unwrap_or("out/validation"));
+    let vdata = ps_validate::Data::load(&vdir)?;
+    let known = ps_validate::known_misses(&known_path)?;
+    let mut names = vdata.scenarios();
+    names.extend(VALIDATION_SCENARIOS.iter().map(|s| (*s).to_string()));
+    names.sort();
+    names.dedup();
+    let loaded: Vec<Loaded> = names
+        .iter()
+        .map(|n| {
+            let mut l = load(&scenario_path(&data, n)?, &data, None)?;
+            l.stem.clone_from(n);
+            Ok(l)
+        })
+        .collect::<Result<_>>()?;
+    let runs_dir = out.join("runs");
+    let results = run_parallel(&loaded, |l| {
+        let mut w = World::new(l.scenario.clone(), l.catalog.clone())?;
+        let dir = runs_dir.join(&l.stem);
+        std::fs::create_dir_all(&dir)?;
+        if SNAPSHOT_DAY < l.scenario.duration_days {
+            w.run_days(SNAPSHOT_DAY)?;
+            std::fs::write(
+                dir.join(format!("organs_day{SNAPSHOT_DAY}.csv")),
+                ps_export::organs_csv(w.state()),
+            )?;
+        }
+        w.run_to_end()?;
+        write_outputs(&dir, &w)?;
+        Ok(w.state().clone())
+    });
+    let mut runs = ps_validate::Runs::new();
+    for (l, r) in loaded.iter().zip(results) {
+        runs.insert(l.stem.clone(), r.with_context(|| l.stem.clone())?);
+    }
+    let mut outcomes = Vec::new();
+    if let Some(t) = &vdata.targets {
+        outcomes.extend(ps_validate::evaluate_targets(t, &runs, &known));
+    }
+    if let Some(r) = &vdata.responses {
+        outcomes.extend(ps_validate::evaluate_responses(r, &runs, &known));
+    }
+    if let Some(pf) = &vdata.parameters {
+        let path = data.join("species").join(format!("{}.ron", pf.species));
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        outcomes.extend(ps_validate::evaluate_parameters(pf, &text, &known));
+    }
+    let curves = ps_validate::compare_curves(&vdata.curves, &runs);
+    std::fs::create_dir_all(out.join("curves"))?;
+    for c in &curves {
+        let mut csv = String::from("x,y,sd,sim\n");
+        for (p, s) in c.curve.points.iter().zip(&c.sim) {
+            let opt = |v: Option<f64>| v.map_or_else(String::new, |v| v.to_string());
+            let _ = writeln!(csv, "{},{},{},{}", p.x, p.y, opt(p.sd), opt(*s));
+        }
+        std::fs::write(out.join("curves").join(format!("{}.csv", c.curve.id)), csv)?;
+    }
+    std::fs::write(
+        out.join("results.csv"),
+        ps_validate::outcomes_csv(&outcomes),
+    )?;
+    let report = ps_validate::report_markdown(&outcomes, &curves);
+    std::fs::write(out.join("report.md"), &report)?;
+    println!("{}", report.lines().nth(2).unwrap_or_default());
+    let failing = print_misses(&outcomes, &known_path);
+    println!("report: {}", out.join("report.md").display());
+    if failing > 0 {
+        bail!("{failing} validation targets missed");
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -335,6 +471,7 @@ fn main() -> Result<()> {
         "hash" => cmd_hash(&a),
         "bench" => cmd_bench(&a),
         "replay" => cmd_replay(&a),
+        "validate" => cmd_validate(&a),
         "" | "help" | "-h" | "--help" => {
             println!("{USAGE}");
             Ok(())

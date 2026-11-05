@@ -190,3 +190,46 @@ pub fn hashes_csv(state: &WorldState) -> String {
     }
     out
 }
+
+/// The number in one column of a daily row, by [`DAILY_COLUMNS`] name; the stage is
+/// its ordinal (0 = sown, 7 = mature, −1 before sowing). `None` for an unknown name.
+#[must_use]
+pub fn daily_number(state: &WorldState, row: &DayRow, column: &str) -> Option<f64> {
+    let r = &row.report;
+    let e = &row.env;
+    Some(match column {
+        "day" => f64::from(row.day),
+        "plant" => f64::from(row.plant),
+        "soil" => f64::from(soil_id(state, row.plant)),
+        "stage" => r.stage.map_or(-1.0, |s| f64::from(s as u8)),
+        "days_since_sowing" => f64::from(r.day),
+        "main_nodes" => f64::from(r.main_nodes),
+        "branches" => f64::from(r.branches),
+        "leaves" => f64::from(r.leaves),
+        "leaf_area_m2" => r.leaf_area,
+        "racemes" => f64::from(r.racemes),
+        "flowers" => f64::from(r.flowers),
+        "pods" => f64::from(r.pods),
+        "seeds" => f64::from(r.seeds),
+        "root_axes" => f64::from(r.root_axes),
+        "lateral_cohorts" => f64::from(r.lateral_cohorts),
+        "root_length_m" => r.root_length,
+        "root_mass_g" => r.root_mass,
+        "leaf_mass_g" => r.leaf_mass,
+        "stem_mass_g" => r.stem_mass,
+        "fruit_mass_g" => r.fruit_mass,
+        "seed_mass_g" => r.seed_mass,
+        "dry_mass_g" => r.dry_mass,
+        "total_dry_mass_g" => r.total_dry_mass,
+        "feedback_loss" => r.feedback_loss,
+        "height_m" => r.height,
+        "shortfall_kg" => r.shortfall,
+        "t_min_c" => e.t_min_c,
+        "t_max_c" => e.t_max_c,
+        "radiation_mj_m2" => e.radiation_mj,
+        "rain_mm" => e.rain_mm,
+        "ftsw" => e.ftsw,
+        "soil_water_kg" => e.soil_water_kg,
+        _ => return None,
+    })
+}

@@ -17,9 +17,9 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 7 Physiology | #8 | done (PR #20) |
 | 8 Herb architecture and roots | #9 | done (PR #27; decision 0013) |
 | 9 World | #10 | done (PR #29; decision 0014) |
-| 10 Export and CLI | #11 | done (this PR; decision 0015, docs/cli.md) |
-| 11 Validation harness | #12 | next; reference data in data/validation/ from the reference-data thread |
-| 12 Tuning and lock | #13 | not started |
+| 10 Export and CLI | #11 | done (PR #31; decision 0015, docs/cli.md) |
+| 11 Validation harness | #12 | done (this PR; decision 0017, validation/README.md) |
+| 12 Tuning and lock | #13 | next: empty validation/known_misses.ron |
 
 ## M1 groundwork (parallel to M0, viewer thread)
 | WP | State |
@@ -34,7 +34,7 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 The viewer reads `ps_view::Garden` and `SkyState` only. Swapping the stand-in for ps-world means filling those from the snapshot (WP16).
 
 ## Last validation report
-None yet (WP11).
+`cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11).
 
 ## Open questions for the owner
 - WP7 (decision 0009): two readings of the plan's text to confirm. Priority is the share of an organ's own available reserve it may spend per hour (taken literally, §3.9 would cap every organ below its potential), and the water stress factor multiplies the stomatal slope.

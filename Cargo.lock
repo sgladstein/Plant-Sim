@@ -4973,6 +4973,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ps-export",
+ "ps-validate",
  "ps-world",
  "ron 0.10.1",
  "tracing-subscriber",
@@ -5077,6 +5078,20 @@ name = "ps-units"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "ron 0.10.1",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "ps-validate"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "ps-arch",
+ "ps-export",
+ "ps-physio",
+ "ps-world",
  "ron 0.10.1",
  "serde",
  "thiserror 2.0.21",

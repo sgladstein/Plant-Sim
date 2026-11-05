@@ -124,3 +124,47 @@ fn a_missing_golden_file_fails_unless_allowed() {
     assert!(cli(&allowed).status.success());
     let _ = std::fs::remove_dir_all(&empty);
 }
+
+/// WP11 done-when: the report fails the build when a target is missed, and a listed
+/// known miss does not.
+#[test]
+fn validate_fails_on_a_missed_target() {
+    let fixtures = root().join("crates/ps-cli/tests/fixtures");
+    let v = fixtures.join("validation");
+    let out = out_dir("validate");
+    let o_s = out.to_string_lossy().into_owned();
+    let v_s = v.to_string_lossy().into_owned();
+    let none = out.join("none.ron").to_string_lossy().into_owned();
+    let o = cli(&[
+        "validate",
+        "--validation",
+        &v_s,
+        "--known",
+        &none,
+        "--out",
+        &o_s,
+    ]);
+    assert!(!o.status.success());
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("MISS impossible_height"), "{err}");
+    let report = std::fs::read_to_string(out.join("report.md")).unwrap();
+    assert!(report.contains("| pass | pods_in_range"), "{report}");
+
+    let known = fixtures.join("known_impossible.ron");
+    let o = cli(&[
+        "validate",
+        "--validation",
+        &v_s,
+        "--known",
+        &known.to_string_lossy(),
+        "--out",
+        &o_s,
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(
+        out.join("runs/response/heat_at_flowering/daily.csv")
+            .exists()
+    );
+    assert!(out.join("runs/single_pot/organs_day45.csv").exists());
+    let _ = std::fs::remove_dir_all(&out);
+}
