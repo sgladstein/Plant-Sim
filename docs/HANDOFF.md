@@ -99,16 +99,16 @@ for whatever you pick up.
 
 | PR | What | State |
 | --- | --- | --- |
-| #81 | Validation reads the mean of four seed runs (decision 0026) | Implementation; merging on green |
 | (next) | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; follows #81 on `claude/project-thread-ur2udi` |
+| #86 | Viewer root-copy fix from the fuller-plants workstream (overlaps #84; land one) | Fuller plants; merging on green |
 | #84 | Viewer root-copy fix, viewer handoff (`docs/handoff-viewer.md`), STATUS M1 rows | Viewer; merging on green |
 | #82 | Performance handoff doc | Docs only; merge when green |
 | #83 | Plant visuals research into docs/research/plant-visuals/ | Docs only; merge when green |
 | #79 | Viewer look option B painterly | **Parked**, owner decides; do not merge |
 | this PR | This handoff and the archive | |
 
-Open issue #58: scale nitrogen uptake capacity with root mass. Issues #1 to #6 are
-old M0 WP issues left open; their WPs are done (STATUS), so they can be closed.
+Open issue #58: scale nitrogen uptake capacity with root mass. #81 (multi-seed
+validation, decision 0026) merged as ae5499e.
 
 ### Branches
 
@@ -157,14 +157,20 @@ fills them from `ps_session::Snapshot`. Bevy is pinned at 0.20.1 with bevy_egui
 ```sh
 # Sim checks (what CI runs; required before pushing, per CLAUDE.md)
 cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace            # CI uses cargo nextest; equivalent
+# Without wayland/X libraries (cloud containers) exclude the render crates:
+cargo clippy --workspace --exclude ps-view --exclude ps-ui --exclude ps-app --all-targets --locked -- -D warnings
+cargo test --workspace --exclude ps-view --exclude ps-ui --exclude ps-app --no-fail-fast --locked   # 5 to 8 min; CI uses nextest
 python3 scripts/check_deps.py
 python3 scripts/check_determinism.py
 
 # Headless runs
 cargo run --release -p ps-cli -- run data/scenarios/single_pot.ron --out out
-cargo run --release -p ps-cli -- hash data/scenarios/*.ron --check-golden tests/golden
+# Goldens exist for three scenarios only (plot at 30 days):
+B=target/release/ps-cli   # after cargo build --release -p ps-cli
+$B hash data/scenarios/single_pot.ron data/scenarios/two_pot_sun_shade.ron --check-golden tests/golden
+$B hash data/scenarios/plot_30_beans.ron --days 30 --check-golden tests/golden
+# Regenerate after a model change: same commands with --write-golden tests/golden, then
+#   cp tests/golden/linux-x86_64/*.csv tests/golden/windows-x86_64/
 cargo run --release -p ps-cli -- validate          # ~2 min with 4 seeds; report in out/validation/
 python3 validation/report.py out/validation        # plots and report.html
 cargo run --release -p ps-bench --example sim_days 5   # ms per sim-day per scenario
@@ -185,8 +191,9 @@ weather preset or file, latitude and sowing date. See
 [docs/handoff-viewer.md](handoff-viewer.md).
 
 Practical notes:
-- In a cloud container the full `cargo test --workspace` takes 20+ minutes; run it in
-  the background. Render crates are excluded from the sim jobs; render.yml covers them.
+- A binary built from an older checkout panics on newer species files (the schema is
+  strict). Rebuild after pulling, and run each binary against its own checkout's `data/`.
+- Run long tests and `validate` in the background. Render crates are excluded from the sim jobs; render.yml covers them.
 - `target/debug` balloons to ~27 GB across feature changes; `cargo clean` when disk
   runs out.
 - Force-push is often blocked for agents. To push a branch restarted from main:
@@ -267,19 +274,24 @@ a project folder that no longer exists; from now on put them in the repo: review
 ## 9. Next steps, in order
 
 **Implementation (sim):**
-1. Make sure #81 (multi-seed validation) and the lateral-root PR (decision 0028) merged; if the root fix moved validation, record it in decision 0028 and STATUS.
-2. Re-tune "~" parameters on the four-seed mean; pole_height_day60,
+1. Make sure the lateral-root PR (decision 0028) merged; if it moved validation,
+   record it in decision 0028 and STATUS.
+2. Vine capture sweep first: capture sweeps a fixed 6 cm, so with sowing scatter about
+   1 pole bean in 16 never finds its stake, and the seed-mean pole height partly
+   measures those misses. Batch the other variation-review items into the same model
+   bump ([handoff/implementation.md](handoff/implementation.md) step 2).
+3. Then re-tune "~" parameters on the four-seed mean; pole_height_day60,
    drought_shoot_mass and others sit at band edges since the leaf-angle fix. Fold
    research items 1 to 4 ([handoff/research.md](handoff/research.md): gm/Vcmax basis,
    a 7/25/33/42 °C development trapezoid, construction cost per organ, Medlyn g1)
    into the same model bump, since they move the same calibration.
-3. Vine capture sweep: capture sweeps a fixed 6 cm, so with sowing scatter about 1
-   pole bean in 16 never finds its stake. Batch the other variation-review items into
-   the same model bump ([handoff/implementation.md](handoff/implementation.md) step 2).
-   (The roots-through-the-wall and roots-drawn-upward bugs are fixed by decision 0028
-   and PR #84.)
-4. WP26 (save/load UI, replay markers, competition/temperature/N lenses, carbon flow
-   arrows), then WP27 (leaf energy balance), then M2 exit: 30 plants at 60 fps and
+   Validation follow-ups from #81: sort validate jobs by plant count × days,
+   descending, and give each job a one-thread rayon pool when several run at once.
+   (Roots through the pot wall: decision 0028. Roots drawn upward: viewer fix, #84/#86.)
+4. WP26: save, load and replay already exist; missing are a non-stopping
+   `Session::save_ron`, the plot save/replay done-when test, and lens data (light
+   share, organ N, per-organ carbon flux) ([handoff/implementation.md](handoff/implementation.md)
+   step 3); the UI half is the viewer's. Then WP27 (leaf energy balance), then M2 exit: 30 plants at 60 fps and
    under 20 ms per sim-day, density plateau (still weak: -43% vs -70%).
 5. M3 (WP28 to WP32): genome, pollination, breeding bench, trait discovery,
    challenges. Research round 2 (decision 0023) has the genetics.
