@@ -4,7 +4,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use ps_weather::{DateHour, HourWeather};
-use ps_world::{Action, DayRow, ObstacleSpec, PlantEntry, SeedLot, SoilEntry, SupportSpec};
+use ps_world::{
+    Action, DayRow, LensData, ObstacleSpec, PlantEntry, SeedLot, SoilEntry, SupportSpec,
+};
 
 /// One published view of the world: everything the renderer and the UI read.
 ///
@@ -55,6 +57,11 @@ pub struct Snapshot {
     pub added_obstacles: Vec<ObstacleSpec>,
     /// The chained daily hash of the last full day, if a day has ended.
     pub day_hash: Option<u64>,
+    /// Lens data of the last hour stepped (WP26), when the session records it. `None`
+    /// until an hour has been stepped since the world was built, loaded or restored
+    /// from a midnight copy. `lens.tick + 1 == tick` when it describes the hour that
+    /// led to the state shown.
+    pub lens: Option<Arc<LensData>>,
     /// Why the last action was rejected, until the next action is accepted.
     pub rejected: Option<String>,
     /// A step failed and the world stopped. Seeking back clears it.

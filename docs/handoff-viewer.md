@@ -72,7 +72,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 | 17 UI | Working: top bar, lenses with legends, charts, inspector with a why line and units (and each plant's own seed), model-card side panel, garden tools, seed library, new-run dialog. Not done: the experiment panel, and assimilation and transpiration charts (they are not in the daily rows). |
 | 18 Lenses | All seven M1 lenses read sim values. |
 | 19 Capture | Done: screenshot (P), CSV export, offline time-lapse (`--timelapse DIR --day --to-day --timelapse-hours 6-19`), and `--clean`. |
-| 20 The moments | Not started: cotyledon unfolding, phototropic lean, wilting and recovery, and the flowering cue. Done-when: the owner signs off on a 60-second sun-versus-shade clip. |
+| 20 The moments | Built (`ps_mesh::moments::pose`, `ps_view::moments`): emerging hook and cotyledons, lean toward the light, wilting and recovery, flowering cue (camera move-in and banner on sim time). Done-when: the owner signs off on a 60-second sun-versus-shade clip. |
 | 25 UI side | Done (#76). |
 
 ## 5. The look decision
@@ -100,6 +100,9 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 6. If a look option is chosen, rebase that branch onto main and gate it behind `--look`.
 
 ## 8. Gotchas
+
+- The moments are render-only posture applied after `Skeleton::lerp` in `sim_source::drive` (`ps_mesh::pose`). Picking and the inspector see the posed skeleton. A hooked hypocotyl adds `2 + Hook::POINTS` tube nodes (`nodes_after_base` counts them).
+- The flowering cue moves the auto-frame only while `CameraRig::focus` is unset; `CameraRig::cue_zoom` multiplies the framing distance.
 
 - `Skeleton::from_arena_with` lays out before coils are set. Call `skeleton.relayout()` after setting `Placement.coil`, or bases drift.
 - Axis vertex colors must count one ring per node (`nodes_after_base`), not one per organ. Otherwise coiled axes draw giant garbage triangles.
