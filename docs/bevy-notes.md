@@ -109,7 +109,10 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
   frames, each followed by a ~8 ms catch-up frame. The limiter now spins the last 2 ms
   instead of 1 ms; if bursts remain, check whether they line up with sim ticks (mesh
   rebuilds) before blaming pacing.
-- DX12 takes about 180 s to first render (Vulkan about 5 s), so DX12 is only a fallback.
+- DX12's slow cold start is FXC, the old shader compiler wgpu uses when DXC is missing.
+  ps-app now links DXC statically on Windows (Bevy feature `statically-linked-dxc`), so
+  DX12 should compile shaders far faster; to be measured on the 1070.
+- DX12 took about 180 s to first render (Vulkan about 5 s), so DX12 is only a fallback.
 - DX12 cold start was slow enough that the old fixed-frame `--screenshot` saved nothing
   or a black frame; it now waits for readiness.
 - Not done yet: wgpu's on-disk pipeline cache for Vulkan, to shorten cold starts.

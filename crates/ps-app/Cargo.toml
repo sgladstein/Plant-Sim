@@ -24,6 +24,11 @@ ps-session.workspace = true
 bevy.workspace = true
 anyhow.workspace = true
 
+# DX12 compiles shaders with the old FXC compiler unless DXC is available, which made the
+# first frame take ~180 s on the owner's GTX 1070. Link DXC statically on Windows.
+[target.'cfg(windows)'.dependencies]
+bevy = { workspace = true, features = ["statically-linked-dxc"] }
+
 [dev-dependencies]
 ps-arch.workspace = true
 
