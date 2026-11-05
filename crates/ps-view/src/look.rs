@@ -176,11 +176,48 @@ pub fn flat_cubemap(c: [f32; 3]) -> Image {
     cube_image(sky_texels_with(|_| c))
 }
 
+/// The sky cubemap for a style: the smooth gradient, or the painted sky
+/// (`crate::painterly`) when `painted`. The painted washes are computed once and cached.
+#[must_use]
+pub fn styled_sky_cubemap(painted: bool, tint: [f32; 3]) -> Image {
+    static PAINTED: std::sync::OnceLock<Vec<[f32; 3]>> = std::sync::OnceLock::new();
+    if !painted {
+        return sky_cubemap(tint);
+    }
+    let base = PAINTED.get_or_init(|| {
+        let n = crate::painterly::SKY_FACE as usize;
+        let mut v = Vec::with_capacity(n * n * 6);
+        for face in 0..6 {
+            for y in 0..n {
+                for x in 0..n {
+                    v.push(crate::painterly::sky_gradient(cube_dir(
+                        face,
+                        (x as f32 + 0.5) / n as f32,
+                        (y as f32 + 0.5) / n as f32,
+                    )));
+                }
+            }
+        }
+        v
+    });
+    let mut data = Vec::with_capacity(base.len() * 8);
+    for c in base {
+        for ch in [c[0] * tint[0], c[1] * tint[1], c[2] * tint[2], 1.0] {
+            data.extend_from_slice(&f16_bits(ch).to_le_bytes());
+        }
+    }
+    cube_image_sized(crate::painterly::SKY_FACE, data)
+}
+
 fn cube_image(texels: Vec<u8>) -> Image {
+    cube_image_sized(SKY_FACE, texels)
+}
+
+fn cube_image_sized(face: u32, texels: Vec<u8>) -> Image {
     let mut image = Image::new(
         Extent3d {
-            width: SKY_FACE,
-            height: SKY_FACE,
+            width: face,
+            height: face,
             depth_or_array_layers: 6,
         },
         TextureDimension::D2,
@@ -204,6 +241,8 @@ pub struct SkyImages {
     pub fill: Handle<Image>,
     /// Tint the backdrop was last built with.
     pub tint: [f32; 3],
+    /// Whether the backdrop is the painted sky (`Style::Painterly`).
+    pub painted: bool,
 }
 
 /// Creates the sky images (Startup, before the camera spawns).
@@ -212,16 +251,19 @@ pub(crate) fn setup_sky_images(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     backdrop: Res<Backdrop>,
+    style: Res<crate::toon::Style>,
 ) {
     let tint = [1.0; 3];
+    let painted = *style == crate::toon::Style::Painterly;
     let sky = match *backdrop {
-        Backdrop::Garden => sky_cubemap(tint),
+        Backdrop::Garden => styled_sky_cubemap(painted, tint),
         Backdrop::Plate => flat_cubemap(PAPER),
     };
     commands.insert_resource(SkyImages {
         backdrop: images.add(sky),
         fill: images.add(sky_cubemap(tint)),
         tint,
+        painted,
     });
 }
 

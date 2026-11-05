@@ -8,7 +8,8 @@
 //! plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
 //!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 //!           [--bench-frames N] [--bench-out FILE.csv]
-//!           [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated] [--backdrop garden|plate]
+//!           [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated|painterly]
+//!           [--backdrop garden|plate] [--view YAW,PITCH]
 //!           [--window WxH] [--fps-cap N]
 //! ```
 //!
@@ -69,6 +70,8 @@ struct Options {
     lens: Lens,
     charts: bool,
     inspect: Option<ps_view::Picked>,
+    /// Camera yaw and pitch, degrees (`--view`), for screenshots from a set angle.
+    view: Option<(f32, f32)>,
     captures: PathBuf,
     timelapse: Option<PathBuf>,
     to_day: Option<f64>,
@@ -137,6 +140,17 @@ fn parse_lens(name: &str) -> Result<Lens> {
     })
 }
 
+/// Parses `--view YAW,PITCH` (degrees).
+fn parse_view(v: &str) -> Result<(f32, f32)> {
+    let parsed = v
+        .split_once(',')
+        .and_then(|(a, b)| Some((a.parse::<f32>().ok()?, b.parse::<f32>().ok()?)));
+    anyhow::Context::with_context(parsed, || {
+        format!("--view takes YAW,PITCH in degrees, got {v}")
+    })
+}
+
+// One flat match arm per flag.
 #[allow(clippy::too_many_lines)]
 fn parse_args() -> Result<Options> {
     let mut o = Options {
@@ -146,6 +160,7 @@ fn parse_args() -> Result<Options> {
         lens: Lens::Off,
         charts: false,
         inspect: None,
+        view: None,
         captures: PathBuf::from("captures"),
         timelapse: None,
         to_day: None,
@@ -178,6 +193,7 @@ fn parse_args() -> Result<Options> {
             "--charts" => o.charts = true,
             "--inspect" => o.inspect = Some(parse_pick(&value()?)?),
             "--clean" => o.clean = true,
+            "--view" => o.view = Some(parse_view(&value()?)?),
             "--captures" => o.captures = PathBuf::from(value()?),
             "--timelapse" => o.timelapse = Some(PathBuf::from(value()?)),
             "--to-day" => {
@@ -203,7 +219,7 @@ fn parse_args() -> Result<Options> {
             "--look" => {
                 let v = value()?;
                 o.look = anyhow::Context::with_context(ps_view::toon::Style::parse(&v), || {
-                    format!("--look takes natural or illustrated, got {v}")
+                    format!("--look takes natural, illustrated or painterly, got {v}")
                 })?;
             }
             "--backdrop" => {
@@ -238,7 +254,7 @@ fn parse_args() -> Result<Options> {
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated] [--backdrop garden|plate] [--window WxH] [--fps-cap N]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated|painterly] [--backdrop garden|plate] [--view YAW,PITCH] [--window WxH] [--fps-cap N]"
                 );
                 std::process::exit(0);
             }
@@ -266,6 +282,14 @@ fn main() -> Result<()> {
     .add_plugins((PlantViewPlugin, ps_ui::PlantUiPlugin))
     .insert_resource(options.lens)
     .insert_resource(options.look)
+    .insert_resource(match options.view {
+        Some((yaw, pitch)) => ps_view::CameraRig {
+            yaw: yaw.to_radians(),
+            pitch: pitch.to_radians(),
+            ..default()
+        },
+        None => ps_view::CameraRig::default(),
+    })
     .insert_resource(options.backdrop)
     .insert_resource(ps_view::Selection {
         picked: options.inspect,
