@@ -25,14 +25,15 @@ pub enum Stage {
     Mature,
 }
 
-/// Thresholds of thermal time since sowing (species phenology block).
+/// Thresholds of thermal time since germination (species phenology block; decision
+/// 0011).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Thresholds {
-    /// Sowing to emergence.
+    /// Germination to emergence.
     pub emergence: DegreeDays,
-    /// Sowing to first flower.
+    /// Germination to first flower.
     pub flowering: DegreeDays,
-    /// Sowing to maturity.
+    /// Germination to maturity.
     pub maturity: DegreeDays,
 }
 
@@ -55,7 +56,7 @@ pub struct Events {
 pub struct Phenology {
     /// Current stage.
     pub stage: Stage,
-    /// Thermal time since sowing (counted only after germination for emergence).
+    /// Thermal time since sowing (reported; no threshold uses it).
     pub since_sowing: DegreeDays,
     /// Thermal time since germination.
     pub since_germination: DegreeDays,
@@ -83,20 +84,22 @@ impl Phenology {
     /// Daily step 1: advances the stage at most as far as thresholds and events allow,
     /// one stage per call, and returns the new stage if it changed.
     ///
-    /// Emergence counts thermal time from germination (§3.10: "emergence follows at
-    /// 60 to 80 °C·day"); flowering and maturity count from sowing (§3.11). Flowering
-    /// needs the first trifoliate, pod set needs a pod, seed fill needs a filling seed.
+    /// All thresholds count thermal time from germination (§3.10: "emergence follows at
+    /// 60 to 80 °C·day"; decision 0011 for flowering and maturity, as crop models count
+    /// phases from germination or emergence, so time a seed waits in dry or cold soil
+    /// does not bring flowering forward). Flowering needs the first trifoliate, pod set
+    /// needs a pod, seed fill needs a filling seed.
     pub fn advance(&mut self, th: &Thresholds, ev: Events) -> Option<Stage> {
         let next = match self.stage {
             Stage::Sown if ev.germinated => Some(Stage::Germinated),
             Stage::Germinated if self.since_germination.0 >= th.emergence.0 => Some(Stage::Emerged),
             Stage::Emerged if ev.trifoliate => Some(Stage::FirstTrifoliate),
-            Stage::FirstTrifoliate if self.since_sowing.0 >= th.flowering.0 => {
+            Stage::FirstTrifoliate if self.since_germination.0 >= th.flowering.0 => {
                 Some(Stage::Flowering)
             }
             Stage::Flowering if ev.pod => Some(Stage::PodSet),
             Stage::PodSet if ev.seed_filling => Some(Stage::SeedFill),
-            Stage::SeedFill if self.since_sowing.0 >= th.maturity.0 => Some(Stage::Mature),
+            Stage::SeedFill if self.since_germination.0 >= th.maturity.0 => Some(Stage::Mature),
             _ => None,
         };
         if let Some(s) = next {

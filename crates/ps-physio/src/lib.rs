@@ -116,6 +116,19 @@ pub enum PhysioError {
     /// The species or phenotype is unusable.
     #[error(transparent)]
     Species(#[from] SpeciesError),
+    /// The organ graph rejected an update.
+    #[error(transparent)]
+    Graph(#[from] ps_graph::GraphError),
+    /// A per-organ input does not have one entry per organ.
+    #[error("{what} has {got} entries for {want} organs")]
+    InputLength {
+        /// Which input.
+        what: &'static str,
+        /// Its length.
+        got: usize,
+        /// The arena's length.
+        want: usize,
+    },
 }
 
 #[cfg(test)]

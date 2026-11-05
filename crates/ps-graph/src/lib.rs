@@ -173,6 +173,9 @@ pub struct OrganArena {
     pub death: Vec<Option<Hours>>,
     /// Accumulated thermal age.
     pub thermal_age: Vec<DegreeDays>,
+    /// Expansion clock: thermal time scaled by the expansion temperature factor, the
+    /// time axis of the organ's expansion curve (decision 0011).
+    pub expansion_age: Vec<DegreeDays>,
     /// Expansion curve.
     pub curve: Vec<ExpansionCurve>,
     /// Specific length or area.
@@ -272,6 +275,7 @@ impl OrganArena {
         self.birth.push(o.birth);
         self.death.push(None);
         self.thermal_age.push(DegreeDays(0.0));
+        self.expansion_age.push(DegreeDays(0.0));
         self.curve.push(o.curve);
         self.specific.push(o.specific);
         self.size
@@ -417,6 +421,7 @@ impl OrganArena {
             f(self.birth[i].0);
             f(self.death[i].map_or(u64::MAX, |h| h.0));
             f(self.thermal_age[i].to_bits());
+            f(self.expansion_age[i].to_bits());
             f(self.curve[i].duration.to_bits());
             f(self.curve[i].t_max.to_bits());
             f(self.curve[i].potential.to_bits());

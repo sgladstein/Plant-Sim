@@ -208,7 +208,7 @@ Turbid-medium voxel model (Beer's law with a leaf-angle G-function, RATP and Sin
 - **Per light class, not per leaf.** Each hour each plant bins its leaves' absorbed PAR into 16 log-spaced classes from 1 to 2,000 µmol m⁻² s⁻¹, separately for sunlit and shaded fractions. Leaf temperature equals air temperature in M0; a leaf energy balance is an M2 upgrade. The solver runs once per class; each leaf multiplies the class rate by its area and fraction. Cost: 30 plants × 32 classes × 24 hours ≈ 23,000 solves per sim-day, well under the M2 budget.
 - **Leaf aging.** Capacity declines linearly with thermal age after full expansion to 40% at the end of lifespan; stands in for nitrogen remobilization until M2, when leaf nitrogen takes over.
 - **Starting parameters for bean** (§3.16): Vcmax 89, Jmax 160, dark respiration 0.9 µmol m⁻² s⁻¹ at 25 °C, Medlyn g1 \~4 kPa^0.5, CO2 420 ppm adjustable.
-- **Maintenance respiration**: 0.015 g C per g N per day at 20 °C with Q10 = 2, per organ, paid from the organ reserve. **Growth respiration**: 20% of carbon allocated to growth (construction cost 1.25).
+- **Maintenance respiration**: 0.218 g C per g N per day at 20 °C (Ryan 1991; amended from 0.015, a per-dry-mass value, by decision 0011) with Q10 = 2, per organ, paid from the organ reserve. **Growth respiration**: 20% of carbon allocated to growth (construction cost 1.25).
 
 ### 3.9 Carbon allocation
 
@@ -216,12 +216,12 @@ Each organ has reserve R (g C), structural mass W (g dry matter) and concentrati
 
 Hourly:
 
-1. **Demand.** Potential growth this hour = derivative of the organ's expansion curve × its (possibly reduced) potential final size × the temperature growth multiplier (§3.11) ×, for expanding organs, the water stress factor. Demand in carbon = potential growth × 0.45 g C per g dry matter × 1.25.
+1. **Demand.** Potential growth this hour = the increment of the organ's expansion curve over the hour on its expansion clock (thermal time × the temperature growth multiplier of §3.11, so cold delays growth rather than destroying it; decision 0011) × the species potential final size ×, for expanding organs, the water stress factor. Demand in carbon = potential growth × 0.45 g C per g dry matter × 1.25.
 2. **Priority.** Seeds in pods 1.0, pods 0.9, expanding leaves and internodes 0.7, roots 0.6 + 0.4 × (1 - FTSW), secondary thickening 0.4, reserve refill 0.2. The root term is the one encoded piece of functional balance and is labeled as such in the UI.
-3. **Transport.** One pass over edges: flux from i to j = k\_ij × (C\_i - C\_j) × dt, clamped so transport alone never takes a reserve below zero. A crude Münch flow, enough to produce gradients from source leaves to sinks.
-4. **Growth.** Realized growth = min(demand × priority, max(0, R - 0.05 W)). Carbon used leaves R; growth respiration goes to the ledger; the rest becomes structural mass.
+3. **Transport.** One backward-Euler diffusion step per hour on the organ tree, solved exactly in O(n): flux from i to j = k\_ij × (C\_i' - C\_j') × dt at the end-of-step concentrations. Unconditionally stable and monotone, so transport never takes a reserve below zero (amended from one explicit pass by decision 0011). A crude Münch flow, enough to produce gradients from source leaves to sinks.
+4. **Growth.** Realized growth = min(demand, priority × max(0, R - 0.05 W)) (amended by decision 0009: priority is the share of the available reserve an organ spends per hour, so carbon-rich organs grow at potential). Carbon used leaves R; growth respiration goes to the ledger; the rest becomes structural mass.
 5. **Deficit.** Unmet demand accumulates in the organ; potential final size becomes (1 - unmet / cumulative potential demand) × the species value. No catch-up: a leaf that grew in shade ends smaller.
-6. **Starvation.** An organ whose reserve has been negative after maintenance for the species starvation window (3 days for bean leaves and branches; 14 days for tree branches) dies at the next daily step; 30% of its structural carbon is resorbed to its parent, the rest is litter. An axis dies when its basal internode dies.
+6. **Starvation.** An organ whose reserve has been negative after maintenance for the species starvation window (3 days for bean leaves and branches; 14 days for tree branches) dies at the next daily step; 30% of its structural carbon is resorbed to its parent, which also pays the dead organ's negative reserve (decision 0011); the rest is litter. An axis dies when its basal internode dies.
 
 Emergent consequences this is designed to give: shaded lower leaves and branches starve and drop; drought shifts growth to roots; fruit load starves late leaves and ends vegetative growth; pruning releases buds below the cut.
 
@@ -236,7 +236,7 @@ Emergent consequences this is designed to give: shaded lower leaves and branches
 ### 3.11 Phenology, temperature and reproduction
 
 - **Thermal time**: three-point response, zero below 8 °C, linear to an optimum at 28 °C, falling to zero at 38 °C (\~; species cardinal temperatures), accumulated hourly.
-- **Stages** on the standard V and R scale: sowing, emergence, first trifoliate, further vegetative nodes, flowering, pod set, seed fill, maturity. Greenhouse data put sowing to maturity near 800 °C·day; cycle lengths of 65 to 93 days; flowering near 40% of the cycle (§8.2).
+- **Stages** on the standard V and R scale: sowing, emergence, first trifoliate, further vegetative nodes, flowering, pod set, seed fill, maturity. Phase thresholds count thermal time from germination, so a seed waiting in dry or cold soil does not flower early (decision 0011). Greenhouse data put sowing to maturity near 800 °C·day; cycle lengths of 65 to 93 days; flowering near 40% of the cycle (§8.2).
 - **Flowers** open over \~10 days per raceme. Each flower sets a pod with a probability driven by: the raceme's parent internode reserve over the previous three days (carbon), daytime temperature above \~32 °C (heat abortion through pollen failure), and FTSW below 0.3 (drought abortion). Pod number is the yield component drought and heat hit hardest in beans, and this is how the model reproduces it.
 - **Pods** expand over \~20 days to full length, then **seeds** fill over \~20 days as the strongest sinks; 3 to 6 seeds per pod; final seed mass is a species parameter reduced by unmet demand.
 - **Temperature on growth**: an expansion multiplier, zero at 5 °C, one from 25 to 30 °C, zero at 40 °C. Leaves die at -1 °C (frost preset). Heat waves abort flowers and raise respiration.
@@ -562,7 +562,7 @@ Four levels, each with a named reference and a tolerance. All data comes from pu
 | Coupled Farquhar and Medlyn gas exchange | R package plantecophys, Photosyn() | PAR 50 to 2,000 × temperature 10 to 40 °C × VPD 0.5 to 4 kPa × CO2 280, 420, 800 ppm | 2% on assimilation, conductance, transpiration |
 | Solar position and day length | NOAA solar calculator or pvlib | 10 dates × 3 latitudes | 0.5° |
 | Light interception, uniform canopy | Beer's law closed form | leaf area index 0.5 to 6, G = 0.5 | 2% on absorbed fraction |
-| Light interception, single plant | Own Monte Carlo ray tracer in Python, committed with its seed | 60-day bean geometry exported from the sim | 10% per leaf, 3% plant total |
+| Light interception, single plant | Own Monte Carlo ray tracer in Python, committed with its seed | 60-day bean geometry exported from the sim | 0.10 absolute per leaf on the daily light index (95% of leaves for M0, decision 0008), 3% relative on the area-weighted plant total |
 | Soil water | Closed-form drainage of a wet column to field capacity; mass closure | loam, sand, clay | closure 1e-9 relative; drainage time within 5% |
 | Thermal time | Hand-computed hourly sums | 5 daily temperature traces | exact to rounding |
 | Expansion curve | Integral of the beta function equals potential size | 20 parameter sets (property test) | 1e-6 |

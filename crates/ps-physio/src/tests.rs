@@ -193,7 +193,13 @@ fn stages_advance_in_order() {
     ev.seed_filling = true;
     assert_eq!(ph.advance(&th, ev), Some(Stage::PodSet));
     assert_eq!(ph.advance(&th, ev), Some(Stage::SeedFill));
-    assert_eq!(ph.advance(&th, ev), None, "maturity at 850 Cd");
+    assert_eq!(
+        ph.advance(&th, ev),
+        None,
+        "maturity at 820 Cd since germination"
+    );
+    // The 30 Cd the seed waited before germinating do not count (decision 0011).
+    assert!((ph.since_sowing.0 - ph.since_germination.0 - 30.0).abs() < 1e-12);
     ph.accumulate(D(400.0));
     assert_eq!(ph.advance(&th, ev), Some(Stage::Mature));
     assert_eq!(ph.advance(&th, ev), None);

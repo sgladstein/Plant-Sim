@@ -168,7 +168,7 @@ fn unmet_demand_shrinks_final_size() {
         run_hour(&mut hungry, &feed, &mut lh, 25.0);
     }
     let curve = fed.curve[fl.index()];
-    assert!(curve.is_complete(fed.thermal_age[fl.index()]));
+    assert!(curve.is_complete(fed.expansion_age[fl.index()]));
     let full = fed.structural(fl).0 - 0.01;
     let short = hungry.structural(hl).0 - 0.01;
     assert!(
@@ -210,4 +210,153 @@ proptest! {
             }
         }
     }
+}
+
+/// Decision 0011: cold slows the expansion clock, so a fed leaf still reaches its
+/// potential, later; it is not cut short.
+#[test]
+fn cold_delays_expansion_without_loss() {
+    let p = params();
+    let a = Allometry::generic_herb();
+    let grow = |t: f64| {
+        let mut g = OrganArena::new();
+        let l = g.add(&organ(OrganKind::Leaf, None, 0.2, 10.0), &a).unwrap();
+        let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+        let none = vec![GramsC(0.0)];
+        let mut hours = 0;
+        while !g.curve[l.index()].is_complete(g.expansion_age[l.index()]) && hours < 24 * 200 {
+            run_hour(&mut g, &none, &mut ledger, t);
+            hours += 1;
+        }
+        (g.structural(l).0 - 0.01, hours)
+    };
+    let (warm, warm_h) = grow(25.0);
+    let (cold, cold_h) = grow(15.0);
+    assert!(
+        (warm - 0.2).abs() < 1e-3 && (cold - 0.2).abs() < 1e-3,
+        "{warm} {cold}"
+    );
+    assert!(cold_h > 2 * warm_h, "{cold_h} vs {warm_h} hours");
+}
+
+/// Decision 0011: a starved organ's negative reserve is charged to its living ancestor,
+/// so litter is never negative.
+#[test]
+fn starved_debt_is_charged_to_the_ancestor() {
+    let p = params();
+    let (mut g, [_, i, l1, _]) = plant(0.0);
+    g.reserve[l1.index()] = GramsC(-0.002);
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    g.starving_hours[l1.index()] = p.starvation_hours;
+    let before = g.reserve[i.index()].0;
+    let deaths = allocation::starvation_deaths(&mut g, &p, Hours(24), &mut ledger).unwrap();
+    assert_eq!(deaths.len(), 1);
+    let d = deaths[0];
+    let structural = 0.01 * p.carbon_fraction;
+    assert!((d.litter.0 - structural * (1.0 - p.resorption_fraction)).abs() < 1e-15);
+    assert!((d.resorbed.0 - (structural * p.resorption_fraction - 0.002)).abs() < 1e-15);
+    assert!((g.reserve[i.index()].0 - before - d.resorbed.0).abs() < 1e-15);
+    assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-9);
+}
+
+#[test]
+fn inputs_must_cover_every_organ() {
+    let (mut g, _) = plant(0.1);
+    let mut ledger = CarbonLedger::start(&g, params().carbon_fraction);
+    let temps = vec![Celsius(20.0); g.len() - 1];
+    let income = vec![GramsC(0.0); g.len()];
+    let r = allocation::hourly(
+        &mut g,
+        &Allometry::generic_herb(),
+        &params(),
+        &temp(),
+        &HourInputs {
+            temperature: &temps,
+            income: &income,
+            ftsw: 1.0,
+            stress: 1.0,
+        },
+        &mut ledger,
+    );
+    assert!(matches!(
+        r,
+        Err(crate::PhysioError::InputLength {
+            what: "temperature",
+            got: 3,
+            want: 4
+        })
+    ));
+}
+
+/// A random tree of stem segments and leaves with random masses and reserves.
+fn random_tree(parents: &[usize], masses: &[f64], reserves: &[f64]) -> OrganArena {
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let mut ids: Vec<OrganId> = Vec::new();
+    for (i, (&m, &r)) in masses.iter().zip(reserves).enumerate() {
+        let parent = (i > 0).then(|| ids[parents[i - 1] % i]);
+        let kind = if i % 3 == 2 {
+            OrganKind::Leaf
+        } else {
+            OrganKind::Internode
+        };
+        let id = g.add(&organ(kind, parent, 0.0, r), &a).unwrap();
+        g.grow(id, GramsDM(m), &a).unwrap();
+        ids.push(id);
+    }
+    g
+}
+
+proptest! {
+    /// Decision 0011: the implicit step conserves carbon, keeps every concentration
+    /// within the range of the old ones (monotone).
+    #[test]
+    fn implicit_transport_is_conservative_and_monotone(
+        parents in proptest::collection::vec(0usize..1000, 15),
+        masses in proptest::collection::vec(0.0f64..0.5, 16),
+        reserves in proptest::collection::vec(0.0f64..0.05, 16),
+    ) {
+        let p = params();
+        let mut g = random_tree(&parents, &masses, &reserves);
+        let w: Vec<f64> = g.alive_ids().map(|id| g.structural(id).0.max(allocation::MIN_MASS)).collect();
+        let c0: Vec<f64> = g.reserve.iter().zip(&w).map(|(r, w)| r.0 / w).collect();
+        let before: f64 = g.reserve.iter().map(|x| x.0).sum();
+        allocation::transport(&mut g, &p);
+        let after: f64 = g.reserve.iter().map(|x| x.0).sum();
+        prop_assert!((after - before).abs() <= 1e-12 * before.max(1e-12));
+        let lo = c0.iter().copied().fold(f64::INFINITY, f64::min);
+        let hi = c0.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        for (r, w) in g.reserve.iter().zip(&w) {
+            let c = r.0 / w;
+            prop_assert!(c >= lo - 1e-9 * hi.max(1e-9) && c <= hi * (1.0 + 1e-9) + 1e-12, "{c} not in [{lo}, {hi}]");
+        }
+    }
+}
+
+/// The implicit step moves carbon beyond the first edge in one hour (an explicit pass
+/// moves it one edge), with a profile that falls monotonically along the chain. How
+/// far it reaches is set by the phloem conductance (a WP12 tuning parameter).
+#[test]
+fn implicit_transport_crosses_a_chain_in_one_hour() {
+    let p = params();
+    let n = 20;
+    let parents: Vec<usize> = (0..n - 1).collect();
+    let masses = vec![0.05; n];
+    let mut reserves = vec![0.0; n];
+    reserves[0] = 0.1;
+    let mut g = OrganArena::new();
+    let a = Allometry::generic_herb();
+    let mut ids = Vec::new();
+    for i in 0..n {
+        let parent = (i > 0).then(|| ids[parents[i - 1]]);
+        let id = g
+            .add(&organ(OrganKind::Internode, parent, 0.0, reserves[i]), &a)
+            .unwrap();
+        g.grow(id, GramsDM(masses[i]), &a).unwrap();
+        ids.push(id);
+    }
+    allocation::transport(&mut g, &p);
+    let r: Vec<f64> = ids.iter().map(|id| g.reserve[id.index()].0).collect();
+    assert!(r[4] > 1e-7, "four edges away: {}", r[4]);
+    assert!(r.windows(2).all(|w| w[0] >= w[1] && w[1] >= 0.0), "{r:?}");
 }
