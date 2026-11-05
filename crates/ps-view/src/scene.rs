@@ -169,14 +169,22 @@ pub struct SceneIndex {
     lens: Option<Lens>,
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub(crate) fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut toons: ResMut<Assets<Toon>>,
     mut index: ResMut<SceneIndex>,
+    backdrop: Res<crate::look::Backdrop>,
 ) {
+    let plate = *backdrop == crate::look::Backdrop::Plate;
+    // The plate hides the bench and garden; the pots stand on the paper.
+    let dressing_visibility = if plate {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    };
     let templates = TemplateKey::all()
         .into_iter()
         .map(|k| {
@@ -266,6 +274,7 @@ pub(crate) fn setup_scene(
         MeshMaterial3d(dressing_material.clone()),
         Transform::from_xyz(0.0, floor, 0.0),
         Floor::Deck,
+        dressing_visibility,
     ));
     let garden_mesh = meshes.add(colored(&ColoredMesh::default()));
     let background_material = toons.add(toon_background(StandardMaterial {
@@ -281,6 +290,7 @@ pub(crate) fn setup_scene(
         MeshMaterial3d(background_material),
         Transform::from_xyz(0.0, floor - crate::dressing::BENCH_HEIGHT, 0.0),
         Floor::Dressing,
+        dressing_visibility,
         // 20k grass blades in the shadow map cost time and speckle the lawn.
         bevy::light::NotShadowCaster,
     ));
@@ -288,7 +298,11 @@ pub(crate) fn setup_scene(
         bench: bench_mesh,
         garden: garden_mesh,
     });
-    let g = crate::look::GROUND;
+    let g = if plate {
+        crate::look::PAPER
+    } else {
+        crate::look::GROUND
+    };
     let ground = toons.add(toon_background(StandardMaterial {
         base_color: Color::linear_rgb(g[0], g[1], g[2]),
         perceptual_roughness: 1.0,
@@ -298,7 +312,7 @@ pub(crate) fn setup_scene(
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(240.0, 240.0))),
         MeshMaterial3d(ground),
-        Transform::from_xyz(0.0, floor - crate::dressing::BENCH_HEIGHT, 0.0),
+        Transform::from_xyz(0.0, floor - backdrop.ground_drop(), 0.0),
         Floor::Ground,
     ));
     index.root = Some(root);
@@ -565,6 +579,7 @@ pub(crate) fn sync_scene(
     mut floors: Query<(&Floor, &mut Transform)>,
     dressing: Option<Res<DressingMeshes>>,
     style: Res<Style>,
+    backdrop: Res<crate::look::Backdrop>,
 ) {
     let Some(root) = index.root else {
         return;
@@ -583,7 +598,7 @@ pub(crate) fn sync_scene(
         }
         let layout = deck_layout(&garden.pots);
         // The lawn below the soil surface, so walls and cloth posts stand on it.
-        let ground = layout.map_or(-1.0, |(top, _)| top.y - crate::dressing::BENCH_HEIGHT);
+        let ground = layout.map_or(-1.0, |(top, _)| top.y - backdrop.ground_drop());
         for pot in &garden.pots {
             let scene = spawn_pot(&mut commands, &mut meshes, &assets, root, pot, ground);
             index.pots.push(scene);
@@ -594,7 +609,7 @@ pub(crate) fn sync_scene(
                 let _ = meshes.insert(&d.garden, colored(&garden_dressing(size)));
             }
             for (floor, mut t) in &mut floors {
-                let ground = top.y - crate::dressing::BENCH_HEIGHT;
+                let ground = top.y - backdrop.ground_drop();
                 match floor {
                     Floor::Deck => t.translation = top,
                     Floor::Ground => t.translation.y = ground,

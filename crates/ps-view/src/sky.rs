@@ -93,6 +93,7 @@ pub(crate) fn update_sky(
     mut suns: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
     mut images: ResMut<Assets<Image>>,
     mut sky_images: ResMut<crate::look::SkyImages>,
+    backdrop: Res<crate::look::Backdrop>,
     mut cameras: Query<
         (
             &mut bevy::light::Skybox,
@@ -111,10 +112,12 @@ pub(crate) fn update_sky(
     // The sky cubemap does the fill now; a little flat ambient keeps night readable.
     ambient.brightness = 15.0 + 40.0 * daylight;
     let tint = crate::look::sky_tint(sin_e, sky.cloud_fraction);
-    if tint
-        .iter()
-        .zip(&sky_images.tint)
-        .any(|(a, b)| (a - b).abs() > 0.01)
+    let plate = *backdrop == crate::look::Backdrop::Plate;
+    if !plate
+        && tint
+            .iter()
+            .zip(&sky_images.tint)
+            .any(|(a, b)| (a - b).abs() > 0.01)
     {
         if let Some(mut img) = images.get_mut(&sky_images.backdrop) {
             *img = crate::look::sky_cubemap(tint);
@@ -130,6 +133,14 @@ pub(crate) fn update_sky(
         let h = crate::look::sky_gradient(Vec3::X, tint);
         let k = backdrop * crate::look::EXPOSURE;
         fog.color = Color::linear_rgb(h[0] * k, h[1] * k, h[2] * k);
+        if plate {
+            // A paper sweep: the backdrop and fog are the paper at a fixed brightness,
+            // whatever the hour, so the horizon disappears.
+            skybox.brightness = 1.22 / crate::look::EXPOSURE;
+            let p = crate::look::PAPER;
+            fog.color = Color::linear_rgb(1.22 * p[0], 1.22 * p[1], 1.22 * p[2]);
+            clear.0 = fog.color;
+        }
     }
     for (mut light, mut t) in &mut suns {
         // Direct light only; clouds turn it into ambient.

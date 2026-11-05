@@ -8,7 +8,7 @@
 //! plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
 //!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 //!           [--bench-frames N] [--bench-out FILE.csv]
-//!           [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated]
+//!           [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated] [--backdrop garden|plate]
 //!           [--window WxH] [--fps-cap N]
 //! ```
 //!
@@ -82,6 +82,7 @@ struct Options {
     bench_out: PathBuf,
     demo: bool,
     look: ps_view::toon::Style,
+    backdrop: ps_view::look::Backdrop,
     scenario: PathBuf,
     data: Option<PathBuf>,
     fps_cap: Option<f64>,
@@ -136,6 +137,7 @@ fn parse_lens(name: &str) -> Result<Lens> {
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_args() -> Result<Options> {
     let mut o = Options {
         day: 0.0,
@@ -157,6 +159,7 @@ fn parse_args() -> Result<Options> {
         bench_out: PathBuf::from("frame-times.csv"),
         demo: false,
         look: ps_view::toon::Style::default(),
+        backdrop: ps_view::look::Backdrop::default(),
         scenario: PathBuf::from(sim_source::DEFAULT_SCENARIO),
         data: None,
         fps_cap: None,
@@ -203,6 +206,13 @@ fn parse_args() -> Result<Options> {
                     format!("--look takes natural or illustrated, got {v}")
                 })?;
             }
+            "--backdrop" => {
+                let v = value()?;
+                o.backdrop =
+                    anyhow::Context::with_context(ps_view::look::Backdrop::parse(&v), || {
+                        format!("--backdrop takes garden or plate, got {v}")
+                    })?;
+            }
             "--fps-cap" => {
                 o.fps_cap = Some(anyhow::Context::context(
                     value()?.parse::<f64>(),
@@ -228,7 +238,7 @@ fn parse_args() -> Result<Options> {
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated] [--window WxH] [--fps-cap N]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated] [--backdrop garden|plate] [--window WxH] [--fps-cap N]"
                 );
                 std::process::exit(0);
             }
@@ -256,6 +266,7 @@ fn main() -> Result<()> {
     .add_plugins((PlantViewPlugin, ps_ui::PlantUiPlugin))
     .insert_resource(options.lens)
     .insert_resource(options.look)
+    .insert_resource(options.backdrop)
     .insert_resource(ps_view::Selection {
         picked: options.inspect,
     })

@@ -58,6 +58,7 @@ impl Plugin for PlantViewPlugin {
         app.init_resource::<Garden>()
             .init_resource::<SkyState>()
             .init_resource::<Lens>()
+            .init_resource::<look::Backdrop>()
             .init_resource::<CameraRig>()
             .init_resource::<Selection>()
             .init_resource::<scene::SceneIndex>()
