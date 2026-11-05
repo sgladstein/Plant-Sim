@@ -255,6 +255,7 @@ mod tests {
                 origin: Vec3::ZERO,
                 organs,
                 blade_aspect: None,
+                container: None,
             },
             water_stress: 1.0,
             organ_values: std::collections::BTreeMap::new(),
