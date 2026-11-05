@@ -11,6 +11,9 @@ publish.workspace = true
 ps-units.workspace = true
 ps-soil.workspace = true
 ps-light.workspace = true
+ps-physio = { path = "../ps-physio" }
+ps-graph.workspace = true
+ps-species.workspace = true
 libm.workspace = true
 
 [dev-dependencies]
@@ -25,4 +28,8 @@ workspace = true
 
 [[bench]]
 name = "light"
+harness = false
+
+[[bench]]
+name = "physio"
 harness = false

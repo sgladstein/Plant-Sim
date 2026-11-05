@@ -448,8 +448,11 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "libm",
+ "ps-graph",
  "ps-light",
+ "ps-physio",
  "ps-soil",
+ "ps-species",
  "ps-units",
 ]
 
