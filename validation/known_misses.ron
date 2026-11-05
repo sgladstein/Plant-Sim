@@ -1,12 +1,5 @@
 // Validation targets expected to miss until a named work package (WP11). `ps-cli
 // validate` reports these as "known miss" and does not fail the build on them; a new
 // miss fails it, and a listed target that starts passing is reported as "fixed" so it
-// can be removed. WP12 (tuning and lock) aims to empty this list.
-KnownMisses(misses: [
-  KnownMiss(id: "drought_pods", until: "WP12",
-    why: "pods fall 12% against 30 to 90%: pod set reads the daily FTSW minimum only, and the sink feedback hides the carbon shortfall"),
-  KnownMiss(id: "shade_internode", until: "WP12",
-    why: "a neutral shade cloth leaves red:far-red unchanged, so shade avoidance never triggers; low light itself does not lengthen internodes yet"),
-  KnownMiss(id: "shade_sla", until: "WP12",
-    why: "SLA responds to red:far-red only, not to low light, so a neutral cloth leaves it unchanged"),
-])
+// can be removed. WP12 (tuning and lock) emptied this list: every M0 check passes.
+KnownMisses(misses: [])

@@ -25,11 +25,14 @@ cargo run --release -p ps-app -- [--day N] [--speed H] [--paused] [--lens NAME] 
                                  [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 ```
 
-`--present` and `--frame-latency` set the swap chain's present mode (default auto vsync)
-and maximum queued frames, for frame-pacing tests. `--bench-frames N [--bench-out FILE.csv]`
+`--present` and `--frame-latency` set the swap chain's present mode and maximum queued
+frames. **The default is mailbox** (Bevy falls back to immediate, then FIFO) with a frame
+cap at the monitor's refresh rate (60 if unknown); `--fps-cap N` changes the cap, 0 turns
+it off, and FIFO/auto vsync are never capped. `--window WxH` sets the logical window size
+and keeps it; without it the 1600x900 default shrinks to fit 92% of the primary monitor. `--bench-frames N [--bench-out FILE.csv]`
 records N frame times (real time between frames, so vsync waits count) after the pipelines
 are ready and a 120-frame warm-up, writes one row per frame plus a `# summary` line
-(adapter, backend, size, present mode, mean, p50, p95, p99, max), prints the summary, and
+(adapter, backend, size, present mode, frame latency, frame cap, mean, p50, p95, p99, max), prints the summary, and
 exits. Example: `plant-sim --day 45 --present fifo --frame-latency 2 --bench-frames 2000`.
 
 Lens names: off, light, soil-water, plant-water, roots, carbon, phenology, shade.
@@ -94,10 +97,19 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
 - With no `WGPU_BACKEND` set, wgpu picked **Vulkan** on the owner's PC (not DX12). Keep
   that: Vulkan is twice as fast here (it runs at ~51% GPU, so it is CPU/submit bound;
   DX12 sits at 98% GPU). `WGPU_BACKEND=dx12` remains the fallback.
-- Both are far under the 16 ms budget. The vsync-on spikes (missed vblanks with 3 ms of
-  work) are open: compare `--present fifo|mailbox|auto` and `--frame-latency 2|3` with a
-  frame-time histogram per backend. When ps-session drives the view, snapshot reads must
-  not block the render thread on a lock.
+- Both are far under the 16 ms budget. Re-run on 58807c6 (2000 frames): Vulkan FIFO mean
+  16.66, p95 30.5, p99 31.4 ms, with 7.2% of frames ≥ 28 ms (one every ~14 frames, a
+  ~64 Hz present cadence beating against 60 Hz, likely the virtual display); frame
+  latency 2 vs 3 and window size made no difference. Vulkan mailbox: mean 4.0, p99 4.4,
+  no spikes, uncapped (~250 fps). DX12 FIFO: p95 17.5, p99 32.7, 4.3% irregular spikes.
+  Hence the mailbox + frame cap default. Snapshot reads clone an `Arc` under a lock held
+  only for the clone, so the render thread never waits on sim work.
+- Real sim on 74132fc (Vulkan, capped mailbox at 60, day 45.5): mean 16.67, p95 17.2,
+  p99 29.8 ms; spikes ≥ 28 ms down to 2.3–2.8%, in bursts with quiet stretches of 500+
+  frames, each followed by a ~8 ms catch-up frame. The limiter now spins the last 2 ms
+  instead of 1 ms; if bursts remain, check whether they line up with sim ticks (mesh
+  rebuilds) before blaming pacing.
+- DX12 takes about 180 s to first render (Vulkan about 5 s), so DX12 is only a fallback.
 - DX12 cold start was slow enough that the old fixed-frame `--screenshot` saved nothing
   or a black frame; it now waits for readiness.
 - Not done yet: wgpu's on-disk pipeline cache for Vulkan, to shorten cold starts.

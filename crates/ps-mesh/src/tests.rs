@@ -6,8 +6,8 @@ use ps_units::{GramsC, GramsDM, GramsN, Hours, MPerG, Radians};
 
 use crate::demo::{DemoParams, demo_bean, demo_origin};
 use crate::{
-    AxisKind, AxisSignature, AxisStyle, InstanceOptions, MeshData, Skeleton, Template, TemplateKey,
-    TubeNode, axes, axis_mesh, build_template, droop_level, instances, tube,
+    Axis, AxisKind, AxisSignature, AxisStyle, InstanceOptions, MeshData, Skeleton, Template,
+    TemplateKey, TubeNode, axes, axis_mesh, build_template, droop_level, instances, tube,
 };
 
 fn organ(kind: OrganKind, parent: Option<OrganId>, order: u8, mass: f64, d: [f64; 3]) -> NewOrgan {
@@ -391,4 +391,85 @@ fn ids_are_stable_across_hours() {
         assert_eq!(a.kind[i], b.kind[i]);
         assert_eq!(a.parent[i], b.parent[i]);
     }
+}
+
+#[test]
+fn partial_attachment_and_root_cohorts() {
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let down = [0.0, 0.0, -1.0];
+    let seed = g
+        .add(&organ(OrganKind::Seed, None, 0, 0.4, down), &a)
+        .unwrap();
+    let tap = g
+        .add(&organ(OrganKind::Root, Some(seed), 0, 1.0, down), &a)
+        .unwrap();
+    let _lat = g
+        .add(
+            &organ(OrganKind::Root, Some(tap), 1, 1.0, [1.0, 0.0, 0.0]),
+            &a,
+        )
+        .unwrap();
+    let plain = Skeleton::from_arena(&g, [0.0; 3]);
+    let s = Skeleton::from_arena_with(&g, [0.0; 3], &[1.0, 1.0, 0.25], &[1.0, 1.0, 4.0]);
+    let tap_p = s.organs[1];
+    let lat = s.organs[2];
+    // The lateral cohort starts a quarter of the way down the taproot...
+    let expect = tap_p.base.lerp(tap_p.tip(), 0.25);
+    assert!((lat.base - expect).length() < 1e-6);
+    // ...and is drawn as one of its four roots.
+    assert!((lat.length - plain.organs[2].length / 4.0).abs() < 1e-6);
+    // Blending keeps the attachment.
+    let half = Skeleton::lerp(&s, &s, 0.5);
+    assert!((half.organs[2].base - expect).length() < 1e-6);
+}
+
+#[test]
+fn root_cohorts_draw_as_spread_copies() {
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let down = [0.0, 0.0, -1.0];
+    let seed = g
+        .add(&organ(OrganKind::Seed, None, 0, 0.4, down), &a)
+        .unwrap();
+    let tap = g
+        .add(&organ(OrganKind::Root, Some(seed), 0, 1.0, down), &a)
+        .unwrap();
+    let _lat = g
+        .add(
+            &organ(OrganKind::Root, Some(tap), 1, 1.0, [1.0, 0.0, 0.0]),
+            &a,
+        )
+        .unwrap();
+    let s = Skeleton::from_arena_with(&g, [0.0; 3], &[1.0, 1.0, 0.5], &[1.0, 1.0, 4.0]);
+    let all = axes(&s, true);
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0].copies, 1);
+    let cohort = &all[1];
+    assert_eq!(cohort.copies, 4);
+    let single = Axis {
+        copies: 1,
+        ..cohort.clone()
+    };
+    let one = axis_mesh(&s, &single, AxisStyle::ROOT);
+    let four = axis_mesh(&s, cohort, AxisStyle::ROOT);
+    assert_eq!(four.positions.len(), 4 * one.positions.len());
+    assert!(four.is_well_formed());
+    // Every copy starts at the same point on the taproot and points a different way
+    // around it (the taproot runs along z, so the copies differ in x-y direction).
+    let n = one.positions.len();
+    let tips: Vec<Vec3> = (0..4)
+        .map(|k| Vec3::from(four.positions[k * n + n - 1]))
+        .collect();
+    for i in 0..4 {
+        for j in i + 1..4 {
+            assert!(
+                (tips[i] - tips[j]).length() > 1e-4,
+                "copies {i} and {j} overlap"
+            );
+        }
+    }
+    // Huge cohorts are capped.
+    let big = Skeleton::from_arena_with(&g, [0.0; 3], &[1.0, 1.0, 0.5], &[1.0, 1.0, 500.0]);
+    assert_eq!(big.organs[2].copies, crate::MAX_COPIES);
 }

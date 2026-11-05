@@ -18,8 +18,10 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 8 Herb architecture and roots | #9 | done (PR #27; decision 0013) |
 | 9 World | #10 | done (PR #29; decision 0014) |
 | 10 Export and CLI | #11 | done (PR #31; decision 0015, docs/cli.md) |
-| 11 Validation harness | #12 | done (this PR; decision 0017, validation/README.md) |
-| 12 Tuning and lock | #13 | next: empty validation/known_misses.ron |
+| 11 Validation harness | #12 | done (PR #39; decision 0017, validation/README.md) |
+| 12 Tuning and lock | #13 | done (this PR; decision 0018). Model 0.2.0; every M0 check passes in four weather years; known-miss list empty |
+
+**M0 exit (§7):** the validation report passes every M0 gate, the 90-day run is deterministic (golden hashes, Linux = Windows, debug = release), frost kills the plant for good, and the known limits are in decision 0018 and the model cards. The owner signs off M0.
 
 ## M1 groundwork (parallel to M0, viewer thread)
 | WP | State |
@@ -27,17 +29,18 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 13 Lock the engine | Bevy 0.20.1 + bevy_egui 0.43.1 pinned (docs/bevy-notes.md); waiting on the owner's screenshot from the GTX 1070 (CI artifact `plant-sim-windows`) |
 | 14 Mesh generation (ps-mesh) | done (PR #23) |
 | 15 Scene sync and look | started: ps-view draws two rhizobox pots, tubes and instanced organs, 2% rebuild rule, sky from ps-weather, auto-framing orbit camera, high-speed daily-mean light |
-| 16 Sim thread | sim side done (PR #32, decision 0016): ps-session runs the world on its own thread, double-buffered `Snapshot`, time commands, seek by midnight copies, session hash equals replay hash. ps-app side (Session resource, Garden from snapshot plants and positions) is the viewer thread's; `demo_source` stands in until then |
+| 16 Sim thread | done: sim side PR #32 (decision 0016); viewer side (this PR): ps-app runs the scenario on ps-session by default and draws its snapshots (`--demo` keeps the stand-ins). Skeletons use ps-arch's attach and multiplicity (matches `geometry::layout`, tested); every lens reads sim values |
 | 17 UI | started: ps-ui top bar (speeds, steps, replay scrubber) and lens panel with legends |
-| 18 Lenses | framework and all seven M1 lenses; Light and Shade signal run the real ps-light on stand-in plants; the rest are stand-in data, flagged in the legend |
+| 18 Lenses | framework and all seven M1 lenses, all on sim data since WP16: absorbed PAR from each leaf's light coefficients under the hour's weather and shade cloth, R:FR, reserve concentration, thermal age, root age, the stress factor, FTSW on the soil slice through the plant |
 
-The viewer reads `ps_view::Garden` and `SkyState` only. Swapping the stand-in for ps-world means filling those from the snapshot (WP16).
+The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.rs` fills them from `ps_session::Snapshot`. Lateral root cohorts are drawn as up to 8 copies at golden-angle turns about the parent root. Still to do: pots render as boxes the size of the soil grid.
 
 ## Last validation report
-`cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11).
+`cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11). At WP12 (model 0.2.0, world seed 7): 70 checks: 53 pass, 16 Info misses, 1 check gated Later (M2 density) not evaluated, 0 known misses. The misses are listed in decision 0018.
 
 ## Open questions for the owner
 - WP7 (decision 0009): two readings of the plan's text to confirm. Priority is the share of an organ's own available reserve it may spend per hour (taken literally, §3.9 would cap every organ below its potential), and the water stress factor multiplies the stomatal slope.
+- WP12 light re-check (decisions 0008, 0018): on a 60-day sim plant, the light model is 10% too bright on the plant total with the species G of 0.5, and 48 of 74 leaflets are within 0.10. The sim draws every blade tilted about 19°, and G = 0.5 assumes spherical leaf angles. With G = 0.65 the total is within 2%, and 58 of 74 leaflets are within 0.10. Fixing it is a model change that needs re-tuning. Either make G follow the leaf angles the sim draws, varying with direction, or draw a spread of leaf angles. The suggestion is M2, with WP21.
 - Set `main` as the repository's default branch in GitHub settings (the agent cannot change repo settings).
 - WP13 (Bevy smoke test on the GTX 1070) passed its frame-time gate on 2026-11-05 with stand-in plants: Vulkan 2.7 ms per frame, DX12 5.8 ms (budget 16 ms). Re-check on the real sim. The viewer thread has the follow-ups (default backend, slow cold-start screenshots, see-through side panel).
 
@@ -60,6 +63,7 @@ The viewer reads `ps_view::Garden` and `SkyState` only. Swapping the stand-in fo
 - WP10: golden hashes for linux-x86_64 and windows-x86_64 are committed and identical (the Windows CI run reproduced Linux day for day). CI fails on a mismatch or a missing file.
 - WP11/WP12, first response runs (decision 0015): heat at flowering cuts seed weight by 21% (cited 50 to 71%), drought from flowering by 19%, shade 50% cuts total mass by 35% but pods rise and root mass falls sixfold.
 - WP16 (sim thread) runs in its own thread; the viewer thread does the viewer side.
-- WP12: regenerate the light ray tracer fixture from a sim-exported 60-day plant and re-run `single_plant_matches_ray_tracer`; tighten its bounds if every leaf passes (decision 0008).
+- WP12 (decision 0018): the heat and drought response scenarios start on the control's flowering day (day 43). Move them with any change to the phenology thresholds. The validation run is about 20 s in release. Regenerate the sim-plant light fixture with `PS_LEAVES_OUT=... cargo test -p ps-arch --test ninety_days -- --ignored`, then `python3 validation/fixtures/light_raytrace.py --leaves FILE`.
+- Next: M2 sim packages, WP21 then WP24 (docs/design-plan.md §7). Research notes for them are in the project files (research/m2-m3-bean-science.md).
 - Local checks: see CLAUDE.md "Session start".
 - `cargo nextest` runs in CI; locally `cargo test --workspace` is equivalent.

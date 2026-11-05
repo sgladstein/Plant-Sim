@@ -329,6 +329,18 @@ ValidationTargets(
       note: "Pinzón 2024 pot plant at R8: root 2.4 g over shoot 3.1 g + pods 8.3 g = 0.21 (period 1); period 2 gives 1.25 / (1.70 + 5.3) = 0.18. Acosta-Díaz 2007 well-watered pot plants sit in the same band. Literature range for reproductive bean roughly 0.1-0.25.",
     ),
     Target(
+      id: "biomass_logistic",
+      scenario: "single_pot",
+      variable: "total_dry_mass_g",
+      at: Final,
+      expect: LogisticR2(min_r2: 0.95),
+      unit: "-",
+      basis: Some("R2 of a three-parameter logistic fitted to the daily total dry mass, sowing to the end of the run"),
+      sources: ["pinzon2024"],
+      gate: M0,
+      note: "M0 exit (plan §7 and §8.3 shape rule): the biomass curve is logistic with R2 above 0.95. Pinzón 2024 fits logistic curves to bush-bean dry mass over the cycle.",
+    ),
+    Target(
       id: "harvest_index_tops",
       scenario: "single_pot",
       variable: "harvest_index_tops",

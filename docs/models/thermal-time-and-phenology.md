@@ -30,9 +30,9 @@ fill, maturity) when enough have added up. A warm spring makes beans flower soon
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
 | t_base, t_opt, t_max | 8, 28, 38 | °C | "~" design plan §3.11 |
-| emergence | 70 | °C·day | "~" design plan §3.10 (60 to 80) |
-| flowering | 320 | °C·day from germination | "~" 350 from sowing (40% of the cycle, design plan §6.1) less about 30 sowing to germination |
-| maturity | 820 | °C·day from germination | Pinzón-Sandoval 2024, 850 from sowing (design plan §8.2), less about 30 ("~") |
+| emergence | 80 | °C·day | "~" design plan §3.10 (60 to 80), top of the range (WP12) |
+| flowering | 440 | °C·day from germination | published sowing-to-flowering sums on base 8: about 350 (Dapaah 1999), 470 (CROPTIME 2020), 515 (Cavalcante 2020), 600 (Pinzón-Sandoval 2024); 440 is about 470 from sowing (decision 0018) |
+| maturity | 900 | °C·day from germination | Cavalcante 2020 (827 above 10 °C) and Pinzón-Sandoval 2024 (about 800 above 8.3 °C) (decision 0018) |
 | growth_t_min, opt_low, opt_high, max | 5, 25, 30, 40 | °C | "~" design plan §3.11 |
 
 ## Inputs and outputs
@@ -53,7 +53,12 @@ under each weather preset; slower development in cold springs; heat stalling gro
 
 ## Validation
 `ps_physio::tests::three_point_thermal_time`, `growth_temperature_trapezoid`,
-`stages_advance_in_order`. Calendar targets come with the WP11 report.
+`stages_advance_in_order`. In the WP11 report (default scenario, WP12): flowering on day
+43 and maturity on day 83 (gated ranges 28 to 57 and 54 to 93); 370 °C·day above 10 °C
+to flowering and 747 to maturity (Cavalcante 2020, 430 ± 15% and 700 to 950), 617 above
+4.4 °C to flowering (CROPTIME 2020, 547 to 763). The papers disagree among themselves:
+the sim's sums sit above Dapaah 1999 (base 7) and below Pinzón-Sandoval 2024 (base
+8.3), which are reported as Info misses.
 
 ## References
 - Fernández, F., Gepts, P. and López, M. (1986). Etapas de desarrollo de la planta de

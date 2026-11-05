@@ -288,6 +288,11 @@ quantity!(
     "mol/m2/s"
 );
 quantity!(
+    /// Daily photon integral per area, mol m⁻² day⁻¹ (daily light integral).
+    MolPerM2Day,
+    "mol/m2/day"
+);
+quantity!(
     /// Thermal time, °C·day.
     DegreeDays,
     "Cd"

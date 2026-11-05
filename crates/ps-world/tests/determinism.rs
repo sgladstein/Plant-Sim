@@ -185,10 +185,14 @@ fn pruning_removes_carbon_and_refuses_the_hypocotyl() {
     let p = &w.state().plants[0].plant;
     let hyp = p.hypocotyl.0;
     let litter = p.ledger.litter;
+    // The biggest leaf, so the cut removes some carbon (the newest may be a primordium).
     let leaf = p
         .arena
         .alive_of(ps_graph::OrganKind::Leaf)
-        .last()
+        .max_by(|a, b| {
+            let m = |id: ps_graph::OrganId| p.arena.size[id.index()].area.0;
+            m(*a).total_cmp(&m(*b))
+        })
         .map(|id| id.0)
         .unwrap();
     assert!(

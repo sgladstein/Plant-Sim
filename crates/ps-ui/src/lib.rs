@@ -62,6 +62,8 @@ pub struct TimeControl {
     pub speed: f64,
     /// True while paused.
     pub paused: bool,
+    /// True while the time owner is still working through a step or a seek.
+    pub busy: bool,
     /// Date and clock, for example "2026-06-02 14:00".
     pub date: String,
     /// Season name.
@@ -201,7 +203,9 @@ fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden) {
             }
         }
         ui.separator();
-        if time.high_speed() {
+        if time.busy {
+            ui.colored_label(egui::Color32::from_rgb(200, 210, 170), "Simulating…");
+        } else if time.high_speed() {
             ui.colored_label(
                 egui::Color32::from_rgb(230, 200, 120),
                 "High-speed view: daily means",

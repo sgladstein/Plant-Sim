@@ -46,7 +46,8 @@ fn four_response_scenarios_from_one_command() {
         let header = lines.next().unwrap();
         assert_eq!(header, ps_export::DAILY_COLUMNS.join(","));
         let rows: Vec<&str> = lines.collect();
-        assert_eq!(rows.len(), 4, "{n}");
+        // One row per plant per day; the response scenarios have 8 replicate pots.
+        assert_eq!(rows.len(), 4 * 8, "{n}");
         for r in &rows {
             assert_eq!(r.split(',').count(), ps_export::DAILY_COLUMNS.len(), "{r}");
         }
@@ -167,4 +168,34 @@ fn validate_fails_on_a_missed_target() {
     );
     assert!(out.join("runs/single_pot/organs_day45.csv").exists());
     let _ = std::fs::remove_dir_all(&out);
+}
+
+/// §7 M0 exit: "Frost-night scenario: leaves die, no recovery."
+#[test]
+fn a_frost_night_kills_the_leaves_for_good() {
+    let out = out_dir("frost");
+    let o = cli(&[
+        "run",
+        "data/scenarios/response/frost_night.ron",
+        "--out",
+        &out.to_string_lossy(),
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let csv = std::fs::read_to_string(out.join("frost_night/daily.csv")).unwrap();
+    let mut lines = csv.lines();
+    let head: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let col = |name: &str| head.iter().position(|h| *h == name).unwrap();
+    let (leaves, t_min) = (col("leaves"), col("t_min_c"));
+    let rows: Vec<Vec<&str>> = lines.map(|l| l.split(',').collect()).collect();
+    let frost = rows
+        .iter()
+        .position(|r| r[t_min].parse::<f64>().unwrap() < -2.2)
+        .expect("the preset has a frost night");
+    assert!(
+        rows[..frost].iter().any(|r| r[leaves] != "0"),
+        "leaves before the frost"
+    );
+    for r in &rows[frost + 1..] {
+        assert_eq!(r[leaves], "0", "no leaves after the frost: {r:?}");
+    }
 }
