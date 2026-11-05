@@ -22,7 +22,7 @@ For a key `(world_seed, entity, tick, purpose)` and draw index `n`:
 | --- | --- | --- | --- |
 | Philox rounds | 10 | - | Salmon et al. 2011 (recommended) |
 | Purpose codes | see `ps_rng::Purpose::code` | - | design; never renumber |
-| Plant-variation codes | SeedSize 15, LeafSize 16, SoilPatch 17, Sowing 18 (decision 0027) | - | design |
+| Plant-variation codes | SeedSize 15, LeafSize 16, SoilPatch 17, Sowing 18 (decision 0027); InternodeLength 19 (decision 0029) | - | design |
 
 ## Entity keys
 Callers build the entity part of the key in one of four ways. A new purpose should reuse
@@ -33,7 +33,7 @@ one of them, and say which, so that two streams never share a key by accident:
 | Organ | `(plant << 32) \| organ id` | per-organ draws (`Plant::stream` in `ps-arch`) |
 | Individual | `(plant << 32) \| 0xFFFF_FFFF` | per-plant draws (seed size, emergence threshold, seedling azimuth); `ps-arch` |
 | Plant | the raw plant id | sowing scatter (`ps-world`) |
-| Soil | `0x5011_0000_0000_0000 \| soil` (`SOIL_ENTITY`) | the soil N patch field (`ps-world`) |
+| Soil | `0x5011_0000_0000_0000 \| soil` (`SOIL_ENTITY`) | the soil N patch field (`ps-world`); each lattice node puts `(iy << 32) \| ix` in the tick slot (decision 0029) |
 
 The conventions overlap in value only across different purposes, which keeps the streams
 apart (the purpose is a separate field of the counter).

@@ -207,8 +207,13 @@ impl Plant {
             let [first, last, _] = hp.internode_profile;
             let x = f64::from(j - 1) / f64::from(g.elongating.saturating_sub(1).max(1));
             let shade = hp.shade_factor(self.shade_signal_at(ax.apex), hp.shade_internode);
+            // Each internode's own scatter, keyed by the node below it (decision 0029).
+            let z = self
+                .stream(ax.apex, now, Purpose::InternodeLength)
+                .standard_normal();
+            let own = crate::scatter(z, hp.variation.internode_length_cv);
             (
-                hp.internode_length.0 * (first + (last - first) * x) * shade,
+                hp.internode_length.0 * (first + (last - first) * x) * shade * own,
                 MPerG(hp.stem_specific_length.0 * shade),
             )
         } else {
@@ -246,7 +251,7 @@ impl Plant {
         sh.direction = direction;
         sh.azimuth = ax.azimuth;
         let sheath = self.spawn(&sh, now)?;
-        let area = hp.leaf_area.0 * g.blade_factor(k, n) * self.leaf_scatter(now);
+        let area = hp.leaf_area.0 * g.blade_factor(k, n) * self.leaf_scatter(node, 0, now);
         let shade = self.shade_signal_at(node);
         let sla = hp.sla.0 * hp.shade_factor(shade, hp.shade_sla);
         let mut b = Spawn::new(

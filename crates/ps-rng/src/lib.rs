@@ -59,6 +59,8 @@ pub enum Purpose {
     SoilPatch,
     /// Hand-sowing scatter of a seed's position and depth (natural variation).
     Sowing,
+    /// Internode-to-internode variation in potential length (natural variation).
+    InternodeLength,
     /// Test-only purpose; never used by the model.
     Test,
 }
@@ -86,6 +88,7 @@ impl Purpose {
             Purpose::LeafSize => 16,
             Purpose::SoilPatch => 17,
             Purpose::Sowing => 18,
+            Purpose::InternodeLength => 19,
             Purpose::Test => 0xFFFF,
         }
     }

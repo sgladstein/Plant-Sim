@@ -36,9 +36,18 @@ for whatever you pick up.
     "Mostly looks like changing colors or filters" was the verdict on a grading-only
     round. A stylized look is fine.
 
-## 2. Open owner decisions (ask these first)
+## 2. Owner decisions (answered 2026-11-05)
 
-| # | Decision | Context | Recommendation |
+On 2026-11-05 the owner accepted every recommendation below and approved all merges on
+this account: threads merge their own PRs on green CI, and model PRs after an
+independent review. So: M0 is signed off; WP20's clip is signed off after WP20 is built
+and re-rendered; the pole bean target stays 1.5 m by day 60 and 2 m by day 75; dense
+wheat takes option (a), 7 to 3 light points per blade (a model change); the
+v0.1.0-pre.1 pre-release stays; the look stays option C (A and B/#79 parked); the WP7
+readings of decision 0009 are confirmed as implemented. New questions go to the owner
+one at a time, with options and a recommendation.
+
+| # | Decision | Context | Recommendation (accepted) |
 | --- | --- | --- | --- |
 | 1 | **Sign off M0** (headless core) | Every M0 gate passes (decision 0018, later rechecked); the M0 exit summary is §4 of this file and STATUS "M0 exit". | Sign off. |
 | 2 | **Sun-vs-shade clip sign-off** (WP20, M1's designed moment) | Clip in [docs/archive/screens/sun-vs-shade-day4-90.mp4](archive/screens/sun-vs-shade-day4-90.mp4) and contact sheet `sun-vs-shade-contact-sheet.jpg` (re-encoded, smaller). That clip only shows the WP19 time-lapse; WP20's moments (cotyledon unfolding, phototropic lean, wilting and recovery, flowering cue) are not built yet. | Build WP20, re-render with `--timelapse --clean`, then ask. |
@@ -47,7 +56,7 @@ for whatever you pick up.
 | 5 | **Does the public pre-release stay?** | v0.1.0-pre.1 is a public GitHub pre-release of the Windows build (owner approved publishing it). | Owner's call; keep it unless they object. |
 | 6 | **Viewer look** | Owner picked **option C "fuller plants" with the natural style "for right now"** (merged, #78). A "illustrated" (branch `claude/project-thread-u7o4cj`) and B "painterly" (PR #79, branch `claude/project-thread-fml7eu`) are parked. | Keep C; close #79 only when the owner says. |
 | 7 | WP7 readings (decision 0009) | Two readings of plan text: priority as share of an organ's own reserve per hour; water stress multiplies the stomatal slope. Never confirmed. | Confirm as implemented. |
-| 8 | Merge approval on the new account | See §1. | Ask once. |
+| 8 | Merge approval on the new account | See §1. | Approved: all merges, model PRs after review. |
 
 ## 3. Where things are
 
@@ -56,7 +65,7 @@ for whatever you pick up.
 | Design plan v3 (complete, kept current with decisions) | [docs/design-plan.md](design-plan.md). §3 model, §3.2 step order, §7 backlog of 36 WPs with done-when, §8 validation, §10 architecture, §11 implementation guide. |
 | Progress, per WP, plus every open follow-up | [docs/STATUS.md](STATUS.md) (read first every session) |
 | Agent rules (non-negotiable sim rules, code style, pre-push checks) | [CLAUDE.md](../CLAUDE.md) |
-| Decision records 0001 to 0028 | [docs/decisions/](decisions/) |
+| Decision records 0001 to 0029 | [docs/decisions/](decisions/) |
 | Model cards, one per process | [docs/models/](models/) |
 | Bevy pin and idioms | [docs/bevy-notes.md](bevy-notes.md) |
 | CLI | [docs/cli.md](cli.md) |
@@ -68,7 +77,7 @@ for whatever you pick up.
 
 ## 4. State of the project (2026-11-05, main at the handoff merge)
 
-- **Model version 0.11.0** (`ps_world::MODEL_VERSION`; lateral roots stay in the soil, decision 0028, #87). Species schema 7.
+- **Model version 0.12.0** (`ps_world::MODEL_VERSION`; pole beans find their stake and variation-review items, decision 0029). Species schema 8.
 - **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
   a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.
@@ -85,10 +94,11 @@ for whatever you pick up.
   Pole bean (twining), spring wheat, nitrogen with nodules, harvest/prune/obstacles,
   weather files, plant-to-plant variation all landed.
 - **M3 (breeding) and M4 (tree, fields): not started.**
-- **Validation (models 0.10.0 and 0.11.0 alike, mean of four world seeds, decision 0026):** 87 checks,
-  65 pass, every M0 gate passes. One bean spans 21 to 39 g by world seed alone, so
-  every target now reads the seed mean. Don't tune "~" parameters on one seed. Main
-  misses: thermal-time phenology, pole bean height, wheat stand height and yield,
+- **Validation (model 0.12.0, mean of four world seeds, decision 0026):** 87 checks,
+  67 pass, every M0 gate passes; the pole bean height targets pass since decision 0029.
+  One bean spans 21 to 39 g by world seed alone, so every target reads the seed mean.
+  Don't tune "~" parameters on one seed. Main misses: thermal-time phenology, wheat
+  stand height and yield,
   drought and heat seed size, shade height, nar_early, root_shoot_seed_fill.
 - **Speed (4 cores):** single pot ~2.2 ms per sim-day (budget 2), 30-bean plot about 23
   to 25 ms over 90 days, under 20 over the first 60 (budget 20), wheat stand ~110 ms (no budget). Viewer on the GTX 1070, real sim,

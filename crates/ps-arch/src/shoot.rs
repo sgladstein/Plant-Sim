@@ -54,7 +54,7 @@ impl Plant {
         let mut first_leaf = None;
         for k in 0..2u32 {
             let az = az0 + f64::from(k) * PI;
-            let leaf = self.leaf(epicotyl, az, Role::Unifoliate, 1.0, 0, now)?;
+            let leaf = self.leaf(epicotyl, k, az, Role::Unifoliate, 1.0, 0, now)?;
             first_leaf.get_or_insert(leaf);
             self.bud(epicotyl, leaf, az, 1, now)?;
         }
@@ -97,7 +97,14 @@ impl Plant {
         // with the length, so the potential mass stays and a carbon-starved internode
         // is still longer per gram (decision 0018).
         let elongation = hp.shade_factor(self.shade_signal(parent), hp.shade_internode);
-        let length = hp.internode_length.0 * factor * elongation;
+        // Each internode's own scatter, keyed by the organ it grows from (decision 0029).
+        let z = self
+            .stream(parent, now, Purpose::InternodeLength)
+            .standard_normal();
+        let length = hp.internode_length.0
+            * factor
+            * elongation
+            * crate::scatter(z, hp.variation.internode_length_cv);
         let specific = MPerG(hp.stem_specific_length.0 * elongation);
         let potential = GramsDM(length / specific.0);
         let mut s = Spawn::new(
@@ -115,9 +122,11 @@ impl Plant {
 
     /// A leaf at the tip of internode `node`, facing `azimuth`, with size `factor` of
     /// the species' potential.
+    #[allow(clippy::too_many_arguments)]
     fn leaf(
         &mut self,
         node: OrganId,
+        index: u32,
         azimuth: f64,
         role: Role,
         factor: f64,
@@ -130,7 +139,7 @@ impl Plant {
         } else {
             hp.leaf_area.0 * factor
         };
-        let area = profile * self.leaf_scatter(now);
+        let area = profile * self.leaf_scatter(node, index, now);
         let shade = self.shade_signal(node);
         let sla = hp.sla.0 * hp.shade_factor(shade, hp.shade_sla);
         let mut s = Spawn::new(
@@ -157,12 +166,15 @@ impl Plant {
         self.params.phyllotaxis.0 + sd * z.clamp(-2.5, 2.5)
     }
 
-    /// The relative potential size of the leaf about to be made (it takes the next
-    /// organ id, so each leaf has its own draw; decision 0027).
-    pub(crate) fn leaf_scatter(&self, now: Hours) -> f64 {
-        #[allow(clippy::cast_possible_truncation)]
-        let next = OrganId(self.arena.len() as u32);
-        let z = self.stream(next, now, Purpose::LeafSize).standard_normal();
+    /// The relative potential size of leaf `index` at node `node` (decision 0027),
+    /// keyed by the node and the leaf's index on it (decision 0029), so each leaf has
+    /// its own draw whatever organs are made around it.
+    pub(crate) fn leaf_scatter(&self, node: OrganId, index: u32, now: Hours) -> f64 {
+        let mut rng = self.stream(node, now, Purpose::LeafSize);
+        let mut z = rng.standard_normal();
+        for _ in 0..index {
+            z = rng.standard_normal();
+        }
         crate::scatter(z, self.params.variation.leaf_size_cv)
     }
 
@@ -291,6 +303,7 @@ impl Plant {
             let first = self.internode(bud.id, dir, bud.azimuth, 1, n, 1, now)?;
             let leaf = self.leaf(
                 first,
+                0,
                 bud.azimuth,
                 Role::Trifoliate,
                 self.params.leaf_profile[2],
@@ -382,7 +395,7 @@ impl Plant {
         }
         let node = self.internode(ax.apex, dir, ax.azimuth, k, ax.max_nodes, ax.order, now)?;
         self.meta[node.index()].twine = twine;
-        let leaf = self.leaf(node, ax.azimuth, Role::Trifoliate, factor, ax.order, now)?;
+        let leaf = self.leaf(node, 0, ax.azimuth, Role::Trifoliate, factor, ax.order, now)?;
         if let Some(r) = rank {
             self.bud(node, leaf, ax.azimuth, r, now)?;
             // An indeterminate stem flowers from the axils of the nodes it makes after

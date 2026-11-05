@@ -84,6 +84,8 @@ pub struct VariationParams {
     pub leaf_size_cv: f64,
     /// Standard deviation of a node's divergence angle.
     pub divergence_sd: Radians,
+    /// Coefficient of variation of an internode's potential length.
+    pub internode_length_cv: f64,
 }
 
 impl VariationParams {
@@ -99,6 +101,7 @@ impl VariationParams {
             reference_depth: Meters(v.emergence_reference_depth.value * CM),
             leaf_size_cv: v.leaf_size_cv.value,
             divergence_sd: Radians(v.divergence_sd.value.to_radians()),
+            internode_length_cv: v.internode_length_cv.value,
         }
     }
 }

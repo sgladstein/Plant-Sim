@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 7;
+pub const SCHEMA: u32 = 8;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -339,6 +339,9 @@ param_group!(
         leaf_size_cv: "-",
         /// Standard deviation of each node's divergence angle about the phyllotaxis.
         divergence_sd: "deg",
+        /// Coefficient of variation of each internode's potential length about the
+        /// node profile (schema 8, decision 0029).
+        internode_length_cv: "-",
     }
 );
 
@@ -355,8 +358,14 @@ param_group!(
         /// Main-stem nodes over which internodes rise from the first fraction to full
         /// length.
         internode_ramp_nodes: "-",
-        /// Radius of the circle the shoot tip sweeps while it searches for a support.
+        /// Radius of the circle a young shoot tip sweeps while it searches for a
+        /// support.
         circumnutation_radius: "cm",
+        /// Sweep radius gained per length of stem grown upright without a support
+        /// (schema 8, decision 0029): the longer the free tip, the wider it swings.
+        circumnutation_growth: "-",
+        /// Widest sweep radius a searching tip reaches (schema 8, decision 0029).
+        circumnutation_radius_max: "cm",
         /// Supports up to this diameter are always caught.
         support_diameter_sure: "cm",
         /// Supports this thick or more are never caught.

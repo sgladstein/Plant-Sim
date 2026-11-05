@@ -25,12 +25,21 @@ tick, purpose). `scatter(z, cv) = max(0.25, 1 + cv·z)`.
 - Seedling azimuth (plant key, `Phyllotaxis`): `θ_0 ~ U[0, 2π)`. The cotyledons sit at
   `θ_0, θ_0 + π`, and the unifoliates and the main stem's first node turn with them.
 - Divergence (each new node, `Phyllotaxis`): `Δθ = phyllotaxis + divergence_sd · z`.
-- Leaf size (each new leaf or blade, its organ id, `LeafSize`):
+- Leaf size (each new leaf or blade, keyed by its node, the `i`-th normal of the
+  stream for the `i`-th leaf at the node, `LeafSize`; decision 0029):
   `A_pot = profile area · scatter(z, leaf_size_cv)`.
+- Internode length (each new internode, keyed by the organ it grows from,
+  `InternodeLength`; decision 0029): `ℓ_pot = profile length · scatter(z,
+  internode_length_cv)`. Crown internodes of a grass do not scatter.
 - Sowing (ps-world, plant id, `Sowing`): position `mark + σ_p·(z_x, z_y)`, depth
-  `max(min(1 cm, d), d + σ_d·z_d)`. A point outside the soil falls back to the mark.
+  `max(min(1 cm, d), d + σ_d·z_d)`. If the mark is within 5 cm of a support's surface,
+  the scattered point is pulled toward the nearest such support until it is no farther
+  from its axis than the mark is (or than 1 cm outside its surface, if the mark is
+  closer): a gardener sows a pole bean at its pole (decision 0029). A point outside the
+  soil falls back to the mark.
 - Soil patches (ps-world, plot soils only, `SoilPatch`): standard normals `g_j` on a
-  lattice `L` apart, bilinear weights `w_j` at each column centre,
+  lattice `L` apart, each node keyed by (soil, ix, iy), so a node's draw does not change
+  when the bed is resized (decision 0029), bilinear weights `w_j` at each column centre,
   `G = Σ w_j g_j / sqrt(Σ w_j²)` (unit variance), factor
   `exp(σ G − σ²/2)` with `σ² = ln(1 + cv²)`. The factor multiplies the column's
   nitrate, ammonium and humus N at every depth.
@@ -45,6 +54,7 @@ tick, purpose). `scatter(z, cv) = max(0.25, 1 + cv·z)`.
 | emergence_reference_depth | 3 | cm | the depth the species' emergence sum was set for |
 | leaf_size_cv | 0.1 | - | ~ |
 | divergence_sd | 10 | deg | ~ 5 to 15 degrees in measured phyllotaxis |
+| internode_length_cv | 0.1 | - | ~ matches leaf_size_cv; stand height CV about 10% (decision 0029) |
 | sowing_position_sd_cm | 1.0 | cm | ~ dibbed by hand at a mark (scenario `variation`) |
 | sowing_depth_sd_cm | 0.5 | cm | ~ (scenario `variation`) |
 | soil_n_cv | 0.25 | - | ~ field soil nitrate CV is commonly 30 to 60% at plant scale; kept lower |
@@ -71,8 +81,9 @@ yield spread wider than mass because pod set responds to the plant's own carbon.
 - Soil patches change nitrogen only, not water holding, texture or compaction. Pots are
   uniform.
 - Pure lines have no genetic variance. Genotype sampling (`SeedChoice::Sample`) is M3.
-- A vine sown more than about 6 cm from its stake lodges (decision 0021's fixed sweep),
-  so sowing scatter makes a rare miss.
+- Sowing scatter no longer moves a vine away from the stake it was sown at, and the
+  sweep widens as the free tip grows (decision 0029), so a pole bean sown at its stake
+  finds it.
 - Biomass CV at harvest (about 16% in the 30-bean plot) is below the 20 to 40% common in
   field stands, because size-asymmetric light competition is still weak (WP21 density
   follow-ups).
