@@ -57,8 +57,20 @@ Owner's machine (i5-6600K, 4 cores, 8 GB RAM, GTX 1070), viewer from PR #26 at
 ee586b1 with stand-in plants, two plants, 2560 × 1440, vsync off, 1,200 frames, single
 run: Vulkan mean 2.70 ms per frame (p99 2.94), GPU about 51% busy; DX12 mean 5.78 ms
 (p99 6.05), GPU about 98%. Both are well inside the 16.7 ms M1 budget; Vulkan is the
-better default. With vsync on, pacing was uneven (p95 and p99 about 30 ms, missed
-vblanks), and cold-start pipeline compilation is slow: both are open.
+better default.
+
+Pacing re-run on the same machine (main 58807c6, new look, so not comparable to the
+2.7 ms above):
+
+| Backend, present mode | Frame time | Notes |
+| --- | --- | --- |
+| Vulkan, Mailbox | mean 4.0 ms, p99 4.4 ms | no spikes; recommended |
+| Vulkan, Fifo | 7.2% of frames near 31 ms, every ~14 frames | a ~64 Hz present cadence beating against 60 Hz on the virtual display; frame latency setting has no effect |
+| DX12, Fifo | p99 32.7 ms, 4.3% spikes | |
+
+Cold start: Vulkan about 5 s, DX12 about 180 s (pipeline compilation). Default to
+Vulkan with Mailbox where supported, falling back to Fifo, and DX12 only when Vulkan
+is unavailable.
 
 Viewer CPU work per frame, one 90-day demo bean (257 organs, `benches/mesh.rs`): clone
 the hourly arena and skeleton 8 µs, skeleton blend 1.6 µs, leaf instances 0.9 µs, a
