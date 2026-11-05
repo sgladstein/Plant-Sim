@@ -21,13 +21,13 @@ use serde::{Deserialize, Serialize};
 
 pub use hash::hash_of;
 pub use scenario::{
-    Action, ActionKind, Irrigation, ObstacleSpec, Scenario, SeedChoice, SoilSpec, Sowing, Start,
-    SupportSpec, WeatherSource,
+    Action, ActionKind, FieldVariation, Irrigation, ObstacleSpec, Scenario, SeedChoice, SoilSpec,
+    Sowing, Start, SupportSpec, WeatherSource,
 };
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.9.0";
+pub const MODEL_VERSION: &str = "0.10.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -360,6 +360,80 @@ fn weather_for(s: &Scenario, c: &Catalog) -> Result<WeatherSeries, WorldError> {
     }
 }
 
+/// Shallowest depth sowing scatter may leave a seed at, cm (a seed on the surface
+/// would not take up water); a scenario sowing shallower keeps its own depth.
+const MIN_SOWING_DEPTH_CM: f64 = 1.0;
+
+/// Random-key entity of a soil's own draws (the soil patch field).
+const SOIL_ENTITY: u64 = 0x5011_0000_0000_0000;
+
+/// A plot's nitrogen factor per soil column, indexed `y * nx + x` (decision 0027): a
+/// standard normal on a lattice `soil_patch_cm` apart, bilinearly interpolated and
+/// rescaled to unit variance at every cell, then made lognormal with mean 1 and the
+/// scenario's coefficient of variation. Lattice draws come from one keyed stream in
+/// lattice order, so the field depends only on the world seed, the soil id and the
+/// plot size.
+fn soil_patches(grid: &SoilGrid, v: &FieldVariation, world_seed: u64, soil: u32) -> Vec<f64> {
+    let (nx, ny, _) = grid.dims();
+    if v.soil_n_cv <= 0.0 {
+        return vec![1.0; nx * ny];
+    }
+    let c = grid.cell_size().0;
+    let step = v.soil_patch_cm * 0.01;
+    #[allow(clippy::cast_precision_loss)]
+    let lattice = |n: usize| {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let m = libm::ceil(n as f64 * c / step) as usize + 1;
+        m
+    };
+    let (mx, my) = (lattice(nx), lattice(ny));
+    let mut rng = ps_rng::RngKey::new(
+        world_seed,
+        SOIL_ENTITY | u64::from(soil),
+        0,
+        ps_rng::Purpose::SoilPatch,
+    )
+    .stream();
+    let z: Vec<f64> = (0..mx * my).map(|_| rng.standard_normal()).collect();
+    let sigma = libm::sqrt(libm::log(1.0 + v.soil_n_cv * v.soil_n_cv));
+    let mut out = Vec::with_capacity(nx * ny);
+    for y in 0..ny {
+        for x in 0..nx {
+            #[allow(clippy::cast_precision_loss)]
+            let (fx, fy) = ((x as f64 + 0.5) * c / step, (y as f64 + 0.5) * c / step);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let (ix, iy) = (
+                (libm::floor(fx) as usize).min(mx - 2),
+                (libm::floor(fy) as usize).min(my - 2),
+            );
+            #[allow(clippy::cast_precision_loss)]
+            let (tx, ty) = (fx - ix as f64, fy - iy as f64);
+            let w = [
+                (1.0 - tx) * (1.0 - ty),
+                tx * (1.0 - ty),
+                (1.0 - tx) * ty,
+                tx * ty,
+            ];
+            let at = |i: usize, j: usize| z[j * mx + i];
+            let zs = [
+                at(ix, iy),
+                at(ix + 1, iy),
+                at(ix, iy + 1),
+                at(ix + 1, iy + 1),
+            ];
+            let mut sum = 0.0;
+            let mut norm = 0.0;
+            for k in 0..4 {
+                sum += w[k] * zs[k];
+                norm += w[k] * w[k];
+            }
+            let g = sum / libm::sqrt(norm);
+            out.push(libm::exp(sigma * g - 0.5 * sigma * sigma));
+        }
+    }
+    out
+}
+
 /// A soil's center in its own frame (east, north), m: the frame sowings, supports and
 /// obstacles are placed in.
 fn soil_centre(grid: &SoilGrid) -> [f64; 2] {
@@ -456,6 +530,10 @@ impl World {
             let id = spec.id();
             let mut grid = soil_grid(spec)?;
             grid.set_nitrogen(&scenario.nitrogen.get(&id).copied().unwrap_or_default());
+            if matches!(spec, SoilSpec::Plot { .. }) {
+                let field = soil_patches(&grid, &scenario.variation, scenario.world_seed, id);
+                grid.scale_nitrogen_columns(&field);
+            }
             soils.push(SoilEntry {
                 id,
                 grid,
@@ -753,6 +831,40 @@ impl World {
         self.state.soils.iter().position(|s| s.id == id)
     }
 
+    /// Where a seed sown at `mark` (`depth_cm` deep) lands: hand sowing scatters it
+    /// about its mark (decision 0027), keyed by the plant id; a scattered point that
+    /// leaves the soil falls back to the mark.
+    fn scattered(
+        &self,
+        id: u32,
+        tick: u64,
+        depth: f64,
+        mark: [f64; 3],
+        grid: &SoilGrid,
+    ) -> [f64; 3] {
+        let v = &self.state.scenario.variation;
+        let mut rng = ps_rng::RngKey::new(
+            self.state.scenario.world_seed,
+            u64::from(id),
+            tick,
+            ps_rng::Purpose::Sowing,
+        )
+        .stream();
+        let mut z = || rng.standard_normal().clamp(-2.5, 2.5);
+        let (zx, zy, zd) = (z(), z(), z());
+        let depth_cm = (depth + v.sowing_depth_sd_cm * zd).max(MIN_SOWING_DEPTH_CM.min(depth));
+        let scattered = [
+            mark[0] + v.sowing_position_sd_cm * zx * 0.01,
+            mark[1] + v.sowing_position_sd_cm * zy * 0.01,
+            -depth_cm * 0.01,
+        ];
+        if ps_arch::geometry::soil_cell(grid, scattered).is_some() {
+            scattered
+        } else {
+            mark
+        }
+    }
+
     fn sow(&mut self, s: &Sowing) -> Result<(), WorldError> {
         let tick = self.state.tick;
         let err = |why: String| WorldError::Action { tick, why };
@@ -782,11 +894,18 @@ impl World {
         let c = grid.cell_size().0;
         let (dx, dy) = s.offset_cm.unwrap_or((0.0, 0.0));
         #[allow(clippy::cast_precision_loss)]
-        let at = [
+        let mark = [
             nx as f64 * c * 0.5 + dx * 0.01,
             ny as f64 * c * 0.5 + dy * 0.01,
             -s.depth_cm * 0.01,
         ];
+        if ps_arch::geometry::soil_cell(grid, mark).is_none() {
+            return Err(err(format!(
+                "sowing point {mark:?} is outside soil {}",
+                s.soil
+            )));
+        }
+        let at = self.scattered(id, tick, s.depth_cm, mark, grid);
         if ps_arch::geometry::soil_cell(grid, at).is_none() {
             return Err(err(format!(
                 "sowing point {at:?} is outside soil {}",

@@ -140,6 +140,7 @@ fn ninety_day_counts_are_in_the_bean_ranges() {
 #[test]
 fn counts_hold_across_world_seeds() {
     let mut bad = Vec::new();
+    let mut pods = Vec::new();
     for seed in 1..=8 {
         let (plant, reports) = run(DAYS, seed);
         let last = reports.last().unwrap();
@@ -171,11 +172,19 @@ fn counts_hold_across_world_seeds() {
             (!(3..=6).contains(&last.branches))
                 .then(|| format!("seed {seed}: branches {}", last.branches)),
         );
+        // Each plant now grows from its own seed (decision 0027), so single plants
+        // spread wider than the target band; one plant need only be plausible.
         bad.extend(
-            // The §8.2 range (data/validation/targets.ron, pods_at_maturity); WP12's
-            // carbon- and light-limited pod set spreads lone plants over 8 to 17.
-            (!(6..=20).contains(&last.pods)).then(|| format!("seed {seed}: pods {}", last.pods)),
+            (!(4..=30).contains(&last.pods)).then(|| format!("seed {seed}: pods {}", last.pods)),
         );
+        pods.push(f64::from(last.pods));
+    }
+    // The §8.2 range (data/validation/targets.ron, pods_at_maturity) holds for the
+    // mean over seeds, as the validation report reads it (decision 0026).
+    #[allow(clippy::cast_precision_loss)]
+    let mean = pods.iter().sum::<f64>() / pods.len() as f64;
+    if !(6.0..=20.0).contains(&mean) {
+        bad.push(format!("mean pods {mean:.1}"));
     }
     assert!(bad.is_empty(), "{bad:?}");
 }

@@ -22,6 +22,7 @@ For a key `(world_seed, entity, tick, purpose)` and draw index `n`:
 | --- | --- | --- | --- |
 | Philox rounds | 10 | - | Salmon et al. 2011 (recommended) |
 | Purpose codes | see `ps_rng::Purpose::code` | - | design; never renumber |
+| Plant-variation codes | SeedSize 15, LeafSize 16, SoilPatch 17, Sowing 18 (decision 0027) | - | design |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |

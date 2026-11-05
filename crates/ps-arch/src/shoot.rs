@@ -44,7 +44,7 @@ impl Plant {
     /// Emergence (VE): the epicotyl with its two opposite unifoliate leaves and their buds.
     pub(crate) fn emerge(&mut self, now: Hours) -> Result<(), ArchError> {
         self.emerged_day = Some(self.day);
-        let az0 = FRAC_PI_2;
+        let az0 = self.individual.azimuth.0 + FRAC_PI_2;
         let n = if self.is_vine() {
             self.params.climbing.max_main_nodes
         } else {
@@ -125,11 +125,12 @@ impl Plant {
         now: Hours,
     ) -> Result<OrganId, ArchError> {
         let hp = &self.params;
-        let area = if role == Role::Unifoliate {
+        let profile = if role == Role::Unifoliate {
             hp.unifoliate_area.0
         } else {
             hp.leaf_area.0 * factor
         };
+        let area = profile * self.leaf_scatter(now);
         let shade = self.shade_signal(node);
         let sla = hp.sla.0 * hp.shade_factor(shade, hp.shade_sla);
         let mut s = Spawn::new(
@@ -144,6 +145,25 @@ impl Plant {
         s.azimuth = azimuth;
         s.potential_area = area;
         self.spawn(&s, now)
+    }
+
+    /// The divergence angle to the next leaf of the axis whose newest node is `node`:
+    /// the species' phyllotaxis with this node's scatter (decision 0027).
+    pub(crate) fn divergence(&self, node: OrganId, now: Hours) -> f64 {
+        let sd = self.params.variation.divergence_sd.0;
+        let z = self
+            .stream(node, now, Purpose::Phyllotaxis)
+            .standard_normal();
+        self.params.phyllotaxis.0 + sd * z.clamp(-2.5, 2.5)
+    }
+
+    /// The relative potential size of the leaf about to be made (it takes the next
+    /// organ id, so each leaf has its own draw; decision 0027).
+    pub(crate) fn leaf_scatter(&self, now: Hours) -> f64 {
+        #[allow(clippy::cast_possible_truncation)]
+        let next = OrganId(self.arena.len() as u32);
+        let z = self.stream(next, now, Purpose::LeafSize).standard_normal();
+        crate::scatter(z, self.params.variation.leaf_size_cv)
     }
 
     fn bud(
@@ -286,7 +306,7 @@ impl Plant {
                 since_node: DegreeDays(0.0),
                 terminated: false,
                 raceme: None,
-                azimuth: bud.azimuth + self.params.phyllotaxis.0,
+                azimuth: bud.azimuth + self.divergence(first, now),
                 last_leaf: Some(leaf),
                 climb: if lodged { Climb::Lodged } else { Climb::Free },
                 free_length: 0.0,
@@ -379,7 +399,7 @@ impl Plant {
         ax.apex = node;
         ax.nodes = k;
         ax.last_leaf = Some(leaf);
-        ax.azimuth += self.params.phyllotaxis.0;
+        ax.azimuth += self.divergence(node, now);
         Ok(())
     }
 

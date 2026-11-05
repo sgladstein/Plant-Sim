@@ -223,6 +223,71 @@ pub struct Sowing {
     pub offset_cm: Option<(f64, f64)>,
 }
 
+/// Variation the gardener and the ground bring to a scenario (decision 0027): hand
+/// sowing scatters each seed about its mark, and a field soil is patchy. Every draw is
+/// keyed by (world seed, plant or soil, tick, purpose). Absent from a scenario file,
+/// the defaults below apply; [`FieldVariation::NONE`] turns it all off.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FieldVariation {
+    /// Standard deviation of a seed's position about its mark along each axis, cm.
+    pub sowing_position_sd_cm: f64,
+    /// Standard deviation of a seed's sowing depth, cm.
+    pub sowing_depth_sd_cm: f64,
+    /// Coefficient of variation of a plot's starting soil nitrogen (nitrate, ammonium
+    /// and humus) between soil columns. Pots hold mixed soil and stay uniform.
+    pub soil_n_cv: f64,
+    /// Spacing of the lattice the soil field is drawn on and interpolated from, cm:
+    /// roughly the size of a soil patch.
+    pub soil_patch_cm: f64,
+}
+
+impl FieldVariation {
+    /// No sowing scatter and a uniform soil: every seed exactly on its mark.
+    pub const NONE: Self = Self {
+        sowing_position_sd_cm: 0.0,
+        sowing_depth_sd_cm: 0.0,
+        soil_n_cv: 0.0,
+        soil_patch_cm: 30.0,
+    };
+
+    /// Hand sowing in a garden bed ("~", decision 0027): seeds dibbed at a mark land
+    /// within about 2 cm of it and 1 cm of the intended depth (two standard
+    /// deviations), and
+    /// mineral and humus nitrogen vary about 25% between patches some 30 cm across.
+    /// Plant-scale soil nitrate is commonly that patchy or more, with coefficients of
+    /// variation of 30 to 60% in field surveys; 25% keeps the mean garden soil.
+    pub const GARDEN: Self = Self {
+        sowing_position_sd_cm: 1.0,
+        sowing_depth_sd_cm: 0.5,
+        soil_n_cv: 0.25,
+        soil_patch_cm: 30.0,
+    };
+
+    fn check(&self) -> Result<(), String> {
+        let ok = |v: f64, hi: f64| v.is_finite() && (0.0..=hi).contains(&v);
+        if !ok(self.sowing_position_sd_cm, 10.0) {
+            return Err("variation.sowing_position_sd_cm must lie within 0 to 10".into());
+        }
+        if !ok(self.sowing_depth_sd_cm, 5.0) {
+            return Err("variation.sowing_depth_sd_cm must lie within 0 to 5".into());
+        }
+        if !ok(self.soil_n_cv, 1.0) {
+            return Err("variation.soil_n_cv must lie within 0 to 1".into());
+        }
+        if !(self.soil_patch_cm.is_finite() && (5.0..=500.0).contains(&self.soil_patch_cm)) {
+            return Err("variation.soil_patch_cm must lie within 5 to 500".into());
+        }
+        Ok(())
+    }
+}
+
+impl Default for FieldVariation {
+    fn default() -> Self {
+        Self::GARDEN
+    }
+}
+
 /// A scenario: everything needed to start a world.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Scenario {
@@ -273,6 +338,10 @@ pub struct Scenario {
     /// log actions of the same tick.
     #[serde(default)]
     pub events: Vec<Action>,
+    /// Sowing scatter and soil patchiness; [`FieldVariation::GARDEN`] if absent
+    /// (decision 0027).
+    #[serde(default)]
+    pub variation: FieldVariation,
 }
 
 impl Scenario {
@@ -312,6 +381,7 @@ impl Scenario {
     ///
     /// # Errors
     /// [`WorldError::Scenario`] naming the first problem.
+    #[allow(clippy::too_many_lines)]
     pub fn validate(&self) -> Result<(), WorldError> {
         let bad = |m: String| Err(WorldError::Scenario(m));
         if self.schema != SCENARIO_SCHEMA {
@@ -320,6 +390,7 @@ impl Scenario {
                 self.schema
             ));
         }
+        self.variation.check().map_err(WorldError::Scenario)?;
         if !(-90.0..=90.0).contains(&self.latitude_deg) {
             return bad(format!("latitude {} out of range", self.latitude_deg));
         }
