@@ -4,8 +4,9 @@
 //! pot's soil shows the plant's totals. The data source fills [`Inspector`] for the
 //! current [`Selection`]; the panel draws it, adds the active lens's value for the organ
 //! (so a lens can be checked against the numbers), and names each field's model card on
-//! hover.
+//! hover; clicking a value opens that card in the side panel.
 
+use crate::model_cards::{self, ModelCards};
 use crate::tools::{PlayerAction, Tools};
 use bevy::prelude::Resource;
 use bevy_egui::egui;
@@ -61,6 +62,7 @@ pub(crate) fn section(
     garden: &Garden,
     lens: Lens,
     tools: &mut Tools,
+    cards: &mut ModelCards,
 ) {
     let Some(picked) = selection.picked else {
         ui.weak(
@@ -110,9 +112,17 @@ pub(crate) fn section(
                 } else {
                     format!("{} {}", f.value, f.unit)
                 };
-                let r = ui.label(text);
-                if !f.card.is_empty() {
-                    r.on_hover_text(format!("Model card: {}", f.card));
+                if f.card.is_empty() {
+                    ui.label(text);
+                } else if ui
+                    .add(egui::Label::new(text).sense(egui::Sense::click()))
+                    .on_hover_text(format!(
+                        "Model card: {} (click to read it)",
+                        model_cards::title(&f.card)
+                    ))
+                    .clicked()
+                {
+                    cards.toggle(&f.card);
                 }
                 ui.end_row();
             }
@@ -123,8 +133,21 @@ pub(crate) fn section(
                     .and_then(|p| p.organ_value(lens, organ))
             {
                 ui.strong(format!("{} (lens)", info.name));
-                ui.strong(format!("{v:.3} {}", info.unit))
-                    .on_hover_text(format!("Model card: {}", info.model_card));
+                if ui
+                    .add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("{v:.3} {}", info.unit)).strong(),
+                        )
+                        .sense(egui::Sense::click()),
+                    )
+                    .on_hover_text(format!(
+                        "Model card: {} (click to read it)",
+                        model_cards::title(info.model_card)
+                    ))
+                    .clicked()
+                {
+                    cards.toggle(info.model_card);
+                }
                 ui.end_row();
             }
         });

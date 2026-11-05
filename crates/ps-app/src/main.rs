@@ -27,6 +27,8 @@
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
 //! soil-water, plant-water, roots, carbon, phenology, shade. `--charts` opens the
 //! charts panel. `--inspect POT[:ORGAN]` selects a plant or an organ for the inspector.
+//! `--card NAME` opens a model card in the side panel (for example `light` for
+//! `docs/models/light.md`).
 //! `--captures DIR` is where the Screenshot and Export CSV buttons write (default
 //! `captures`). `--timelapse DIR` renders time-lapse frames offline from `--day` to
 //! `--to-day` (default the scenario's end), one per sim hour within `--timelapse-hours`
@@ -72,6 +74,7 @@ struct Options {
     lens: Lens,
     charts: bool,
     inspect: Option<ps_view::Picked>,
+    card: Option<String>,
     captures: PathBuf,
     timelapse: Option<PathBuf>,
     to_day: Option<f64>,
@@ -150,6 +153,7 @@ fn parse_args() -> Result<Options> {
         lens: Lens::Off,
         charts: false,
         inspect: None,
+        card: None,
         captures: PathBuf::from("captures"),
         timelapse: None,
         to_day: None,
@@ -182,6 +186,14 @@ fn parse_args() -> Result<Options> {
             "--lens" => o.lens = parse_lens(&value()?)?,
             "--charts" => o.charts = true,
             "--inspect" => o.inspect = Some(parse_pick(&value()?)?),
+            "--card" => {
+                let name = value()?;
+                let path = format!("docs/models/{}.md", name.trim_end_matches(".md"));
+                if ps_ui::card(&path).is_none() {
+                    bail!("--card: no model card {path}");
+                }
+                o.card = Some(path);
+            }
             "--clean" => o.clean = true,
             "--captures" => o.captures = PathBuf::from(value()?),
             "--timelapse" => o.timelapse = Some(PathBuf::from(value()?)),
@@ -285,6 +297,9 @@ fn main() -> Result<()> {
     .insert_resource(ps_ui::Charts {
         open: options.charts,
         ..default()
+    })
+    .insert_resource(ps_ui::ModelCards {
+        open: options.card.clone(),
     })
     .insert_resource(options.clone());
     if options.focus.is_some() || options.orbit.is_some() || options.zoom.is_some() {
