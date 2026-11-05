@@ -54,6 +54,16 @@ pub struct LeafPoint {
     pub normal: [f64; 3],
 }
 
+/// A leaf's footprint on a grid and its optical depth there (see
+/// [`LightGrid::footprint`] and [`LightGrid::own_depth`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Footprint {
+    /// `(flat cell index, leaf area density)`, sorted by index.
+    pub cells: Vec<(usize, f64)>,
+    /// `(flat cell index, optical depth density)`, matching `cells`.
+    pub depth: Vec<(usize, f64)>,
+}
+
 /// Radius of a disc with the leaf's area.
 #[must_use]
 pub fn leaf_radius(area: M2) -> f64 {
@@ -103,6 +113,13 @@ impl LightGrid {
     /// Returns `None` when there are no leaves. `g` is the G-function value.
     #[must_use]
     pub fn fit(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
+        let mut grid = Self::fit_geometry(leaves, extra, g)?;
+        grid.add_leaves(leaves);
+        Some(grid)
+    }
+
+    /// The empty grid [`LightGrid::fit`] places around `leaves` and `extra`.
+    fn fit_geometry(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
         let mut lo = [f64::INFINITY; 3];
         let mut hi = [f64::NEG_INFINITY; 3];
         for l in leaves {
@@ -136,9 +153,35 @@ impl LightGrid {
             let mid = 0.5 * (lo[a] + hi[a]);
             origin[a] = mid - 0.5 * as_f64(cells) * cell;
         }
-        let mut grid = Self::with_geometry(origin, Meters(cell), n, g);
-        grid.add_leaves(leaves);
-        Some(grid)
+        Some(Self::with_geometry(origin, Meters(cell), n, g))
+    }
+
+    /// [`LightGrid::fit`] that also returns each leaf's footprint and its
+    /// [`LightGrid::own_depth`], in input order, so [`rebuild_daily`] does not compute
+    /// them twice. The grid is identical to `fit`'s.
+    #[must_use]
+    pub fn fit_with_footprints(
+        leaves: &[LeafPoint],
+        extra: &[[f64; 3]],
+        g: f64,
+    ) -> Option<(Self, Vec<Footprint>)> {
+        let mut grid = Self::fit_geometry(leaves, extra, g)?;
+        let feet = leaves
+            .iter()
+            .map(|l| {
+                let cells = grid.footprint(l);
+                let depth = grid.own_depth(&cells);
+                Footprint { cells, depth }
+            })
+            .collect::<Vec<_>>();
+        // Same additions in the same order as `add_leaves`.
+        for f in &feet {
+            for (&(i, v), &(_, d)) in f.cells.iter().zip(&f.depth) {
+                grid.lad[i] += v;
+                grid.depth[i] += d;
+            }
+        }
+        Some((grid, feet))
     }
 
     /// Cell volume, m³.
@@ -156,8 +199,9 @@ impl LightGrid {
             if !(u >= 0.0 && u < as_f64(self.n[a])) {
                 return None;
             }
+            // `u` is finite and nonnegative here, so truncation is `floor`.
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let i = libm::floor(u) as usize;
+            let i = u as usize;
             c[a] = i.min(self.n[a] - 1);
         }
         Some(c)
@@ -346,15 +390,16 @@ impl LightGrid {
     ) -> f64 {
         // A ray that starts outside the grid (a ring point of a tilted blade can lie
         // just above or below the box) is advanced to where it enters the box.
-        let from = match self.locate(from) {
-            Some(_) => from,
-            None => match self.entry_point(from, dir) {
-                Some(p) => p,
-                None => return 0.0,
-            },
-        };
-        let Some(mut c) = self.locate(from) else {
-            return 0.0;
+        let (from, c) = if let Some(c) = self.locate(from) {
+            (from, c)
+        } else {
+            let Some(p) = self.entry_point(from, dir) else {
+                return 0.0;
+            };
+            let Some(c) = self.locate(p) else {
+                return 0.0;
+            };
+            (p, c)
         };
         let s = self.cell.0;
         let mut step = [0isize; 3];
@@ -383,43 +428,58 @@ impl LightGrid {
             _ => (1, 0),
         };
         let stride = [1, self.n[0], self.n[0] * self.n[1]];
+        // Per axis: cells left before the ray leaves the bounds, and the index step.
+        // (A zero direction component takes the negative branch, as before; its
+        // `t_max` is infinite, so it is only chosen when the ray ends.)
+        let mut left = [0usize; 3];
+        let mut dstep = [0isize; 3];
+        for a in 0..3 {
+            #[allow(clippy::cast_possible_wrap)]
+            let st = stride[a] as isize;
+            if step[a] > 0 {
+                left[a] = hi[a].saturating_sub(c[a]);
+                dstep[a] = st;
+            } else {
+                left[a] = c[a].saturating_sub(lo[a]);
+                dstep[a] = -st;
+            }
+        }
+        let [mut tx, mut ty, mut tz] = t_max;
+        let [dx, dy, dz] = t_delta;
         let mut idx = self.flat(c);
         let mut t = 0.0;
         let mut sum = 0.0;
+        // Amanatides–Woo with the axes unrolled: the same comparisons, sums and
+        // `t_max` updates, in the same order, as the indexed form.
+        macro_rules! cross {
+            ($tm:ident, $d:ident, $a:literal) => {{
+                let t_next = $tm;
+                let mut v = field[idx];
+                if (own_lo..=own_hi).contains(&idx)
+                    && let Ok(k) = own.binary_search_by_key(&idx, |o| o.0)
+                {
+                    v = (v - own[k].1).max(0.0);
+                }
+                sum += v * (t_next - t);
+                t = t_next;
+                if left[$a] == 0 {
+                    break;
+                }
+                left[$a] -= 1;
+                idx = idx.wrapping_add_signed(dstep[$a]);
+                $tm += $d;
+                if !t_next.is_finite() {
+                    break;
+                }
+            }};
+        }
         loop {
-            let a = if t_max[0] <= t_max[1] && t_max[0] <= t_max[2] {
-                0
-            } else if t_max[1] <= t_max[2] {
-                1
+            if tx <= ty && tx <= tz {
+                cross!(tx, dx, 0);
+            } else if ty <= tz {
+                cross!(ty, dy, 1);
             } else {
-                2
-            };
-            let t_next = t_max[a];
-            let mut v = field[idx];
-            if (own_lo..=own_hi).contains(&idx)
-                && let Ok(k) = own.binary_search_by_key(&idx, |o| o.0)
-            {
-                v = (v - own[k].1).max(0.0);
-            }
-            sum += v * (t_next - t);
-            t = t_next;
-            // Advance along axis a; stop on leaving the grid or the bounds.
-            if step[a] > 0 {
-                if c[a] >= hi[a] {
-                    break;
-                }
-                c[a] += 1;
-                idx += stride[a];
-            } else {
-                if c[a] <= lo[a] {
-                    break;
-                }
-                c[a] -= 1;
-                idx -= stride[a];
-            }
-            t_max[a] += t_delta[a];
-            if !t_next.is_finite() {
-                break;
+                cross!(tz, dz, 2);
             }
         }
         sum
@@ -498,10 +558,10 @@ pub fn rebuild_daily(
     sky: &[SkySector],
     g: f64,
 ) -> (Option<LightGrid>, Vec<LightCoeffs>) {
-    let Some(grid) = LightGrid::fit(leaves, extra_bounds, g) else {
+    let Some((grid, feet)) = LightGrid::fit_with_footprints(leaves, extra_bounds, g) else {
         return (None, Vec::new());
     };
-    let coeffs = coefficients(&grid, leaves, sun_path, sky);
+    let coeffs = coefficients_with(&grid, leaves, &feet, sun_path, sky);
     (Some(grid), coeffs)
 }
 
@@ -514,20 +574,40 @@ pub fn coefficients(
     sun_path: &[Option<[f64; 3]>; 24],
     sky: &[SkySector],
 ) -> Vec<LightCoeffs> {
+    let feet: Vec<Footprint> = leaves
+        .iter()
+        .map(|l| {
+            let cells = grid.footprint(l);
+            let depth = grid.own_depth(&cells);
+            Footprint { cells, depth }
+        })
+        .collect();
+    coefficients_with(grid, leaves, &feet, sun_path, sky)
+}
+
+/// [`coefficients`] with each leaf's footprint already computed on `grid`.
+fn coefficients_with(
+    grid: &LightGrid,
+    leaves: &[LeafPoint],
+    feet: &[Footprint],
+    sun_path: &[Option<[f64; 3]>; 24],
+    sky: &[SkySector],
+) -> Vec<LightCoeffs> {
     use rayon::prelude::*;
     let bounds = grid.occupied_bounds();
     // Each leaf is independent; collect keeps the input order, so the result does not
     // depend on the thread count.
     leaves
         .par_iter()
-        .map(|l| {
-            let own = grid.footprint(l);
-            let own_depth = grid.own_depth(&own);
+        .zip(feet)
+        .map(|(l, f)| {
+            let own = &f.cells;
+            let own_depth = &f.depth;
             let pts = sample_points(l);
             // Mean transmittance over the leaf's sample points (decision 0008).
             let trans = |d: [f64; 3]| {
                 pts.iter()
-                    .map(|p| libm::exp(-grid.path_depth_bounded(*p, d, &own_depth, &bounds)))
+                    .map(|p| libm::exp(-grid.path_depth_bounded(*p, d, own_depth, &bounds)))
                     .fold(0.0, |a, b| a + b)
                     / as_f64(pts.len())
             };
@@ -549,7 +629,7 @@ pub fn coefficients(
                     .zip(&sky_t)
                     .map(|(s, t)| s.absorb_weight * t)
                     .fold(0.0, |a, b| a + b);
-            let lai_above = grid.path_lad(l.center, [0.0, 0.0, 1.0], &own);
+            let lai_above = grid.path_lad(l.center, [0.0, 0.0, 1.0], own);
             LightCoeffs {
                 direct,
                 diffuse,

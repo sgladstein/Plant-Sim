@@ -81,24 +81,26 @@ impl ClassTable {
     /// plant's water stress factor. 68 solves.
     #[must_use]
     pub fn build(p: &LeafParams, env: &LeafEnv, stress: f64) -> Self {
+        let mut nodes = [0.0; PAR_CLASSES + 1];
+        for (i, n) in nodes.iter_mut().enumerate() {
+            *n = par_node(i);
+        }
+        // Temperature and pressure are the same for every node.
+        let tt = gas::TemperatureTerms::new(p, env);
         let mut rates = [[Rates::default(); PAR_CLASSES + 1]; 4];
-        let mut full = [gas::solve(p, env, 1.0, stress); PAR_CLASSES + 1];
+        let mut full = [gas::solve_with(p, env, 1.0, stress, &tt); PAR_CLASSES + 1];
         for (c, cap) in CAPACITY_NODES.iter().enumerate() {
             for (k, slot) in rates[c].iter_mut().enumerate() {
                 let e = LeafEnv {
-                    par: UmolPerM2S(par_node(k)),
+                    par: UmolPerM2S(nodes[k]),
                     ..*env
                 };
-                let g = gas::solve(p, &e, *cap, stress);
+                let g = gas::solve_with(p, &e, *cap, stress, &tt);
                 if c == 0 {
                     full[k] = g;
                 }
                 *slot = Rates::of(&g);
             }
-        }
-        let mut nodes = [0.0; PAR_CLASSES + 1];
-        for (i, n) in nodes.iter_mut().enumerate() {
-            *n = par_node(i);
         }
         Self { rates, full, nodes }
     }
