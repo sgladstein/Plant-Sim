@@ -5,7 +5,7 @@
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use ps_mesh::demo::{DemoParams, demo_bean, demo_origin};
-use ps_mesh::{AxisKind, AxisStyle, InstanceOptions, Skeleton, axes, axis_mesh, instances};
+use ps_mesh::{AxisStyle, InstanceOptions, Skeleton, axes, axis_mesh, instances};
 
 const DAY_90: u64 = 90 * 24;
 
@@ -34,12 +34,7 @@ fn mesh(c: &mut Criterion) {
     c.bench_function("mesh/all axis meshes (full rebuild)", |bn| {
         bn.iter(|| {
             for axis in axes(&a, true) {
-                let style = if axis.kind == AxisKind::Root {
-                    AxisStyle::ROOT
-                } else {
-                    AxisStyle::STEM
-                };
-                black_box(axis_mesh(&a, &axis, style));
+                black_box(axis_mesh(&a, &axis, AxisStyle::for_kind(axis.kind)));
             }
         });
     });

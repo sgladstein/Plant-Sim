@@ -163,6 +163,23 @@ pub struct Garden {
     pub stand_in_lenses: Vec<Lens>,
 }
 
+/// `natural` with a small per-organ offset, so no two leaves are quite the same green:
+/// about ±6% in value and a slight shift between yellower and bluer. Leaves only.
+#[must_use]
+pub fn varied_color(natural: [f32; 3], p: &Placement, index: usize) -> [f32; 3] {
+    if p.kind != OrganKind::Leaf || !p.alive {
+        return natural;
+    }
+    let id = u32::try_from(index).unwrap_or(u32::MAX);
+    let value = 1.0 + 0.06 * ps_mesh::jitter(id, 7);
+    let warm = 0.05 * ps_mesh::jitter(id, 8);
+    [
+        natural[0] * value * (1.0 + warm),
+        natural[1] * value,
+        natural[2] * value * (1.0 - warm),
+    ]
+}
+
 /// The natural (lens-off) color of an organ, linear RGB.
 #[must_use]
 pub fn natural_color(p: &Placement) -> [f32; 3] {
@@ -183,9 +200,9 @@ pub fn natural_color(p: &Placement) -> [f32; 3] {
         OrganKind::Leaf => mix([0.24, 0.46, 0.08], [0.08, 0.21, 0.045], age / 150.0),
         OrganKind::Cotyledon => mix([0.45, 0.5, 0.12], [0.55, 0.45, 0.1], age / 150.0),
         OrganKind::Internode | OrganKind::Tendril | OrganKind::Bud => [0.16, 0.27, 0.07],
-        OrganKind::Root | OrganKind::Nodule => {
-            mix([0.95, 0.92, 0.8], [0.55, 0.42, 0.26], age / 600.0)
-        }
+        // Active nodules are pink inside (leghemoglobin) and tan outside.
+        OrganKind::Nodule => mix([0.86, 0.6, 0.55], [0.6, 0.42, 0.32], age / 900.0),
+        OrganKind::Root => mix([0.95, 0.92, 0.8], [0.55, 0.42, 0.26], age / 600.0),
         OrganKind::Flower => [0.85, 0.75, 0.9],
         // Pods ripen from green to straw.
         OrganKind::Pod => mix([0.15, 0.38, 0.05], [0.6, 0.48, 0.22], (age - 300.0) / 300.0),

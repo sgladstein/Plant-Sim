@@ -7,6 +7,7 @@
 //! | Template | Normalized so that | Instance scale |
 //! | --- | --- | --- |
 //! | Unifoliate, Trifoliate | flat blade area (all leaflets, one side) is 1 m² | `sqrt(area)` |
+//! | Nodule | a cluster of lobes about 1 across | `radius` |
 //! | Cotyledon | projected area is 1 m² | `sqrt(area)` |
 //! | Pod | length 1 along x, peak radius 1 | `(length, radius, radius)` |
 //! | Seed | semi-axes 0.5, 1, 1, centered | `(length, radius, radius)` |
@@ -19,6 +20,12 @@
 //! winding, so back-face culling shows the right side with the right lighting. Wilting
 //! is a template parameter: [`DROOP_LEVELS`] prebuilt variants with the blade pitched
 //! down and the midrib bent more, chosen per instance from the plant's water stress.
+//! Unfolding is another: [`UNFOLD_LEVELS`] variants from a young leaf folded shut along
+//! its midribs, leaflets hanging, to a fully open one, chosen from the leaf's thermal age.
+//!
+//! Leaf templates start at the pulvinus, where the petiole meets the blade: the petiole
+//! itself is drawn as its own tube (an [`crate::AxisKind::Petiole`] axis), because its
+//! length comes from the sim and does not scale with the blade.
 
 use core::f32::consts::{FRAC_PI_2, PI, TAU};
 
@@ -28,6 +35,9 @@ use crate::{MeshData, TubeNode, tube};
 
 /// Number of prebuilt droop variants per leaf template (0 = turgid, last = fully wilted).
 pub const DROOP_LEVELS: u8 = 5;
+
+/// Number of prebuilt unfolding variants per leaf template (0 = folded shut, last = open).
+pub const UNFOLD_LEVELS: u8 = 4;
 
 /// A shared organ shape.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -50,11 +60,13 @@ pub enum Template {
     GrassBlade,
     /// A wheat ear: two rows of plump spikelets with short awns.
     WheatEar,
+    /// A cluster of root nodules: a few rounded lobes.
+    Nodule,
 }
 
 impl Template {
     /// All templates, in a fixed order.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Cotyledon,
         Self::Unifoliate,
         Self::Trifoliate,
@@ -64,12 +76,19 @@ impl Template {
         Self::Bud,
         Self::GrassBlade,
         Self::WheatEar,
+        Self::Nodule,
     ];
 
     /// True for templates that have droop variants.
     #[must_use]
     pub fn droops(self) -> bool {
         matches!(self, Self::Unifoliate | Self::Trifoliate | Self::GrassBlade)
+    }
+
+    /// True for templates that have unfolding variants.
+    #[must_use]
+    pub fn unfolds(self) -> bool {
+        matches!(self, Self::Unifoliate | Self::Trifoliate)
     }
 }
 
@@ -80,9 +99,25 @@ pub struct TemplateKey {
     pub template: Template,
     /// Droop level, `0..DROOP_LEVELS`; always 0 for templates that do not droop.
     pub droop: u8,
+    /// Unfolding level, `0..UNFOLD_LEVELS`; [`TemplateKey::OPEN`] for templates that do
+    /// not unfold.
+    pub unfold: u8,
 }
 
 impl TemplateKey {
+    /// The unfolding level of a fully open leaf.
+    pub const OPEN: u8 = UNFOLD_LEVELS - 1;
+
+    /// The turgid, open variant of `template`.
+    #[must_use]
+    pub fn new(template: Template) -> Self {
+        Self {
+            template,
+            droop: 0,
+            unfold: Self::OPEN,
+        }
+    }
+
     /// Every key a renderer needs to prebuild, in a fixed order.
     #[must_use]
     pub fn all() -> Vec<Self> {
@@ -90,9 +125,25 @@ impl TemplateKey {
             .iter()
             .flat_map(|&template| {
                 let levels = if template.droops() { DROOP_LEVELS } else { 1 };
-                (0..levels).map(move |droop| Self { template, droop })
+                let unfolds = if template.unfolds() { 0 } else { Self::OPEN };
+                (0..levels).flat_map(move |droop| {
+                    (unfolds..UNFOLD_LEVELS).map(move |unfold| Self {
+                        template,
+                        droop,
+                        unfold,
+                    })
+                })
             })
             .collect()
+    }
+
+    /// Unfolding of this key, 0 (folded shut) to 1 (open).
+    fn openness(self) -> f32 {
+        if self.template.unfolds() {
+            f32::from(self.unfold.min(Self::OPEN)) / f32::from(Self::OPEN)
+        } else {
+            1.0
+        }
     }
 }
 
@@ -104,11 +155,12 @@ pub fn build_template(key: TemplateKey) -> MeshData {
     } else {
         0.0
     };
+    let open = key.openness();
     match key.template {
-        Template::Unifoliate => leaf(LeafForm::Unifoliate, droop),
-        Template::Trifoliate => leaf(LeafForm::Trifoliate, droop),
+        Template::Unifoliate => leaf(LeafForm::Unifoliate, droop, open),
+        Template::Trifoliate => leaf(LeafForm::Trifoliate, droop, open),
         Template::Cotyledon => cotyledon(),
-        Template::Flower => flower(),
+        Template::Flower => flower().0,
         Template::Pod => pod(),
         Template::Seed => {
             let mut m = MeshData::new();
@@ -122,7 +174,23 @@ pub fn build_template(key: TemplateKey) -> MeshData {
         }
         Template::GrassBlade => grass_blade(droop),
         Template::WheatEar => wheat_ear(),
+        Template::Nodule => nodule(),
     }
+}
+
+/// Three or four rounded lobes clustered on the root, about 1 across: bean nodules are
+/// round and grow in small clusters.
+fn nodule() -> MeshData {
+    let mut m = MeshData::new();
+    for (c, r) in [
+        (Vec3::new(0.0, 0.0, 0.0), 0.62),
+        (Vec3::new(0.35, 0.42, 0.1), 0.48),
+        (Vec3::new(-0.3, 0.38, -0.25), 0.42),
+        (Vec3::new(0.15, -0.45, 0.2), 0.38),
+    ] {
+        ellipsoid(&mut m, c, Vec3::splat(r), 5, 7);
+    }
+    m
 }
 
 /// How far a turgid grass blade's centerline turns down from base to tip, rad (the sim's
@@ -253,7 +321,8 @@ struct Leaflet {
     bend: f32,
     /// Cupping across the blade (z rise at the margin as a fraction of half-width).
     cup: f32,
-    /// Fold along the midrib: the halves rise in a shallow V (fraction of half-width).
+    /// Fold along the midrib: each half rises by this angle, rad (a young leaf is
+    /// folded nearly shut).
     fold: f32,
     /// Margin waviness (z amplitude at the margin as a fraction of half-width).
     wave: f32,
@@ -311,11 +380,12 @@ fn leaflet(mesh: &mut MeshData, shade: &mut Vec<f32>, shape: Leaflet, pose: Pose
         let w = half_width(u, v);
         let x = u * shape.length;
         let envelope = 4.0 * u * (1.0 - u);
+        let (fold_sin, fold_cos) = shape.fold.sin_cos();
         let z = -shape.bend * shape.length * u * u
             + shape.cup * w * v * v
-            + shape.fold * w * v.abs()
+            + fold_sin * w * v.abs()
             + shape.wave * w * v * v * envelope * (u * 5.0 * PI + 0.7 * v.signum()).sin();
-        Vec3::new(x, v * w, z)
+        Vec3::new(x, v * w * fold_cos, z)
     };
     let mut points = Vec::with_capacity(((nu + 1) * (nv + 1)) as usize);
     for i in 0..=nu {
@@ -371,14 +441,15 @@ fn leaflet(mesh: &mut MeshData, shade: &mut Vec<f32>, shape: Leaflet, pose: Pose
     area
 }
 
-/// Builds a leaf at droop 0..=1 and normalizes its flat blade area to 1 m².
-fn leaf(form: LeafForm, droop: f32) -> MeshData {
-    leaf_shaded(form, droop).0
+/// Builds a leaf at droop 0..=1 and openness 0..=1 and normalizes its flat blade area to
+/// 1 m².
+fn leaf(form: LeafForm, droop: f32, open: f32) -> MeshData {
+    leaf_shaded(form, droop, open).0
 }
 
-fn leaf_shaded(form: LeafForm, droop: f32) -> (MeshData, Vec<f32>) {
-    let (mut mesh, mut shade, _) = leaf_raw(form, droop, false);
-    let (_, _, flat_area) = leaf_raw(form, 0.0, true);
+fn leaf_shaded(form: LeafForm, droop: f32, open: f32) -> (MeshData, Vec<f32>) {
+    let (mut mesh, mut shade, _) = leaf_raw(form, droop, open, false);
+    let (_, _, flat_area) = leaf_raw(form, 0.0, 1.0, true);
     if flat_area > 0.0 {
         mesh.scale(1.0 / flat_area.sqrt());
     }
@@ -396,9 +467,11 @@ pub fn build_template_shaded(key: TemplateKey) -> (MeshData, Vec<f32>) {
     } else {
         0.0
     };
+    let open = key.openness();
     match key.template {
-        Template::Unifoliate => leaf_shaded(LeafForm::Unifoliate, droop),
-        Template::Trifoliate => leaf_shaded(LeafForm::Trifoliate, droop),
+        Template::Unifoliate => leaf_shaded(LeafForm::Unifoliate, droop, open),
+        Template::Trifoliate => leaf_shaded(LeafForm::Trifoliate, droop, open),
+        Template::Flower => flower(),
         _ => {
             let m = build_template(key);
             let n = m.vertex_count();
@@ -407,40 +480,28 @@ pub fn build_template_shaded(key: TemplateKey) -> (MeshData, Vec<f32>) {
     }
 }
 
+/// A leaf from the pulvinus outward (the petiole is drawn separately), its blades held
+/// level when turgid (the instance adds the sim's blade tilt). `open` runs from 0, a young
+/// leaf folded shut along each midrib with its leaflets hanging close, to 1, fully open.
 #[allow(clippy::too_many_lines)]
-fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, Vec<f32>, f32) {
+fn leaf_raw(form: LeafForm, droop: f32, open: f32, flat: bool) -> (MeshData, Vec<f32>, f32) {
     let mut mesh = MeshData::new();
     let mut shade = Vec::new();
     let leaflet_length = 1.0;
-    let petiole = match form {
-        LeafForm::Unifoliate => 0.35,
-        LeafForm::Trifoliate => 0.8,
-    } * leaflet_length;
-    // A turgid blade is held a little above the petiole; a wilted one hangs.
-    let pitch = if flat { 0.0 } else { 0.17 - 1.1 * droop };
-    let bend = if flat { 0.0 } else { 0.08 + 0.25 * droop };
-    let cup = if flat { 0.0 } else { 0.06 };
-    let fold = if flat { 0.0 } else { 0.14 };
-    let wave = if flat { 0.0 } else { 0.07 };
-    let petiole_rise = if flat {
+    let young = 1.0 - open.clamp(0.0, 1.0);
+    // A wilted blade hangs from its pulvinus (mild stress barely shows; turgor is lost
+    // late); an unfolding one hangs a little too.
+    let pitch = if flat {
         0.0
     } else {
-        0.12 * petiole * (1.0 - droop)
+        -1.1 * droop * droop - 0.55 * young
     };
-    let petiole_end = Vec3::new(petiole, 0.0, petiole_rise);
+    let bend = if flat { 0.0 } else { 0.08 + 0.25 * droop };
+    let cup = if flat { 0.0 } else { 0.06 * open };
+    let fold = if flat { 0.0 } else { 0.14 + 1.2 * young };
+    let wave = if flat { 0.0 } else { 0.07 * open };
     let radius = 0.025 * leaflet_length;
-    let petiole_nodes: Vec<TubeNode> = (0..=4)
-        .map(|k| {
-            let s = k as f32 / 4.0;
-            TubeNode {
-                position: Vec3::new(s * petiole, 0.0, petiole_rise * (PI * 0.5 * s).sin()),
-                radius: radius * (1.0 - 0.4 * s),
-            }
-        })
-        .collect();
-    if !flat {
-        tube(&petiole_nodes, 4, false, Vec3::X, &mut mesh);
-    }
+    let pulvinus = Vec3::ZERO;
     let shape = |length: f32, ratio: f32, a: f32, asym: f32| Leaflet {
         length,
         width: length / ratio,
@@ -461,7 +522,7 @@ fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, Vec<f32>, f32)
                 &mut shade,
                 shape(leaflet_length, 1.35, 0.45, 0.0),
                 Pose {
-                    base: petiole_end,
+                    base: pulvinus,
                     yaw: 0.0,
                     pitch,
                 },
@@ -469,21 +530,20 @@ fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, Vec<f32>, f32)
         }
         LeafForm::Trifoliate => {
             let rachis = 0.28 * leaflet_length;
-            let rachis_end =
-                petiole_end + Quat::from_rotation_y(-pitch) * Vec3::new(rachis, 0.0, 0.0);
+            let rachis_end = pulvinus + Quat::from_rotation_y(-pitch) * Vec3::new(rachis, 0.0, 0.0);
             if !flat {
                 tube(
                     &[
                         TubeNode {
-                            position: petiole_end,
-                            radius: radius * 0.6,
+                            position: pulvinus,
+                            radius: radius * 0.7,
                         },
                         TubeNode {
                             position: rachis_end,
                             radius: radius * 0.5,
                         },
                     ],
-                    4,
+                    5,
                     false,
                     Vec3::X,
                     &mut mesh,
@@ -501,14 +561,15 @@ fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, Vec<f32>, f32)
             );
             for side in [1.0_f32, -1.0] {
                 // Lateral leaflets sit on short petiolules; their outer half is wider.
-                let yaw = side * 1.15;
+                // Unfolding, they are held close to the terminal one.
+                let yaw = side * (1.15 - 0.6 * young);
                 let stalk = 0.07 * leaflet_length;
-                let base = petiole_end + Quat::from_rotation_z(yaw) * Vec3::new(stalk, 0.0, 0.0);
+                let base = pulvinus + Quat::from_rotation_z(yaw) * Vec3::new(stalk, 0.0, 0.0);
                 if !flat {
                     tube(
                         &[
                             TubeNode {
-                                position: petiole_end,
+                                position: pulvinus,
                                 radius: radius * 0.5,
                             },
                             TubeNode {
@@ -608,6 +669,34 @@ fn pod() -> MeshData {
         .collect();
     let mut slender = MeshData::new();
     tube(&nodes, 10, false, Vec3::X, &mut slender);
+    // The persistent calyx at the stalk end, and the beak (the old style) at the tip,
+    // curving up.
+    tube(
+        &[
+            TubeNode {
+                position: Vec3::new(-0.06, 0.0, 0.0),
+                radius: 0.012,
+            },
+            TubeNode {
+                position: Vec3::new(0.015, 0.0, 0.0),
+                radius: 0.035,
+            },
+        ],
+        6,
+        true,
+        Vec3::X,
+        &mut slender,
+    );
+    let beak: Vec<TubeNode> = (0..=4)
+        .map(|k| {
+            let t = k as f32 / 4.0;
+            TubeNode {
+                position: Vec3::new(0.97 + 0.08 * t, 0.0, SLENDER * (0.2 * t * t)),
+                radius: SLENDER * 0.16 * (1.0 - 0.8 * t),
+            }
+        })
+        .collect();
+    tube(&beak, 5, true, Vec3::X, &mut slender);
     let mut m = MeshData::new();
     m.append_transformed(
         &slender,
@@ -616,18 +705,27 @@ fn pod() -> MeshData {
     m
 }
 
-/// A stylized bean flower about 1 long: calyx, an upright banner, two wings and a keel.
-fn flower() -> MeshData {
+/// A bean flower about 1 long, on its pedicel: a cupped calyx, a broad banner standing
+/// up and curling back, two wings held forward like hands, and the keel between them
+/// curling up in its spiral (the coiled keel is a *Phaseolus* trait). Returns a
+/// brightness per vertex: pale nectar guides at the banner's base, a shadowed throat.
+fn flower() -> (MeshData, Vec<f32>) {
     let mut m = MeshData::new();
+    let mut shade = Vec::new();
+    // Pedicel and calyx.
     tube(
         &[
             TubeNode {
                 position: Vec3::ZERO,
-                radius: 0.04,
+                radius: 0.03,
             },
             TubeNode {
-                position: Vec3::new(0.3, 0.0, 0.0),
-                radius: 0.12,
+                position: Vec3::new(0.18, 0.0, 0.02),
+                radius: 0.035,
+            },
+            TubeNode {
+                position: Vec3::new(0.3, 0.0, 0.03),
+                radius: 0.11,
             },
         ],
         6,
@@ -635,47 +733,72 @@ fn flower() -> MeshData {
         Vec3::X,
         &mut m,
     );
-    let petal = |length: f32| Leaflet {
+    ellipsoid(
+        &mut m,
+        Vec3::new(0.3, 0.0, 0.03),
+        Vec3::new(0.07, 0.12, 0.12),
+        5,
+        8,
+    );
+    shade.resize(m.positions.len(), 0.55);
+    let petal = |length: f32, width: f32, bend: f32, cup: f32| Leaflet {
         length,
-        width: length * 0.9,
-        a: 0.5,
-        b: 0.6,
-        bend: -0.1,
-        cup: 0.25,
+        width,
+        a: 0.55,
+        b: 0.5,
+        bend,
+        cup,
         fold: 0.0,
         wave: 0.0,
         asym: 0.0,
         acumen: 0.0,
     };
-    let mut shade = Vec::new();
+    // Banner: broad, nearly upright, its upper part curling back.
+    let n0 = m.positions.len();
     leaflet(
         &mut m,
         &mut shade,
-        petal(0.65),
+        petal(0.6, 0.75, 0.35, 0.3),
         Pose {
-            base: Vec3::new(0.3, 0.0, 0.05),
-            yaw: 0.0,
-            pitch: FRAC_PI_2 * 0.8,
+            base: Vec3::new(0.34, 0.0, 0.06),
+            yaw: PI,
+            pitch: FRAC_PI_2 - 0.25,
         },
     );
+    // Nectar guides: pale streaks fanning up the banner from its base.
+    shade.resize(m.positions.len(), 1.0);
+    for (uv, g) in m.uvs[n0..].iter().zip(&mut shade[n0..]) {
+        let (u, v) = (uv[1], 2.0 * uv[0] - 1.0);
+        let streak = (1.0 - ((v * 4.0).rem_euclid(1.0) - 0.5).abs() * 4.0).max(0.0);
+        let guide = streak * (1.0 - u * 2.5).max(0.0);
+        *g *= 1.0 + 0.15 * guide - 0.12 * (1.0 - u * 4.0).max(0.0);
+    }
+    // Wings: held forward and a little apart.
     for side in [1.0_f32, -1.0] {
         leaflet(
             &mut m,
             &mut shade,
-            petal(0.45),
+            petal(0.45, 0.32, 0.05, -0.3),
             Pose {
-                base: Vec3::new(0.3, 0.0, 0.0),
-                yaw: side * 0.6,
-                pitch: 0.15,
+                base: Vec3::new(0.34, side * 0.04, 0.02),
+                yaw: side * 0.35,
+                pitch: 0.25,
             },
         );
     }
-    ellipsoid(
-        &mut m,
-        Vec3::new(0.5, 0.0, -0.02),
-        Vec3::new(0.2, 0.09, 0.09),
-        6,
-        8,
-    );
-    m
+    // Keel: a slender tube coiling up and back between the wings.
+    let keel: Vec<TubeNode> = (0..=10)
+        .map(|k| {
+            let t = k as f32 / 10.0;
+            let angle = t * 1.6 * PI;
+            let r = 0.16 * (1.0 - 0.45 * t);
+            TubeNode {
+                position: Vec3::new(0.5 + r * angle.sin(), 0.0, 0.02 + r * (1.0 - angle.cos())),
+                radius: 0.055 * (1.0 - 0.7 * t),
+            }
+        })
+        .collect();
+    tube(&keel, 6, true, Vec3::X, &mut m);
+    shade.resize(m.positions.len(), 1.05);
+    (m, shade)
 }

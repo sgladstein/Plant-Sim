@@ -241,6 +241,8 @@ mod tests {
             attach: 1.0,
             copies: 1,
             coil: None,
+            petiole: 0.0,
+            simple_leaf: None,
         }
     }
 
