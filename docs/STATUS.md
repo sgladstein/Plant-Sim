@@ -39,7 +39,7 @@ The viewer reads `ps_view::Garden` and `SkyState` only. Swapping the stand-in fo
 ## Open questions for the owner
 - WP7 (decision 0009): two readings of the plan's text to confirm. Priority is the share of an organ's own available reserve it may spend per hour (taken literally, §3.9 would cap every organ below its potential), and the water stress factor multiplies the stomatal slope.
 - Set `main` as the repository's default branch in GitHub settings (the agent cannot change repo settings).
-- WP13 (Bevy smoke test on the GTX 1070) should run around sessions 3 or 4 of M0.
+- WP13 (Bevy smoke test on the GTX 1070) passed its frame-time gate on 2026-11-05 with stand-in plants: Vulkan 2.7 ms per frame, DX12 5.8 ms (budget 16 ms). Re-check on the real sim. The viewer thread has the follow-ups (default backend, slow cold-start screenshots, see-through side panel).
 
 ## Review follow-ups (fold into a later PR)
 - WP4 review: cross-field validation in `Species::validate` (t_base < t_opt < t_max, emergence < flowering < maturity, growth temperature ordering, finite tropisms, `#rrggbb` colors); the discrete-trait rounding rule in the species model card; `specific_stem_length` likely 10–20 cm/g (WP12). (The typed `Traits` view landed with WP7.)
