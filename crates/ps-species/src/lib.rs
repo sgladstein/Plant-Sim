@@ -86,22 +86,45 @@ pub enum GrowthForm {
     Tree,
 }
 
+/// Where the axes of a root type start (§3.7, decision 0013).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum RootOrigin {
+    /// The tap root, from the seed at germination.
+    Radicle,
+    /// A whorl of basal roots at the base of the hypocotyl.
+    Basal,
+    /// Roots along the buried part of the hypocotyl.
+    Hypocotyl,
+    /// Laterals on roots of the previous order.
+    Lateral,
+}
+
 /// One root type (§3.7).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RootType {
-    /// Branching order: 0 tap root, 1 first-order laterals, 2 second-order.
+    /// Name, unique within the species.
+    pub name: String,
+    /// Where its axes start.
+    pub origin: RootOrigin,
+    /// Branching order: 0 for axes from the seed, 1 for their laterals.
     pub order: u8,
+    /// Number of axes (1 for laterals).
+    pub count: Param,
+    /// Thermal time from germination to the appearance of these axes.
+    pub emergence: Param,
     /// Potential tip elongation at optimum temperature.
     pub elongation: Param,
     /// Maximum root length.
     pub max_length: Param,
-    /// Distance between lateral branches.
+    /// Distance between laterals on this root (0 for none).
     pub branch_spacing: Param,
     /// Unbranched zone behind the tip.
     pub apical_zone: Param,
-    /// Angle of laterals from the parent root.
+    /// Angle from the vertical (axes) or from the parent root (laterals).
     pub insertion_angle: Param,
+    /// Root diameter.
+    pub diameter: Param,
     /// Gravitropism weight, dimensionless.
     pub gravitropism: f64,
     /// Hydrotropism weight, dimensionless.
@@ -113,11 +136,14 @@ impl RootType {
     #[must_use]
     pub fn entries(&self) -> Vec<(Spec, &Param)> {
         let params = [
+            &self.count,
+            &self.emergence,
             &self.elongation,
             &self.max_length,
             &self.branch_spacing,
             &self.apical_zone,
             &self.insertion_angle,
+            &self.diameter,
         ];
         schema::ROOT_TYPE.iter().copied().zip(params).collect()
     }
@@ -217,14 +243,9 @@ pub enum SpeciesError {
         /// The trait name.
         trait_name: String,
     },
-    /// Root types must be orders 0, 1, 2, ... without gaps.
-    #[error("roots: expected root orders 0..{n} in order, found {found:?}")]
-    RootOrders {
-        /// Number of root types.
-        n: usize,
-        /// Orders found.
-        found: Vec<u8>,
-    },
+    /// The root types are inconsistent.
+    #[error("roots: {0}")]
+    Roots(String),
 }
 
 fn check_param(at: &str, unit: &'static str, p: &Param) -> Result<(), SpeciesError> {
@@ -334,16 +355,45 @@ impl Species {
         for (spec, p) in self.phenology.entries() {
             check_param(&format!("phenology.{}", spec.key), spec.unit, p)?;
         }
-        let orders: Vec<u8> = self.roots.iter().map(|r| r.order).collect();
-        if orders.iter().enumerate().any(|(i, o)| usize::from(*o) != i) || orders.is_empty() {
-            return Err(SpeciesError::RootOrders {
-                n: orders.len(),
-                found: orders,
-            });
-        }
+        self.validate_roots()?;
         for r in &self.roots {
             for (spec, p) in r.entries() {
-                check_param(&format!("roots[{}].{}", r.order, spec.key), spec.unit, p)?;
+                check_param(&format!("roots[{}].{}", r.name, spec.key), spec.unit, p)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_roots(&self) -> Result<(), SpeciesError> {
+        let err = |m: String| Err(SpeciesError::Roots(m));
+        if self
+            .roots
+            .iter()
+            .filter(|r| r.origin == RootOrigin::Radicle)
+            .count()
+            != 1
+        {
+            return err("exactly one root type must have origin Radicle".into());
+        }
+        for (i, r) in self.roots.iter().enumerate() {
+            if r.name.is_empty() || self.roots[..i].iter().any(|o| o.name == r.name) {
+                return err(format!(
+                    "root type {i}: name {:?} is empty or repeated",
+                    r.name
+                ));
+            }
+            let lateral = r.origin == RootOrigin::Lateral;
+            if lateral != (r.order > 0) {
+                return err(format!(
+                    "{}: laterals have order 1 or more, other origins order 0",
+                    r.name
+                ));
+            }
+            if lateral && !self.roots.iter().any(|p| p.order + 1 == r.order) {
+                return err(format!("{}: no root type of order {}", r.name, r.order - 1));
+            }
+            if !(r.gravitropism.is_finite() && r.hydrotropism.is_finite()) {
+                return err(format!("{}: tropism weights must be finite", r.name));
             }
         }
         Ok(())
@@ -435,7 +485,7 @@ impl Species {
         for r in &self.roots {
             for (spec, p) in r.entries() {
                 out.push((
-                    format!("roots[{}].{}", r.order, spec.key),
+                    format!("roots[{}].{}", r.name, spec.key),
                     p.value,
                     p.unit.clone(),
                     p.source.clone(),

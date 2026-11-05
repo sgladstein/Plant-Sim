@@ -18,10 +18,12 @@ and its validation targets.
    difference above 1e-6 relative. Until that job has passed once, the fixture is
    "plantecophys equations", not "plantecophys output".
 2. **Temperature responses.** §11.4 says "the Medlyn 2002 parameter set unless a species
-   card says otherwise". The bean file now carries the peaked-Arrhenius parameters
-   (Medlyn 2002 form) with plantecophys' defaults as "~" values
-   (Vcmax 58550 / 200000 / 629.26, Jmax 29680 / 200000 / 631.88), and Rd Q10 1.92. They
-   are guesses for bean until WP12. Rubisco kinetics are Bernacchi et al. 2001 constants
+   card says otherwise". The bean file now carries peaked-Arrhenius parameters in the
+   Medlyn 2002 form with values that are "~" for bean
+   (Vcmax 58550 / 200000 / 629.26, Jmax 29680 / 200000 / 631.88), and Rd Q10 1.92.
+   (Amended in WP8 after review: these are not plantecophys' defaults, which differ, so
+   the source is "Medlyn 2002 form, values ~ for bean".) They are guesses for bean until
+   WP12. Rubisco kinetics are Bernacchi et al. 2001 constants
    in code (fixed physiology, §3.12).
 3. **H2O/CO2 ratio 1.57**, as plantecophys hard-wires (Medlyn 2011 writes 1.6). With 1.6
    the conductance would differ from the reference by 1.9%, at the edge of the 2% target.

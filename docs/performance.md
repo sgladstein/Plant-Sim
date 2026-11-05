@@ -17,7 +17,7 @@ measures against them. Update the table when a work package changes a hot path.
 
 ```
 cargo bench -p ps-bench            # criterion, wall time
-cargo bench -p ps-bench --bench soil    # one file (soil, light, physio)
+cargo bench -p ps-bench --bench soil    # one file (soil, light, physio, mesh)
 ```
 
 Scenes are fixed and deterministic (`crates/ps-bench/src/lib.rs`), so numbers compare
@@ -26,21 +26,28 @@ across commits on the same machine. The instruction-count budget on CI (iai-call
 
 ## Measurements
 
-Release build, 4-core Xeon cloud container, 2026-11-05. The owner's PC (GTX 1070 era)
-should be within a factor of about 1.5 either way.
+Release build, 4-core Xeon cloud container, 2026-11-05 (after #21, #24, #25). The
+owner's PC (GTX 1070 era) should be within a factor of about 1.5 either way. Light runs
+leaves in parallel (rayon); single-thread numbers are in brackets.
 
 | Bench | Time per sim-day | Against budget |
 | --- | --- | --- |
 | soil, pot (1,000 cells): hydrology | 0.14 ms | fine |
-| soil, pot: uptake + FTSW, 1 plant | 0.09 ms | fine |
+| soil, pot: uptake + FTSW, 1 plant | 0.07 ms | fine |
 | soil, 3 × 3 m plot (72,000 cells): hydrology | 11 ms | over half the 20 ms plot budget on its own |
-| soil, plot: uptake + FTSW, 30 plants, dense root arrays | 215 ms | 10× the whole plot budget |
-| light (main after #18), 60-leaf plant, daily rebuild | 6.5 ms | 3× the whole M0 budget |
-| light, 300-leaf plant | 32 ms | 15× |
-| light, 30 plants × 100 leaves, one grid | 110 ms | 6× the plot budget |
-| physio, class table build (24 × 68 solves) | 0.31 ms | fine for one plant; 9.4 ms for 30 per-plant tables |
-| physio, 600 class lookups × 24 h (300 leaves, sunlit and shaded) | 1.26 ms | 90% is `pow` in `par_node`; cached in PR #21 |
-| physio, allocation, 191 organs × 24 h | 0.63 ms | fine for one plant; 19 ms for 30 plants |
+| soil, plot: joint uptake + FTSW, 30 plants (sparse roots) | 13 ms (was 215) | with hydrology, soil alone is 24 ms; see hot spot 2 |
+| light, 60-leaf plant, daily rebuild | 1.26 ms [3.8] (was 6.5) | fine on 4 cores; over 2 ms single-thread |
+| light, 300-leaf plant | 5.8 ms [19] (was 32) | over |
+| light, 30 plants × 100 leaves, one grid | 25 ms (was 110) | over the plot budget |
+| physio, class table build (24 × 68 solves) | 0.32 ms | fine for one plant; 9.7 ms for 30 per-plant tables |
+| physio, 600 class lookups × 24 h | 0.39 ms (was 1.26) | fine |
+| physio, allocation with implicit transport, 191 organs × 24 h | 0.65 ms | fine for one plant; 19 ms for 30 plants |
+
+Viewer CPU work per frame, one 90-day demo bean (257 organs, `benches/mesh.rs`): clone
+the hourly arena and skeleton 8 µs, skeleton blend 1.6 µs, leaf instances 0.9 µs, a
+full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis every frame
+is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
+owner's machine.
 
 ## Known hot spots
 
@@ -48,9 +55,11 @@ should be within a factor of about 1.5 either way.
    sectors), about 217 rays per leaf, at about 140 cells per ray on a 48-cell grid: 16×
    the §3.5 estimate. Exact speedups (same bits) and model options are in the perf
    review.
-2. **Dense root arrays in soil.** Fixed by decision 0012: `ftsw` and `take_up` take
-   sparse sorted `(cell, length)` lists, and `take_up` is one joint call per hour for
-   all plants (two whole-grid sums per hour for its ledger, not per plant).
+2. **Soil uptake.** Dense root arrays were fixed by decision 0012 (sparse sorted
+   `(cell, length)` lists, one joint `take_up` per hour). What remains is 36% building
+   `per_cell` with a binary search per root cell and 27% sorting the per-cell request
+   list; a dense per-cell scratch accumulator summed in plant order gives the same bits
+   without either.
 3. **Physiology at plot scale.** One class table per plant and per-hour `Vec`s in
    allocation. Dedup tables by (leaf parameters, stress) and reuse scratch buffers
    before WP21.

@@ -15,8 +15,8 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 5 Soil and water | #6 | done (PR #16) |
 | 6 Light | #7 | done (PRs #17, #18); owner accepted 95% of leaves within 10% for M0, re-check in WP12 (decision 0008) |
 | 7 Physiology | #8 | done (PR #20) |
-| 8 Herb architecture and roots | #9 | next |
-| 9 World | #10 | not started |
+| 8 Herb architecture and roots | #9 | done (this PR; decision 0013) |
+| 9 World | #10 | next |
 | 10 Export and CLI | #11 | not started |
 | 11 Validation harness | #12 | not started |
 | 12 Tuning and lock | #13 | not started |
@@ -50,11 +50,10 @@ None yet (WP11).
 - Performance: the light speedups and 32 cells per axis landed (decision 0010), and class-table lookups cache their node PAR values. Sparse root lists and one joint uptake call per hour landed (decision 0012). Before WP21: reusable scratch buffers in `allocation::hourly`, one class table per distinct (params, stress) at plot scale, and a look at `ExpansionCurve::increment`. Optional: cache the footprints `LightGrid::fit` computes.
 
 - WP7 review and research findings: done in decision 0011 (expansion clock, implicit phloem transport, phenology from germination, debt charged to the ancestor, maintenance 0.218 g C/g N/day). Open for WP12: phloem conductance K now sets how far carbon reaches per hour; mature leaves import like any organ; priority is a weak lever; Vcmax/Jmax (Pimentel 2011) are chloroplast-based, so without gm Rubisco-limited A is about 20% high (add gm or use Ci-based Vcmax near 70).
-- Research findings for WP8 (from the research thread; full report to come): bean roots are a tap root (2.36 cm/day), two whorls of about 4 basal roots (about 4 cm/day from day 3, gravitropism graded by whorl) and up to 10 hypocotyl-borne roots (about 1 cm/day, 85°, no gravitropism); laterals 0.77 cm/day for 6–10 days, about 6 cm, 7–12 per cm, 75°. Specific root length per root type from diameter (tap 0.9, basal 0.68, hypocotyl 0.64, lateral 0.3 mm) and tissue density 0.094 g/cm³, not one 70 m/g. Uptake capped near 0.03 cm³ water per cm root per day. Bean trifoliates are probably distichous (about 180°), not 137.5°. Baseline pod set 0.2–0.55 of flowers even unstressed. Shade avoidance lengthens internodes only, capped at 1.5–2×.
+- WP8 for WP12 (decision 0013): stems have no secondary thickening (§3.4) and roots are about 4% of dry mass, low for bean; the leaf sink feedback (0.10 to 0.30 g C/g DM) keeps reserves physical and should be checked against bean leaf starch; no phototropism or hydrotropism yet; branches have no axillary racemes; all leaves drop at maturity; the research review says shade avoidance changes internode length only, while §3.4 also raises SLA up to 1.3×.
 
 ## Notes for the next session
-- WP8: `leaf_capacity` takes the thermal age at full expansion; with the paced expansion clock (decision 0011) record the thermal age when `is_complete(expansion_age)` first becomes true, not the curve duration. Root segments become `ps_soil::RootCells` per plant.
-- WP8 consumes ps-physio: build a `ClassTable` per plant-hour, read leaf rates with `lookup(par, leaf_capacity(...))`, pass income to `allocation::hourly`, run `starvation_deaths` in daily step 4, report `phenology::Events`. Leaf lifespan and shade senescence (daily step 4) belong to WP8.
+- WP9: `ps_arch::Plant` runs one plant's §3.2 steps. Per hour: `water_demand` for every plant, `SoilGrid::step_hour`, one `take_up` over every plant's `uptake_request`, then `grow_hour` with each plant's `Uptake`. Per day: `day(soil, next day's sun path, tick)`. `tests/ninety_days.rs::run_watered` is a one-plant version of that loop. The snapshot should carry `Plant::positions` (base, tip per organ, soil-grid frame) and `Meta` (role, attach, multiplicity) for the viewer (agreed with the viewer thread).
 - WP12: regenerate the light ray tracer fixture from a sim-exported 60-day plant and re-run `single_plant_matches_ray_tracer`; tighten its bounds if every leaf passes (decision 0008).
 - Local checks: see CLAUDE.md "Session start".
 - `cargo nextest` runs in CI; locally `cargo test --workspace` is equivalent.

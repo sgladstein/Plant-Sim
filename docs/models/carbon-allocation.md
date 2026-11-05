@@ -47,7 +47,13 @@ reserve `R` (g C), structure `W` (g DM) and concentration `C = R / max(W, 1e-6)`
    living ancestor's reserve, which also pays the dead organ's debt (a negative reserve
    is carbon already respired, so litter is never negative; decision 0011). The rest of
    its structure and any positive reserve become litter. With no living ancestor
-   everything goes to litter.
+   everything goes to litter. Every death goes through `allocation::shed`, which always
+   kills the whole subtree (WP8): a starving organ, a senescing leaf, a closed flower or
+   a dropped cotyledon. When the architecture sheds an organ (age, shade, frost,
+   flower closing, cotyledon drop) its positive reserve, which is mobile, first moves
+   to its parent; only structure is split into resorbed and litter (decision 0013).
+   Starvation is not checked after maturity, when tissue is dry and no longer
+   respires (organ nitrogen is set to zero, so maintenance is zero).
 8. Ledger: `stock = Σ_living (R + 0.45 W)` must equal
    `start + added + income − maintenance − growth respiration − litter`; debug builds
    assert it every hour at 1e-9 relative.
