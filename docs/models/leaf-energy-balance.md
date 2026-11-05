@@ -42,7 +42,7 @@ Per unit one-sided leaf area; both faces exchange heat and longwave (crate
   Rd) and to the leaf-to-air deficit `es(T) − ea`, so `g(T) = T_eb(gs(T)) − T` is solved
   for its root: a first guess (air temperature, or the neighboring nodes' answer), one
   fixed-point step, clamped secant steps until bracketed, then Illinois (modified
-  regula falsi), until `|g| < 0.01 K` or the bracket is that narrow, at most 8 gas-exchange
+  regula falsi), until `|g| < 0.05 K` (0.01 K before model 0.18.0) or the bracket is that narrow, at most 8 gas-exchange
   solves; the answer is the evaluation nearest its own balance. In the dark `gs = g0`, so
   one balance does.
 - The class table (§3.8, decision 0009) is solved this way at the hour's reference

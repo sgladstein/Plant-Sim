@@ -62,7 +62,7 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 
 ## 2. Current state (2026-11-05, WP27 PR)
 
-**Model and data.** Model 0.17.0 (decision 0034: the leaf energy balance, WP27), species schema 11. Before it 0.16.0 (decision 0033: broad leaves at 5 light points) and schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
+**Model and data.** Model 0.18.0 (decision 0034 amendment: coupled tolerance 0.05 K, for speed; perf thread). Before it 0.17.0 (decision 0034: the leaf energy balance, WP27), species schema 11. Before it 0.16.0 (decision 0033: broad leaves at 5 light points) and schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
 
 **Merged today:**
 - #87: lateral roots stay in the soil (decision 0028, model 0.11.0).

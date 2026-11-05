@@ -32,9 +32,9 @@ against every field baseline, which is why g1 = 5.79 (decision 0032) came first.
    balance together for a horizontal leaf in the open at 0.5 m in the hour's air and
    wind: stomata see the leaf temperature and the leaf-to-air deficit. The root of
    `T_eb(gs(T)) − T` is found by a fixed-point step from a first guess (the neighboring
-   nodes' answers), clamped secant steps until bracketed, then Illinois, until 0.01 K or
-   8 gas-exchange solves (the research recommended 1e-3 K; 0.01 K costs under 0.05% in A
-   and saves about a third of the solves). A dark hour solves only the PAR-0 node and
+   nodes' answers), clamped secant steps until bracketed, then Illinois, until 0.05 K or
+   8 gas-exchange solves (the research recommended 1e-3 K; 0.01 K at model 0.17.0 cost
+   under 0.05% in A and saved about a third of the solves; see the amendment for 0.05 K). A dark hour solves only the PAR-0 node and
    copies it (a lookup at PAR 0 reads the same bits). The table key adds the energy
    parameters; the wind is the soil's, as the rest of the hour's weather.
 4. **Per leaf.** Each leaf part (sunlit, shaded) solves its own temperature and
@@ -88,3 +88,27 @@ against every field baseline, which is why g1 = 5.79 (decision 0032) came first.
   charts. The plant's day totals are state, so they are in the hash.
 - The research's next check stands: a validation target for midday gs of well-watered
   field bean (0.4 to 0.8 mol m⁻² s⁻¹) once it has a source.
+
+## Amendment, model 0.18.0: coupled tolerance 0.05 K (performance)
+
+At 0.17.0 the coupled class table made the single pot 30 to 40% slower: one plant's
+hourly table runs serially, and it cost 2.9 times the uncoupled table's instructions
+(465 M against 162 M over 90 days). The convergence tolerance of the coupled solve goes
+from 0.01 K to 0.05 K (`ps_physio::energy::T_TOLERANCE`). Everything else stands.
+
+- Accuracy, against direct coupled solves at every node of six cases (including the
+  WP27 cases: sunny 25 °C at 1 kPa, and 35 °C at 2.5 kPa in calm air): node leaf temperature
+  within 0.03 K, node A within 1%; between nodes the table's worst stays 6.9% in A and
+  0.24 K (the old test bounds of 8% and 0.3 K).
+- Cost: class tables 465 M to 391 M instructions on the pot over 90 days (-16%), pot
+  total -2.4%. Wall time in one 4-core container, best of 3 over 4 rounds: single_pot
+  3.00 to 2.84 ms per sim-day, plot_30_beans 23.5 to 23.1.
+- Validation on seed means: 87 checks, no verdict moved. The largest shifts are
+  in responses already near zero: drought_seeds_per_pod 0.039 to 0.032,
+  heat_seeds_per_pod -0.153 to -0.147, pole_unstaked_seed_yield -0.536 to -0.516.
+- Rejected, measured (performance thread, /mnt/project-files/perf/wp27-pot-cost.md):
+  coupling only some capacity rows and interpolating leaf temperature between them.
+  Coupling rows 1.0, 0.4 and 0.1 gave 369 M and up to 4% A error. Coupling rows 1.0
+  and 0.1 gave 340 M and up to 17% A error in hot, calm air. Too little speed for the
+  error (Main Game's call). Skipping hours, or reusing a table across hours when the
+  air barely changes, was ruled out: it gives up the hourly response to weather.
