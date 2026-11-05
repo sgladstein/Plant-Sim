@@ -14,15 +14,15 @@
 //! The pass costs one full-screen draw (about 100 texture reads a pixel at 1440p).
 
 use bevy::asset::embedded_asset;
+use bevy::core_pipeline::Core3dSystems;
 use bevy::core_pipeline::fullscreen_material::{FullscreenMaterial, FullscreenMaterialPlugin};
 use bevy::core_pipeline::tonemapping::tonemapping;
-use bevy::core_pipeline::Core3dSystems;
 use bevy::ecs::schedule::ScheduleConfigs;
 use bevy::ecs::system::BoxedSystem;
 use bevy::prelude::*;
+use bevy::render::RenderApp;
 use bevy::render::extract_component::ExtractComponent;
 use bevy::render::render_resource::ShaderType;
-use bevy::render::RenderApp;
 use bevy::shader::ShaderRef;
 
 use crate::camera::OrbitCamera;
@@ -204,7 +204,8 @@ pub fn sky_gradient(dir: Vec3) -> [f32; 3] {
     c = c.map(|v| v * (1.0 + 0.06 * streak));
     // Loose cloud washes in the low and middle sky, with soft but definite edges.
     let n = fbm3(d * 2.6 + Vec3::new(0.0, 3.0, 0.0));
-    let cover = smoothstep(0.52, 0.62, n) * smoothstep(0.02, 0.12, y) * (1.0 - smoothstep(0.55, 0.9, y));
+    let cover =
+        smoothstep(0.52, 0.62, n) * smoothstep(0.02, 0.12, y) * (1.0 - smoothstep(0.55, 0.9, y));
     let rim = smoothstep(0.52, 0.56, n) - smoothstep(0.56, 0.64, n);
     let cloud = mix3(CLOUD, [0.66, 0.66, 0.72], 0.6 * (n - 0.6).max(0.0) * 4.0);
     c = mix3(c, cloud, 0.85 * cover);
@@ -215,7 +216,11 @@ pub fn sky_gradient(dir: Vec3) -> [f32; 3] {
 /// The painted sky's horizon color for a tint (matches the fog).
 #[must_use]
 pub fn horizon(tint: [f32; 3]) -> [f32; 3] {
-    [HORIZON[0] * tint[0], HORIZON[1] * tint[1], HORIZON[2] * tint[2]]
+    [
+        HORIZON[0] * tint[0],
+        HORIZON[1] * tint[1],
+        HORIZON[2] * tint[2],
+    ]
 }
 
 #[cfg(test)]

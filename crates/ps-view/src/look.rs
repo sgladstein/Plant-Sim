@@ -137,10 +137,10 @@ pub fn sky_cubemap(tint: [f32; 3]) -> Image {
 /// (`crate::painterly`) when `painted`. The painted washes are computed once and cached.
 #[must_use]
 pub fn styled_sky_cubemap(painted: bool, tint: [f32; 3]) -> Image {
+    static PAINTED: std::sync::OnceLock<Vec<[f32; 3]>> = std::sync::OnceLock::new();
     if !painted {
         return sky_cubemap(tint);
     }
-    static PAINTED: std::sync::OnceLock<Vec<[f32; 3]>> = std::sync::OnceLock::new();
     let base = PAINTED.get_or_init(|| {
         let n = crate::painterly::SKY_FACE as usize;
         let mut v = Vec::with_capacity(n * n * 6);

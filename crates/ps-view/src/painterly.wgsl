@@ -151,14 +151,15 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // Bands are spaced in a perceptual (square-root) value, not linear light.
     let sp = soft_step(sqrt(l), settings.bands);
     let stepped = sp * sp;
-    let l2 = mix(l, stepped, settings.steps);
+    // Fade the steps out in the darkest values, so a dusk scene keeps its shapes.
+    let l2 = mix(l, stepped, settings.steps * smoothstep(0.08, 0.3, sqrt(l)));
     col = col * (l2 / l);
 
     // 4. Watercolor palette.
     let grey = vec3<f32>(luma(col));
     col = mix(col, grey, 0.18 * settings.mute);
     let lv = luma(col);
-    let cool = vec3<f32>(0.80, 0.84, 1.06);
+    let cool = vec3<f32>(0.88, 0.91, 1.04);
     let warm = vec3<f32>(1.05, 1.0, 0.90);
     col = col * mix(vec3<f32>(1.0), mix(cool, warm, smoothstep(0.15, 0.7, lv)), settings.mute);
     // Lifted darks: watercolor shadows are transparent washes, never ink black.
@@ -167,7 +168,10 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let lift = 0.35 * settings.mute * (1.0 - smoothstep(0.0, 0.3, lv));
     col = col + lift * (paper_white * 0.06 + col * 0.25) * vec3<f32>(0.9, 0.95, 1.1);
     // A gentle S-curve restores the contrast the muting took out.
-    col = mix(col, col * col * (3.0 - 2.0 * col), 0.35 * settings.mute);
+    // In a perceptual (square-root) value, so darks are not crushed.
+    let pc = sqrt(clamp(col, vec3<f32>(0.0), vec3<f32>(1.0)));
+    let sc = mix(pc, pc * pc * (3.0 - 2.0 * pc), 0.3 * settings.mute);
+    col = sc * sc;
 
     // 5. Pigment pooling: a faint, wide darkening on the darker side of a value change,
     // where a wash dries at its edge (a soft rim, not an ink line).
