@@ -17,7 +17,7 @@ measures against them. Update the table when a work package changes a hot path.
 
 ```
 cargo bench -p ps-bench            # criterion, wall time
-cargo bench -p ps-bench --bench soil    # one file (soil, light)
+cargo bench -p ps-bench --bench soil    # one file (soil, light, physio)
 ```
 
 Scenes are fixed and deterministic (`crates/ps-bench/src/lib.rs`), so numbers compare
@@ -38,6 +38,9 @@ should be within a factor of about 1.5 either way.
 | light (main after #18), 60-leaf plant, daily rebuild | 6.5 ms | 3× the whole M0 budget |
 | light, 300-leaf plant | 32 ms | 15× |
 | light, 30 plants × 100 leaves, one grid | 110 ms | 6× the plot budget |
+| physio, class table build (24 × 68 solves) | 0.31 ms | fine for one plant; 9.4 ms for 30 per-plant tables |
+| physio, 600 class lookups × 24 h (300 leaves, sunlit and shaded) | 1.26 ms | 90% is `pow` in `par_node`; cached in PR #21 |
+| physio, allocation, 191 organs × 24 h | 0.63 ms | fine for one plant; 19 ms for 30 plants |
 
 ## Known hot spots
 
@@ -49,5 +52,8 @@ should be within a factor of about 1.5 either way.
    per plant and walk the whole grid (and sum it twice for the ledger). A plant's roots
    occupy a few percent of a plot. A sparse sorted `(cell, length)` list, and one joint
    uptake call per hour for all plants, removes almost all of this cost.
-3. **Soil hydrology at plot scale** allocates two grid-sized vectors per hour and walks
+3. **Physiology at plot scale.** One class table per plant and per-hour `Vec`s in
+   allocation. Dedup tables by (leaf parameters, stress) and reuse scratch buffers
+   before WP21.
+4. **Soil hydrology at plot scale** allocates two grid-sized vectors per hour and walks
    columns with a layer stride. Fine for pots; worth a pass before WP21.
