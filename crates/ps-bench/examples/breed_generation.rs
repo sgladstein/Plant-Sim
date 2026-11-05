@@ -11,13 +11,11 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
 
-use ps_breed::{BenchConditions, BenchPlan, Looks, SeedLibrary, run_generation};
-use ps_species::Species;
+use ps_breed::{BenchConditions, BenchPlan, Looks, SeedLibrary, load_species, run_generation};
 use ps_world::Catalog;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -26,13 +24,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => 3,
     };
     let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
-    let bush = Species::from_ron(&std::fs::read_to_string(
-        data.join("species/bush_bean.ron"),
-    )?)?;
-    let looks = Looks::load(
-        &data,
-        &BTreeMap::from([("bush_bean".to_owned(), bush.clone())]),
-    )?;
+    let kin = load_species(&data)?;
+    let bush = kin
+        .get("bush_bean")
+        .ok_or("no bush_bean species file")?
+        .clone();
+    let looks = Looks::load(&data, &kin)?;
     let mut founders = SeedLibrary::new();
     let mut seeds = vec![founders.add_line("bush_bean", &bush, &looks)?];
     seeds.extend(founders.add_founders("bush_bean", &bush, 9, 3, &looks)?);
@@ -52,7 +49,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for run in 1..=runs.max(1) {
         let mut lib = founders.clone();
         let t = Instant::now();
-        let g = run_generation(&mut lib, &plan, &catalog, &looks)?;
+        let g = run_generation(&mut lib, &plan, &catalog, &kin, &looks)?;
         let s = t.elapsed().as_secs_f64();
         println!(
             "| {run} | {} | {} | {s:.2} | `{:016x}` |",

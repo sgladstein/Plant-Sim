@@ -45,7 +45,7 @@ impl Bench {
     /// # Errors
     /// A species file or colour table that cannot be read.
     pub fn load(data: &Path, captures: &Path) -> Result<(Self, Breeding)> {
-        let species = read_species(data)?;
+        let species = ps_breed::load_species(data)?;
         let looks = Looks::load(data, &species)?;
         let path = captures.join("seed_library.ron");
         let mut ui = Breeding {
@@ -141,9 +141,13 @@ impl Bench {
                 if saved.tick < tick || world.state().seed_library.len() < from {
                     from = 0;
                 }
-                let added = self
-                    .library
-                    .add_lots(world.state(), from, "Garden", &self.looks)?;
+                let added = self.library.add_lots(
+                    world.state(),
+                    from,
+                    "Garden",
+                    &self.species,
+                    &self.looks,
+                )?;
                 self.imported = (world.state().seed_library.len(), saved.tick);
                 self.save()?;
                 Ok(if added.is_empty() {
@@ -171,12 +175,13 @@ impl Bench {
                 let scenario = plan.scenario(&self.library)?;
                 let catalog = ps_world::Catalog::load(&self.data, &scenario)?;
                 let looks = self.looks.clone();
+                let kin = self.species.clone();
                 let mut lib = self.library.clone();
                 let (tx, rx) = channel();
                 std::thread::Builder::new()
                     .name("breeding-bench".into())
                     .spawn(move || {
-                        let out = ps_breed::run_generation(&mut lib, &plan, &catalog, &looks)
+                        let out = ps_breed::run_generation(&mut lib, &plan, &catalog, &kin, &looks)
                             .map(|g| (lib, g, plan.label))
                             .map_err(|e| e.to_string());
                         let _ = tx.send(out);
@@ -228,25 +233,6 @@ pub fn breeding(mut ui: ResMut<Breeding>, mut bench: ResMut<Bench>, src: Option<
         Err(e) => format!("{e:#}"),
     };
     ui.library = library_rows(&bench.library);
-}
-
-/// Every species file in `data/species`, by id.
-fn read_species(data: &Path) -> Result<BTreeMap<String, Species>> {
-    let dir = data.join("species");
-    let mut out = BTreeMap::new();
-    for entry in std::fs::read_dir(&dir).with_context(|| format!("reading {}", dir.display()))? {
-        let path = entry?.path();
-        if path.extension().is_none_or(|x| x != "ron") {
-            continue;
-        }
-        let Some(id) = path.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
-            continue;
-        };
-        let text = std::fs::read_to_string(&path)?;
-        let sp = Species::from_ron(&text).with_context(|| format!("parsing {}", path.display()))?;
-        out.insert(id, sp);
-    }
-    Ok(out)
 }
 
 /// One more than the highest "Bench N" the library has seeds from.

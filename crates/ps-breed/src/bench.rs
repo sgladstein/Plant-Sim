@@ -1,11 +1,12 @@
 //! The breeding bench: one headless world of up to ten pots, a generation per run
 //! (WP30).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ps_graph::{OrganId, OrganKind};
 use ps_physio::Stage;
 use ps_soil::Texture;
+use ps_species::Species;
 use ps_species::seed_colour::SeedLook;
 use ps_world::{
     ActionKind, Catalog, Irrigation, MODEL_VERSION, SCENARIO_SCHEMA, Scenario, SeedChoice,
@@ -162,10 +163,10 @@ impl BenchPlan {
             start: k.start,
             weather: WeatherSource::Preset(k.weather.clone()),
             soils: Vec::new(),
-            radiation_fraction: std::collections::BTreeMap::new(),
-            rain_fraction: std::collections::BTreeMap::new(),
-            nitrogen: std::collections::BTreeMap::new(),
-            irrigation: std::collections::BTreeMap::new(),
+            radiation_fraction: BTreeMap::new(),
+            rain_fraction: BTreeMap::new(),
+            nitrogen: BTreeMap::new(),
+            irrigation: BTreeMap::new(),
             co2_ppm: k.co2_ppm,
             sowings: Vec::new(),
             supports: Vec::new(),
@@ -278,13 +279,31 @@ fn seeds_of(arena: &ps_graph::OrganArena, pod: OrganId) -> usize {
 /// stops once every plant is mature or at `max_days`, then picks every pod with seeds.
 ///
 /// # Errors
-/// [`BreedError::Plan`] for a bad plan, [`BreedError::World`] from the world.
+/// [`BreedError::Plan`] for a bad plan, or a cross between files that do not share a
+/// genome layout; [`BreedError::World`] from the world.
 pub fn grow(
     library: &SeedLibrary,
     plan: &BenchPlan,
     catalog: &Catalog,
 ) -> Result<World, BreedError> {
-    let mut w = World::new(plan.scenario(library)?, catalog.clone())?;
+    let scenario = plan.scenario(library)?;
+    for c in &plan.crosses {
+        let file = |pot: usize| {
+            let id = &scenario.sowings[pot].species;
+            catalog
+                .species
+                .get(id)
+                .map(|sp| (id, sp))
+                .ok_or_else(|| BreedError::Species(format!("{id} not in the catalog")))
+        };
+        let ((m, ms), (f, fs)) = (file(c.mother)?, file(c.father)?);
+        if !ms.can_cross(fs) {
+            return Err(BreedError::Plan(format!(
+                "cross {c:?}: {m} and {f} do not share a genome layout"
+            )));
+        }
+    }
+    let mut w = World::new(scenario, catalog.clone())?;
     let end = u64::from(plan.max_days) * 24;
     let mut crossed = BTreeSet::new();
     while w.tick() < end {
@@ -402,11 +421,12 @@ pub fn run_generation(
     library: &mut SeedLibrary,
     plan: &BenchPlan,
     catalog: &Catalog,
+    kin: &BTreeMap<String, Species>,
     looks: &Looks,
 ) -> Result<Generation, BreedError> {
     let w = grow(library, plan, catalog)?;
     let mut rows = measure(&w, plan, looks)?;
-    let saved = library.add_lots(w.state(), 0, &plan.label, looks)?;
+    let saved = library.add_lots(w.state(), 0, &plan.label, kin, looks)?;
     for &id in &saved {
         if let Some(Origin::Harvest { plant, .. }) = library.get(id).map(|s| &s.origin)
             && let Some(row) = rows.get_mut(*plant as usize)

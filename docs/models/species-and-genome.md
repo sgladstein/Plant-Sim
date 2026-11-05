@@ -146,8 +146,9 @@ and `root_density`.
   chromosome lengths). Bush and pole bean cross; bean and wheat do not.
 - A seed's genotype is fixed by its key and both parents, so it is computed when needed
   (`World::seed_genotype` for a seed in its pod) and written to the seed lot at harvest
-  (`SeedLot::seed_genotypes`: organ, mother, father, genotype). Its species is its
-  mother's.
+  (`SeedLot::seed_genotypes`: organ, mother, father, genotype). In the world's lot its
+  species is its mother's. When the seed is saved to the seed library, it takes the bean
+  file that matches its habit (breeding-bench.md, decision 0038 item 7).
 - Seed size stays maternal: a seed fills to its mother's heritable `seed_mass`.
 
 ## Inputs and outputs
