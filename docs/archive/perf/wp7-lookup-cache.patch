@@ -1,0 +1,35 @@
+diff --git a/crates/ps-physio/src/classes.rs b/crates/ps-physio/src/classes.rs
+index 549941b..be83abe 100644
+--- a/crates/ps-physio/src/classes.rs
++++ b/crates/ps-physio/src/classes.rs
+@@ -68,6 +68,8 @@ pub struct ClassTable {
+     pub rates: [[Rates; PAR_CLASSES + 1]; 4],
+     /// Full solver output at capacity 1, for the inspector.
+     pub full: [GasExchange; PAR_CLASSES + 1],
++    /// `par_node(i)` for every node, cached so lookups do not call `pow`.
++    pub nodes: [f64; PAR_CLASSES + 1],
+ }
+ 
+ impl ClassTable {
+@@ -90,7 +92,11 @@ impl ClassTable {
+                 *slot = Rates::of(&g);
+             }
+         }
+-        Self { rates, full }
++        let mut nodes = [0.0; PAR_CLASSES + 1];
++        for (i, n) in nodes.iter_mut().enumerate() {
++            *n = par_node(i);
++        }
++        Self { rates, full, nodes }
+     }
+ 
+     /// Rates at absorbed PAR `par` and capacity `capacity` (clamped to the table).
+@@ -107,7 +113,7 @@ impl ClassTable {
+             let i = (libm::floor(x) as usize).min(PAR_CLASSES - 2);
+             // Linear in PAR between the two log-spaced nodes: A is nearly linear in
+             // PAR at low light, where log interpolation overestimates it by 3%.
+-            let (lo, hi) = (par_node(i + 1), par_node(i + 2));
++            let (lo, hi) = (self.nodes[i + 1], self.nodes[i + 2]);
+             (i + 1, ((q - lo) / (hi - lo)).clamp(0.0, 1.0))
+         };
+         let at =

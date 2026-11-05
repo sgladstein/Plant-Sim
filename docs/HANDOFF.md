@@ -1,0 +1,307 @@
+# Plant-Sim: master handoff
+
+Written 2026-11-05 when the project moved to a new account. The reader is a new
+coordinator (a Claude session or a person) who has **only this repository**: no chat
+history, no project files, no memory. Everything the old project knew that still
+matters is in this file or linked from it.
+
+Read in this order: this file, then [docs/STATUS.md](STATUS.md), then
+[CLAUDE.md](../CLAUDE.md), then the workstream handoffs in [docs/handoff/](handoff/)
+for whatever you pick up.
+
+---
+
+## 1. The owner and the goals
+
+- **Owner:** Scotttt (GitHub `sgladstein`). Windows 10 desktop: i5-6600K (4 cores, no
+  SMT), 8 GB RAM, GeForce GTX 1070 8 GB. Desktop only; it does not need to run in a
+  browser.
+- **What it is:** a simulation-first plant growth sandbox. You watch plants grow from
+  seed in sped-up time in a stylized 3D diorama (pots and plots with a soil cutaway),
+  with the science visible through toggleable "lenses", and later breed them.
+- **Three goals, equally weighted:** pretty to watch, scientifically believable
+  (every number traceable to a source, validated against published data), and a game
+  (sandbox, then experiments, then challenges, then breeding).
+- **Claude writes all the code.** The owner reviews, looks, and decides. No real-plant
+  experiments: calibration comes only from published studies and open data.
+- **How the owner likes to work:**
+  - Threads work autonomously; the owner drops requests and skims later.
+  - The owner approves merges to the repo. During the overnight build they said "I
+    approve all merges to the repo", and workstreams merged their own PRs on green CI.
+    Ask the owner whether that standing approval carries over to the new account
+    before relying on it.
+  - Decisions that change goals or look go to the owner as one question with options
+    and a recommendation. Everything else: do it, then say what you did.
+  - On visuals the owner judges **form, framing and setting**, not color grading.
+    "Mostly looks like changing colors or filters" was the verdict on a grading-only
+    round. A stylized look is fine.
+
+## 2. Open owner decisions (ask these first)
+
+| # | Decision | Context | Recommendation |
+| --- | --- | --- | --- |
+| 1 | **Sign off M0** (headless core) | Every M0 gate passes (decision 0018, later rechecked); the M0 exit summary is §4 of this file and STATUS "M0 exit". | Sign off. |
+| 2 | **Sun-vs-shade clip sign-off** (WP20, M1's designed moment) | Clip in [docs/archive/screens/sun-vs-shade-day4-90.mp4](archive/screens/sun-vs-shade-day4-90.mp4) and contact sheet `sun-vs-shade-contact-sheet.jpg` (re-encoded, smaller). Predates the fuller-plants look, so re-render it on current main first. | Re-render with `--timelapse`, then ask. |
+| 3 | **Pole bean height** | Owner chose 1.5 m by day 60, 2 m by day 75 (decision 0023). On four-seed means (model 0.10.0) the sim gives 1.38 m at d60 and 1.86 m at d75, with a wide seed spread; part of it is vines missing their stake. Confirm the target stands. | Keep the target; fix the capture sweep, then tune on seed means. |
+| 4 | **Dense wheat speed** | `m2/wheat_stand` costs ~110 ms per sim-day, can't play live. (a) fewer light sample points per grass blade, or (b) one light sample per tiller. Both change results. | (a), 7 to 3 points per blade ([docs/perf/handoff.md](perf/handoff.md)). |
+| 5 | **Does the public pre-release stay?** | v0.1.0-pre.1 is a public GitHub pre-release of the Windows build (owner approved publishing it). | Owner's call; keep it unless they object. |
+| 6 | **Viewer look** | Owner picked **option C "fuller plants" with the natural style "for right now"** (merged, #78). A "illustrated" (branch `claude/project-thread-u7o4cj`) and B "painterly" (PR #79, branch `claude/project-thread-fml7eu`) are parked. | Keep C; close #79 only when the owner says. |
+| 7 | WP7 readings (decision 0009) | Two readings of plan text: priority as share of an organ's own reserve per hour; water stress multiplies the stomatal slope. Never confirmed. | Confirm as implemented. |
+| 8 | Merge approval on the new account | See §1. | Ask once. |
+
+## 3. Where things are
+
+| What | Where |
+| --- | --- |
+| Design plan v3 (complete, kept current with decisions) | [docs/design-plan.md](design-plan.md). §3 model, §3.2 step order, §7 backlog of 36 WPs with done-when, §8 validation, §10 architecture, §11 implementation guide. |
+| Progress, per WP, plus every open follow-up | [docs/STATUS.md](STATUS.md) (read first every session) |
+| Agent rules (non-negotiable sim rules, code style, pre-push checks) | [CLAUDE.md](../CLAUDE.md) |
+| Decision records 0001 to 0028 | [docs/decisions/](decisions/) |
+| Model cards, one per process | [docs/models/](models/) |
+| Bevy pin and idioms | [docs/bevy-notes.md](bevy-notes.md) |
+| CLI | [docs/cli.md](cli.md) |
+| Performance budgets and numbers | [docs/performance.md](performance.md), [docs/perf/handoff.md](perf/handoff.md) |
+| Validation data schema | [docs/validation-data.md](validation-data.md), data in `data/validation/`, harness in [validation/README.md](../validation/README.md) |
+| Viewer look review (3 rounds) and renders | [docs/design/viewer-look-review.md](design/viewer-look-review.md), `docs/design/viewer-look/` |
+| Workstream handoffs | [docs/handoff/](handoff/) |
+| Archive of the old project files (earlier design versions, all WP reviews, research reports and notes, perf reviews and patches, screenshots, look-option renders) | [docs/archive/](archive/) (see §10) |
+
+## 4. State of the project (2026-11-05, main at the handoff merge)
+
+- **Model version 0.11.0** (`ps_world::MODEL_VERSION`, after the lateral-root fix, decision 0028); species schema 7.
+- **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
+  a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
+  hashes Linux = Windows, debug = release), validation report passes every M0 gate.
+- **M1 (two-pot visible proof, WP13 to WP20): mostly done** in the viewer: Bevy app,
+  real sim on its own thread, 7 lenses, charts, inspector, capture, time-lapse.
+  WP13 passed its frame-time gate on the GTX 1070 (re-run on final main is
+  advisable: numbers predate #78). Open: WP20 "the moments" (not started; its
+  done-when is the owner's sun-vs-shade clip sign-off), and the experiment and
+  model-card panels of WP17.
+- **M2 (plot and sandbox, WP21 to WP27): WP21 to WP25 done**; WP26 (save/load UI,
+  replay markers, more lenses, carbon flow arrows) and WP27 (leaf energy balance) open.
+  Pole bean (twining), spring wheat, nitrogen with nodules, harvest/prune/obstacles,
+  weather files, plant-to-plant variation all landed.
+- **M3 (breeding) and M4 (tree, fields): not started.**
+- **Validation (model 0.10.0, mean of four world seeds, decision 0026):** 87 checks,
+  65 pass, every M0 gate passes. One bean spans 21 to 39 g by world seed alone, so
+  every target now reads the seed mean. Don't tune "~" parameters on one seed. Main
+  misses: thermal-time phenology, pole bean height, wheat stand height and yield,
+  drought and heat seed size, shade height, nar_early, root_shoot_seed_fill.
+- **Speed (4 cores):** single pot ~2.2 ms per sim-day (budget 2), 30-bean plot ~24.5
+  ms (budget 20), wheat stand ~110 ms (no budget). Viewer on the GTX 1070: Vulkan
+  ~4 ms per frame before #78 (budget 16.7).
+
+### Open PRs at handoff
+
+| PR | What | State |
+| --- | --- | --- |
+| #81 | Validation reads the mean of four seed runs (decision 0026) | Implementation; merging on green |
+| (next) | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; follows #81 on `claude/project-thread-ur2udi` |
+| #84 | Viewer root-copy fix, viewer handoff (`docs/handoff-viewer.md`), STATUS M1 rows | Viewer; merging on green |
+| #82 | Performance handoff doc | Docs only; merge when green |
+| #83 | Plant visuals research into docs/research/plant-visuals/ | Docs only; merge when green |
+| #79 | Viewer look option B painterly | **Parked**, owner decides; do not merge |
+| this PR | This handoff and the archive | |
+
+Open issue #58: scale nitrogen uptake capacity with root mass. Issues #1 to #6 are
+old M0 WP issues left open; their WPs are done (STATUS), so they can be closed.
+
+### Branches
+
+Work branches are named `claude/project-thread-<id>`, one per old thread. After the
+merges above, the only ones with unmerged work are `claude/project-thread-u7o4cj`
+(option A illustrated, parked) and `claude/project-thread-fml7eu` (option B painterly,
+PR #79, stacked on A). The rest can be deleted once their PRs are merged.
+
+## 5. Architecture
+
+Rust workspace, toolchain 1.97.1 (`rust-toolchain.toml`). Sim crates are engine-free
+(no Bevy, egui, wgpu or GPU dependency; `scripts/check_deps.py` enforces it in CI).
+
+| Crate | Role |
+| --- | --- |
+| ps-units | Unit newtypes; every physical quantity uses one |
+| ps-rng | Keyed counter-based RNG (Philox4x32-10) keyed by (world seed, entity, tick, purpose) |
+| ps-weather | Solar geometry, weather presets, daily-to-hourly, weather files |
+| ps-graph | Organ graph arena, organ types, expansion curves, allometry |
+| ps-species | Species and genome schema (RON, unit- and source-checked) |
+| ps-soil | 3D bucket soil water, temperature, nitrogen, uptake, FTSW |
+| ps-light | Voxel light model: adaptive grid, sun and sky rays, per-leaf coefficients, R:FR |
+| ps-physio | Farquhar + Medlyn gas exchange, respiration, thermal time, phenology, carbon allocation |
+| ps-arch | Growth forms: bush bean herb, pole bean vine, grass; roots; flowers, pods |
+| ps-world | The world: step schedule (design plan §3.2), action log, snapshots, full-state hash |
+| ps-session | Runs a World on its own thread; snapshots, time commands, actions |
+| ps-export | CSV export |
+| ps-validate | Validation harness against `data/validation/` |
+| ps-cli | Headless runner: run, hash, bench, replay, validate |
+| ps-bench | Benchmarks against the budgets |
+| ps-mesh | Engine-free geometry: organ placement, tubes, templates, instancing |
+| ps-view | Bevy plugin: diorama scene, scene sync, lenses, camera, sky |
+| ps-ui | egui panels |
+| ps-app | The `plant-sim` desktop binary |
+
+Data lives in `data/` (species, scenarios, weather, validation). Every parameter has
+value, unit and source; `"~"` means a guess to validate. Golden hashes live in
+`tests/golden/<platform>/`.
+
+The viewer reads only `ps_view::Garden` and `SkyState`; `ps-app/src/sim_source.rs`
+fills them from `ps_session::Snapshot`. Bevy is pinned at 0.20.1 with bevy_egui
+0.43.1. If the compiler disagrees with memory about a Bevy API, the compiler is right.
+
+## 6. Build, run, test
+
+```sh
+# Sim checks (what CI runs; required before pushing, per CLAUDE.md)
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace            # CI uses cargo nextest; equivalent
+python3 scripts/check_deps.py
+python3 scripts/check_determinism.py
+
+# Headless runs
+cargo run --release -p ps-cli -- run data/scenarios/single_pot.ron --out out
+cargo run --release -p ps-cli -- hash data/scenarios/*.ron --check-golden tests/golden
+cargo run --release -p ps-cli -- validate          # ~2 min with 4 seeds; report in out/validation/
+python3 validation/report.py out/validation        # plots and report.html
+cargo run --release -p ps-bench --example sim_days 5   # ms per sim-day per scenario
+
+# Viewer (Linux needs libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev)
+cargo run --release -p ps-app -- --scenario data/scenarios/two_pot_sun_shade.ron
+# Headless screenshot in a container (xvfb + lavapipe; run from the repo root)
+xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan \
+  target/release/plant-sim --day 45.5 --lens light --screenshot x.png
+```
+
+Useful app flags: `--day D`, `--lens NAME`, `--screenshot FILE`, `--charts`,
+`--inspect POT[:ORGAN]`, `--timelapse DIR --day D --to-day D --timelapse-hours 6-19`,
+`--clean`, `--focus POT --orbit YAW,PITCH --zoom F`, `--bench-frames N --bench-out
+X.csv`, `--window WxH`. See [docs/handoff-viewer.md](handoff-viewer.md).
+
+Practical notes:
+- In a cloud container the full `cargo test --workspace` takes 20+ minutes; run it in
+  the background. Render crates are excluded from the sim jobs; render.yml covers them.
+- `target/debug` balloons to ~27 GB across feature changes; `cargo clean` when disk
+  runs out.
+- Force-push is often blocked for agents. To push a branch restarted from main:
+  `git merge -s ours origin/<branch>` (tree unchanged), then a normal push.
+
+### CI (`.github/workflows/`)
+
+| Workflow | What |
+| --- | --- |
+| linux.yml | fmt, clippy pedantic, tests (nextest), golden hashes, deps/determinism checks, validation report (artifact `validation-report`), report-only `bench-summary` job |
+| windows.yml | Build and sim tests on Windows; golden hashes must equal Linux |
+| render.yml | Clippy and tests of the render crates; uploads `plant-sim-windows` (release exe built with `--features static-dxc`) |
+| plantecophys.yml | Cross-check against the plantecophys R package; runs only when its fixture changes, and weekly |
+| prerelease.yml | Manual: re-zips a green render run's `plant-sim-windows` artifact and publishes a GitHub pre-release with SHA-256s |
+
+### Windows builds and releases
+
+- Every shipped Windows build must use `--features static-dxc`. DX12 cold start
+  falls from ~176 s to 5 to 9 s. Building it locally needs the Visual Studio ATL
+  component (atls.lib); the owner's PC doesn't have it, so use the CI artifact.
+- Default backend on Windows: Vulkan (Mailbox, falling back to Fifo); DX12 only
+  without Vulkan.
+- To cut a release: dispatch `prerelease.yml` on main with `run_id` = the id of the
+  latest green `render` run on main and `tag` = the next tag (v0.1.0-pre.2, ...).
+  The GitHub MCP has no create-release tool; this workflow is the way.
+- First release: v0.1.0-pre.1 = main d5ab169, zip SHA-256
+  `fe288957d02b5491c560895227e5db478183d7ac2d415ff9b53a7a1696c03316`.
+- Running on the owner's desktop: see [docs/handoff/gpu-desktop.md](handoff/gpu-desktop.md).
+  Each build, run and download there needs the owner's explicit approval every time.
+
+## 7. The rules that keep the sim honest
+
+These are in CLAUDE.md; the short version, because breaking one costs a day:
+
+- f64, libm transcendentals, no HashMap iteration, all randomness via ps-rng keyed,
+  fixed-chunk parallel reductions with in-order folds. Determinism is checked: Linux
+  and Windows golden hashes must match bit for bit.
+- Changing an equation, a default parameter or the step order: write a decision
+  record, update the model card, bump the model minor version, regenerate goldens
+  (`ps-cli hash ... --write-golden tests/golden`) on Linux, and let windows.yml
+  confirm.
+- Performance PRs are **bit-identical** (goldens unchanged). Anything that changes
+  results is a model change and goes through the above.
+- Validation targets are not widened to make a miss pass. A miss is either fixed by
+  model work or recorded as an Info miss with the reason.
+- Research claims carry tags: [F] read in a source, [K, to verify] from memory,
+  [I] inference. Check [K] before putting a number in `data/`.
+
+## 8. Workstreams (reusable thread roles)
+
+The old project ran as one coordinator plus parallel threads. Re-create them as
+needed; each handoff file is written as instructions for a fresh thread.
+
+| Workstream | What it does | Handoff |
+| --- | --- | --- |
+| **Implementation** | Builds WPs in plan order, one WP per branch and PR, issue "WP<n>" as acceptance criteria, decision records, model bumps, goldens, updates STATUS. Messages Review when a PR is up. | [handoff/implementation.md](handoff/implementation.md) |
+| **Review** | Independent review of every WP PR: re-runs the sim, checks against the plan and research, writes `docs/archive/reviews/wp<n>-review.md`-style write-ups, sends fixes back to Implementation, posts a short verdict to the owner. Ran on a different model from Implementation for independence. | [handoff/review.md](handoff/review.md) |
+| **Performance** | Benchmarks each WP against the budgets, finds bit-identical speedups, opens small non-conflicting PRs, times the viewer on the owner's GPU. | [perf/handoff.md](perf/handoff.md) |
+| **Research** | Deep literature research before a milestone: parallel topic researchers, one synthesized report with a ranked change table per WP, findings become decision records. | [handoff/research.md](handoff/research.md) |
+| **Viewer** | The Bevy crates (ps-mesh, ps-view, ps-ui, ps-app), M1 WPs and viewer sides of M2 WPs, CI render builds and releases. Never touches sim crates. | [handoff-viewer.md](handoff-viewer.md) |
+| **Look review / look options** | Prototype a visual direction on its own branch, show before/after renders, owner picks. | [handoff/look-review.md](handoff/look-review.md), [handoff/painterly.md](handoff/painterly.md), [handoff/fuller-plants.md](handoff/fuller-plants.md), [handoff/visuals-research.md](handoff/visuals-research.md) |
+| **GPU desktop** | A Claude Code session on the owner's Windows PC for real-GPU checks (screenshots, frame times). | [handoff/gpu-desktop.md](handoff/gpu-desktop.md) |
+
+How they coordinated: Implementation messaged Review on each PR and Viewer when a sim
+change affected the snapshot; Review sent fixes back to Implementation; Performance
+sent findings to Implementation; Research sent WP-keyed findings to Implementation and
+checks to Review. Only one thread edits STATUS for a given WP. Shared write-ups went to
+a project folder that no longer exists; from now on put them in the repo (for example
+`docs/reviews/`).
+
+## 9. Next steps, in order
+
+**Implementation (sim):**
+1. Make sure #81 (multi-seed validation) and the lateral-root PR (decision 0028) merged; if the root fix moved validation, record it in decision 0028 and STATUS.
+2. Re-tune "~" parameters on the four-seed mean; pole_height_day60,
+   drought_shoot_mass and others sit at band edges since the leaf-angle fix.
+3. Vine capture sweep: capture sweeps a fixed 6 cm, so with sowing scatter about 1
+   pole bean in 16 never finds its stake. Batch the other variation-review items into
+   the same model bump ([handoff/implementation.md](handoff/implementation.md) step 2).
+   (The roots-through-the-wall and roots-drawn-upward bugs are fixed by decision 0028
+   and PR #84.)
+4. WP26 (save/load UI, replay markers, competition/temperature/N lenses, carbon flow
+   arrows), then WP27 (leaf energy balance), then M2 exit: 30 plants at 60 fps and
+   under 20 ms per sim-day, density plateau (still weak: -43% vs -70%).
+5. M3 (WP28 to WP32): genome, pollination, breeding bench, trait discovery,
+   challenges. Research round 2 (decision 0023) has the genetics.
+6. Smaller open follow-ups are listed in STATUS "Review follow-ups" (self-shading
+   within a light cell, transport vs priority, wheat stand too short, pod set reading
+   N, uptake scaling, issue #58).
+
+**Viewer:** WP13 sign-off on final main on the owner's GPU, re-render and sign off
+the WP20 clip, time #78 on the 1070 (per-leaf petiole meshes add many draws), then
+the look follow-ups (leaf pose by age needs a sim change; plate view as a screenshot
+mode; canopy shade). Details in [handoff-viewer.md](handoff-viewer.md).
+
+**Performance:** profile the light fit after decision 0025; plot back under 20 ms;
+wheat after the owner's choice. Details in [perf/handoff.md](perf/handoff.md).
+
+**Research:** WP27 leaf energy balance data; M3 genetics gaps (cM distances, seed-colour
+epistasis); weed competition for challenges. Details in [handoff/research.md](handoff/research.md).
+
+## 10. The archive (`docs/archive/`)
+
+Copied from the old project's shared folder, which does not move to the new account.
+
+| Folder | Contents |
+| --- | --- |
+| `design/` | Earlier design versions (v1, v2, v3 review and expansion, "final", architecture note). Superseded by docs/design-plan.md; kept for the reasoning behind choices. |
+| `reviews/` | Every WP review write-up (WP4 to WP25, WP16 session, light leaf angle, variation, WP7 fixes). Their open findings are already copied into STATUS "Review follow-ups". |
+| `research/` | Round 1 `plant-simulation-science-review.md`, round 2 `m2-m3-bean-science.md`, per-topic notes, DSSAT source files (BSD-3), the validation data generator scripts. OpenSimRoot XML (GPLv3) is left out; see `research/source-files/README.md`. |
+| `perf/` | Perf reviews 1 and 2 and the patches (all landed). |
+| `screens/` | Viewer screenshots over time (JPEG, downscaled) and the sun-vs-shade clip (re-encoded). |
+| `viewer/look-options/` | Before/after renders for option C fuller plants and option B painterly. |
+
+The plant visuals research (report, renders, mockup patch) is in
+`docs/research/plant-visuals/` (PR #83).
+
+## 11. What was lost in the move
+
+- Chat history of every thread; this file and the handoffs replace it.
+- Published claude.ai artifacts (the design plan page, review boards, M0 exit summary).
+  Their content is in the repo (design plan, reviews, research, look review).
+- The original OpenSimRoot XML files (refetch, see above) and full-size PNG screenshots
+  (JPEG copies kept).
