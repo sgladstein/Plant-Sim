@@ -76,8 +76,8 @@ has a thickening demand
 - `g_max` caps the radial rate (cambial activity); `f_T` is the organ's temperature
   growth multiplier (§3.11); `s_w` the water stress factor (radial growth is as
   drought-sensitive as expansion [K, to verify]).
-- Carbon demand `ΔW_s,pot · c_f · cc_stem`, with the stem construction cost from the
-  re-tune (1.29) once that lands.
+- Carbon demand `ΔW_s,pot · c_f · cc_stem`, with `cc_stem` the species key
+  `construction_cost_stem` (decision 0032: all four keys are still 1.25; CROPGRO gives 1.29 for stems).
 - It is a sink at priority 0.4, the value §3.9 already lists for secondary thickening,
   through the existing rule `realized = min(demand, priority × max(0, R − 0.05 W))`.
 - No thickening after plant maturity, in dead organs, or on a plant flagged as a grass.
