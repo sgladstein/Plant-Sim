@@ -504,8 +504,25 @@ impl SoilGrid {
 
     /// Runs hydrological step 4 of §3.2 for one hour and returns its ledger.
     pub fn step_hour(&mut self, h: &SoilHour) -> WaterLedger {
+        self.step_hour_with(h, true)
+    }
+
+    /// [`SoilGrid::step_hour`] whose ledger has the fluxes but leaves the two storage
+    /// totals at zero, except in debug builds, where they are summed and the ledger's
+    /// closure is asserted. Each total is a sequential sum over every cell, a long
+    /// chain of dependent additions; a caller that keeps only the fluxes (the world,
+    /// which takes the storage from [`SoilGrid::take_up_lean`]) skips both.
+    pub fn step_hour_lean(&mut self, h: &SoilHour) -> WaterLedger {
+        self.step_hour_with(h, cfg!(debug_assertions))
+    }
+
+    fn step_hour_with(&mut self, h: &SoilHour, totals: bool) -> WaterLedger {
         let mut ledger = WaterLedger {
-            storage_before: self.total_water(),
+            storage_before: if totals {
+                self.total_water()
+            } else {
+                KgWater(0.0)
+            },
             ..WaterLedger::default()
         };
         self.infiltrate(h.water_in, &mut ledger);
@@ -515,11 +532,13 @@ impl SoilGrid {
         self.update_temperature(h.t_air);
         self.transform_nitrogen();
         self.assert_nitrogen_closes();
-        ledger.storage_after = self.total_water();
-        debug_assert!(
-            ledger.relative_residual() < CLOSURE_TOLERANCE,
-            "soil water ledger does not close: {ledger:?}"
-        );
+        if totals {
+            ledger.storage_after = self.total_water();
+            debug_assert!(
+                ledger.relative_residual() < CLOSURE_TOLERANCE,
+                "soil water ledger does not close: {ledger:?}"
+            );
+        }
         ledger
     }
 
@@ -742,10 +761,32 @@ impl SoilGrid {
     /// # Errors
     /// [`SoilError::RootCell`] if a root cell is outside the grid.
     pub fn take_up(&mut self, plants: &[PlantUptake<'_>]) -> Result<JointUptake, SoilError> {
+        self.take_up_with(plants, true)
+    }
+
+    /// [`SoilGrid::take_up`] whose ledger leaves `storage_before` at zero, except in
+    /// debug builds, where it is summed and the ledger's closure is asserted.
+    /// `storage_after` is always summed.
+    ///
+    /// # Errors
+    /// [`SoilError::RootCell`] if a root cell is outside the grid.
+    pub fn take_up_lean(&mut self, plants: &[PlantUptake<'_>]) -> Result<JointUptake, SoilError> {
+        self.take_up_with(plants, cfg!(debug_assertions))
+    }
+
+    fn take_up_with(
+        &mut self,
+        plants: &[PlantUptake<'_>],
+        totals: bool,
+    ) -> Result<JointUptake, SoilError> {
         for p in plants {
             self.check_roots(p.roots)?;
         }
-        let before = self.total_water();
+        let before = if totals {
+            self.total_water()
+        } else {
+            KgWater(0.0)
+        };
         let wp = self.capacity(self.texture.hydraulics().wilting_point);
         let v = self.cell_volume();
         let avail = |w: KgWater| (w - wp).max(KgWater(0.0));
@@ -826,7 +867,10 @@ impl SoilGrid {
             storage_after: self.total_water(),
             ..WaterLedger::default()
         };
-        debug_assert!(ledger.relative_residual() < CLOSURE_TOLERANCE, "{ledger:?}");
+        debug_assert!(
+            !totals || ledger.relative_residual() < CLOSURE_TOLERANCE,
+            "{ledger:?}"
+        );
         Ok(JointUptake {
             plants: out,
             ledger,

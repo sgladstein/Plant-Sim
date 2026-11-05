@@ -1224,7 +1224,8 @@ impl World {
             let lai = leaf_area / entry.grid.surface_area().max(1e-12);
             let water_in = wx.rain.0 * entry.rain_fraction + irr + entry.pending_mm;
             entry.pending_mm = 0.0;
-            let led = entry.grid.step_hour(&SoilHour {
+            // Lean: the soil entry keeps only the fluxes and the storage after uptake.
+            let led = entry.grid.step_hour_lean(&SoilHour {
                 water_in: Millimeters(water_in),
                 surface_radiation: WPerM2(local.global.0 * libm::exp(-SOIL_EXTINCTION * lai)),
                 t_air: wx.t_air,
@@ -1236,7 +1237,7 @@ impl World {
                 .zip(&demand)
                 .map(|(e, d)| e.plant.uptake_request(*d))
                 .collect();
-            let joint = soils[si].grid.take_up(&requests)?;
+            let joint = soils[si].grid.take_up_lean(&requests)?;
             soils[si].ledger.accumulate(&joint.ledger);
             // 8 to 12. Carbon.
             let soil = &soils[si].grid;

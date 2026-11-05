@@ -213,6 +213,33 @@ fn span_of(cells: &[Option<usize>]) -> (usize, usize) {
         .unwrap_or((1, 0))
 }
 
+/// The flat-index range of a footprint's cells, or an empty range.
+fn own_range(cells: &[(usize, f64)]) -> (usize, usize) {
+    match (cells.first(), cells.last()) {
+        (Some(a), Some(b)) => (a.0, b.0),
+        _ => (1, 0),
+    }
+}
+
+/// A footprint's cells by flat index over its range: `k[i − lo]` is one more than the
+/// cell's position in [`Footprint::cells`], or 0. A ray reads it instead of searching.
+struct OwnIndex {
+    lo: usize,
+    hi: usize,
+    k: Vec<u32>,
+}
+
+impl OwnIndex {
+    fn of(f: &Footprint) -> Self {
+        let (lo, hi) = own_range(&f.cells);
+        let mut k = vec![0u32; (hi + 1).saturating_sub(lo)];
+        for (n, &(i, _)) in f.cells.iter().enumerate() {
+            k[i - lo] = u32::try_from(n + 1).unwrap_or(u32::MAX);
+        }
+        Self { lo, hi, k }
+    }
+}
+
 /// Radius of a disc with the leaf's area.
 #[must_use]
 pub fn leaf_radius(area: M2) -> f64 {
@@ -595,7 +622,14 @@ impl LightGrid {
     /// crossed. `own` is the leaf's footprint, excluded where the ray crosses it.
     #[must_use]
     pub fn path_lad(&self, from: [f64; 3], dir: [f64; 3], own: &[(usize, f64)]) -> f64 {
-        self.path_sum(|i| self.lad_at(i), from, dir, own, |k| own[k].1, None)
+        self.path_sum(
+            |i| self.lad_at(i),
+            from,
+            dir,
+            own_range(own),
+            |i| own.binary_search_by_key(&i, |o| o.0).ok().map(|k| own[k].1),
+            None,
+        )
     }
 
     /// Optical depth along a ray toward the grid's direction `j`, through the leaves and
@@ -603,7 +637,7 @@ impl LightGrid {
     /// ([`Footprint::none`] for a point that is not on a leaf).
     #[must_use]
     pub fn path_depth(&self, from: [f64; 3], j: usize, own: &Footprint) -> f64 {
-        self.path_depth_b(from, j, own, None)
+        self.path_depth_b(from, j, own, &OwnIndex::of(own), None)
     }
 
     /// Optical depth along a ray that stops once no occupied cell is left ahead of it
@@ -617,7 +651,7 @@ impl LightGrid {
         own: &Footprint,
         bounds: &RayBounds,
     ) -> f64 {
-        self.path_depth_b(from, j, own, Some(bounds))
+        self.path_depth_b(from, j, own, &OwnIndex::of(own), Some(bounds))
     }
 
     fn path_depth_b(
@@ -625,6 +659,7 @@ impl LightGrid {
         from: [f64; 3],
         j: usize,
         own: &Footprint,
+        index: &OwnIndex,
         bounds: Option<&RayBounds>,
     ) -> f64 {
         let nd = self.directions.len();
@@ -635,8 +670,11 @@ impl LightGrid {
             |i| run[self.slot[i] as usize],
             from,
             dir,
-            &own.cells,
-            |k| own.depth_at(k, j, nd),
+            (index.lo, index.hi),
+            |i| match index.k[i - index.lo] {
+                0 => None,
+                k => Some(own.depth_at(k as usize - 1, j, nd)),
+            },
             bounds.map(|b| (b.cells, b.shadows.get(j).and_then(Option::as_ref))),
         );
         self.obstacles
@@ -730,20 +768,21 @@ impl LightGrid {
 
     /// `Σ field · length` along the ray from `from` in unit direction `dir` until it
     /// leaves the grid, or `bounds` if given (Amanatides and Woo 1987 traversal).
-    /// `own` lists the leaf's own cells (sorted by index); wherever the ray crosses one,
-    /// `own_value(k)` for `own[k]` is taken off the field.
+    /// The leaf's own cells lie in `own` (inclusive flat-index range); wherever the ray
+    /// crosses a cell `i` in it where `own_value(i)` is some value, that value is taken
+    /// off the field.
     fn path_sum<F, O>(
         &self,
         field: F,
         from: [f64; 3],
         dir: [f64; 3],
-        own: &[(usize, f64)],
+        own: (usize, usize),
         own_value: O,
         bounds: Option<(CellBounds, Option<&Shadow>)>,
     ) -> f64
     where
         F: Fn(usize) -> f64,
-        O: Fn(usize) -> f64,
+        O: Fn(usize) -> Option<f64>,
     {
         // A ray that starts outside the grid (a ring point of a tilted blade can lie
         // just above or below the box) is advanced to where it enters the box.
@@ -789,11 +828,8 @@ impl LightGrid {
             }
             hi[2] = hi[2].min(top);
         }
-        // The own footprint is one horizontal layer: skip the search outside its range.
-        let (own_lo, own_hi) = match (own.first(), own.last()) {
-            (Some(a), Some(b)) => (a.0, b.0),
-            _ => (1, 0),
-        };
+        // The own footprint is one horizontal layer: skip the lookup outside its range.
+        let (own_lo, own_hi) = own;
         let stride = [1, self.n[0], self.n[0] * self.n[1]];
         // Per axis: cells left before the ray leaves the bounds, and the index step.
         // (A zero direction component takes the negative branch; its `t_max` is
@@ -823,9 +859,9 @@ impl LightGrid {
                 let t_next = $tm;
                 let mut v = field(idx);
                 if (own_lo..=own_hi).contains(&idx)
-                    && let Ok(k) = own.binary_search_by_key(&idx, |o| o.0)
+                    && let Some(o) = own_value(idx)
                 {
-                    v = (v - own_value(k)).max(0.0);
+                    v = (v - o).max(0.0);
                 }
                 sum += v * (t_next - t);
                 t = t_next;
@@ -1032,12 +1068,15 @@ pub(crate) fn coefficients_with(
     idx.par_chunks(COEFF_CHUNK)
         .flat_map_iter(|chunk| {
             let mut t = vec![0.0; chunk.len() * nd];
+            let index: Vec<OwnIndex> = chunk.iter().map(|&i| OwnIndex::of(&feet[i])).collect();
             for j in 0..nd {
                 for (c, &i) in chunk.iter().enumerate() {
                     // Mean transmittance over the leaf's sample points (decision 0008).
                     t[c * nd + j] = pts[i]
                         .iter()
-                        .map(|p| libm::exp(-grid.path_depth_bounded(*p, j, &feet[i], &bounds)))
+                        .map(|p| {
+                            libm::exp(-grid.path_depth_b(*p, j, &feet[i], &index[c], Some(&bounds)))
+                        })
                         .fold(0.0, |a, b| a + b)
                         / as_f64(SAMPLE_POINTS);
                 }
