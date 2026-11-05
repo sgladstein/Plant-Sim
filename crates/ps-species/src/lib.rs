@@ -1,0 +1,471 @@
+//! Species and genome schema (design plan §3.12, §6.1, WP4).
+//!
+//! A species file is RON. Every numeric parameter carries a value, a unit and a source;
+//! on load the unit must match the schema exactly and the source must be non-empty
+//! ("~" is a valid source meaning a guess to validate). Heritable parameters also carry
+//! bounds, and the genome lists the loci that map genotype to phenotype.
+//!
+//! M0 ships the degenerate genome: one locus per heritable parameter with zero allele
+//! variance, so every seed's phenotype equals the species defaults (identity mapping).
+//!
+//! Model card: docs/models/species-and-genome.md.
+
+pub mod schema;
+
+use std::collections::BTreeMap;
+
+use ps_rng::{Purpose, RngKey};
+use serde::{Deserialize, Serialize};
+
+pub use schema::{Constants, Phenology, SCHEMA, Spec};
+
+/// A numeric parameter with provenance.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Param {
+    /// The value, in `unit`.
+    pub value: f64,
+    /// Unit string; must match the schema exactly.
+    pub unit: String,
+    /// Where the value comes from; "~" means a guess to validate.
+    pub source: String,
+}
+
+/// A heritable parameter: species default, bounds, unit and source.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeritableParam {
+    /// Species default (the phenotype of a seed with all-zero alleles).
+    pub default: f64,
+    /// Lower bound of the phenotype.
+    pub min: f64,
+    /// Upper bound of the phenotype.
+    pub max: f64,
+    /// Unit string; must match the schema exactly.
+    pub unit: String,
+    /// Where the default comes from.
+    pub source: String,
+}
+
+/// One locus: which trait it affects and how (§3.12).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Locus {
+    /// The heritable parameter this locus contributes to.
+    #[serde(rename = "trait")]
+    pub trait_name: String,
+    /// Additive effect per unit allele value, in the trait's unit.
+    pub effect: f64,
+    /// Dominance deviation per unit allele difference, in the trait's unit.
+    pub dominance: f64,
+    /// Standard deviation of allele values in the species population.
+    pub allele_sd: f64,
+}
+
+/// The genome definition.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Genome {
+    /// Loci, in a fixed order (the genotype is a list in this order).
+    pub loci: Vec<Locus>,
+    /// Mutation rate.
+    pub mutation_rate: Param,
+}
+
+/// Growth form, which selects the architecture module (§3.4).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GrowthForm {
+    /// Herb (bush bean, M0).
+    Herb,
+    /// Vine (pole bean, M2).
+    Vine,
+    /// Grass (M2).
+    Grass,
+    /// Tree (M4).
+    Tree,
+}
+
+/// One root type (§3.7).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RootType {
+    /// Branching order: 0 tap root, 1 first-order laterals, 2 second-order.
+    pub order: u8,
+    /// Potential tip elongation at optimum temperature.
+    pub elongation: Param,
+    /// Maximum root length.
+    pub max_length: Param,
+    /// Distance between lateral branches.
+    pub branch_spacing: Param,
+    /// Unbranched zone behind the tip.
+    pub apical_zone: Param,
+    /// Angle of laterals from the parent root.
+    pub insertion_angle: Param,
+    /// Gravitropism weight, dimensionless.
+    pub gravitropism: f64,
+    /// Hydrotropism weight, dimensionless.
+    pub hydrotropism: f64,
+}
+
+impl RootType {
+    /// `(spec, param)` pairs in [`schema::ROOT_TYPE`] order.
+    #[must_use]
+    pub fn entries(&self) -> Vec<(Spec, &Param)> {
+        let params = [
+            &self.elongation,
+            &self.max_length,
+            &self.branch_spacing,
+            &self.apical_zone,
+            &self.insertion_angle,
+        ];
+        schema::ROOT_TYPE.iter().copied().zip(params).collect()
+    }
+}
+
+/// Look of the species in the renderer (M1).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Appearance {
+    /// Leaf template name.
+    pub leaf_template: String,
+    /// Leaf color, `#rrggbb`.
+    pub leaf_color: String,
+    /// Flower color, `#rrggbb`.
+    pub flower_color: String,
+    /// Pod template name.
+    pub pod_template: String,
+}
+
+/// A species file as written (§6.1).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Species {
+    /// Schema version; must equal [`SCHEMA`].
+    pub schema: u32,
+    /// Identifier, snake case.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Growth form.
+    pub growth_form: GrowthForm,
+    /// Non-heritable constants.
+    pub constants: Constants,
+    /// Heritable parameters by key.
+    pub heritable: BTreeMap<String, HeritableParam>,
+    /// Loci.
+    pub genome: Genome,
+    /// Phenology.
+    pub phenology: Phenology,
+    /// Root types, by order.
+    pub roots: Vec<RootType>,
+    /// Appearance.
+    pub appearance: Appearance,
+}
+
+/// Errors loading or validating a species file. Each names the file part at fault.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum SpeciesError {
+    /// RON syntax or structure error (includes unknown fields and wrong types).
+    #[error("species file does not parse: {0}")]
+    Parse(String),
+    /// Unsupported schema version.
+    #[error("species schema {found} is not supported (expected {expected})")]
+    Schema {
+        /// Version in the file.
+        found: u32,
+        /// Supported version.
+        expected: u32,
+    },
+    /// A parameter's unit string does not match the schema.
+    #[error("{at}: unit \"{found}\" is wrong, expected \"{expected}\"")]
+    Unit {
+        /// Where, for example `constants.carbon_fraction`.
+        at: String,
+        /// Expected unit.
+        expected: &'static str,
+        /// Unit in the file.
+        found: String,
+    },
+    /// A parameter has an empty source.
+    #[error("{at}: missing source (use \"~\" for a guess to validate)")]
+    MissingSource {
+        /// Where.
+        at: String,
+    },
+    /// A value is not finite, or a heritable default is outside its bounds.
+    #[error("{at}: {why}")]
+    Value {
+        /// Where.
+        at: String,
+        /// What is wrong.
+        why: String,
+    },
+    /// A heritable key is unknown, or a required one is missing.
+    #[error("heritable.{key}: {why}")]
+    HeritableKey {
+        /// The key.
+        key: String,
+        /// "unknown parameter" or "missing".
+        why: &'static str,
+    },
+    /// A locus names a trait that is not a heritable parameter.
+    #[error("genome.loci[{index}]: trait \"{trait_name}\" is not a heritable parameter")]
+    LocusTrait {
+        /// Locus index.
+        index: usize,
+        /// The trait name.
+        trait_name: String,
+    },
+    /// Root types must be orders 0, 1, 2, ... without gaps.
+    #[error("roots: expected root orders 0..{n} in order, found {found:?}")]
+    RootOrders {
+        /// Number of root types.
+        n: usize,
+        /// Orders found.
+        found: Vec<u8>,
+    },
+}
+
+fn check_param(at: &str, unit: &'static str, p: &Param) -> Result<(), SpeciesError> {
+    if p.unit != unit {
+        return Err(SpeciesError::Unit {
+            at: at.to_owned(),
+            expected: unit,
+            found: p.unit.clone(),
+        });
+    }
+    if p.source.trim().is_empty() {
+        return Err(SpeciesError::MissingSource { at: at.to_owned() });
+    }
+    if !p.value.is_finite() {
+        return Err(SpeciesError::Value {
+            at: at.to_owned(),
+            why: format!("value {} is not finite", p.value),
+        });
+    }
+    Ok(())
+}
+
+impl Species {
+    /// Parses and validates a species file.
+    ///
+    /// # Errors
+    /// Any [`SpeciesError`]; the message names the offending field.
+    pub fn from_ron(text: &str) -> Result<Self, SpeciesError> {
+        let s: Self = ron::from_str(text).map_err(|e| SpeciesError::Parse(e.to_string()))?;
+        s.validate()?;
+        Ok(s)
+    }
+
+    /// Checks schema version, units, sources, bounds, keys, loci and root orders.
+    ///
+    /// # Errors
+    /// The first problem found, in file order.
+    pub fn validate(&self) -> Result<(), SpeciesError> {
+        if self.schema != SCHEMA {
+            return Err(SpeciesError::Schema {
+                found: self.schema,
+                expected: SCHEMA,
+            });
+        }
+        for (spec, p) in self.constants.entries() {
+            check_param(&format!("constants.{}", spec.key), spec.unit, p)?;
+        }
+        for (key, h) in &self.heritable {
+            let Some(spec) = schema::find(schema::HERITABLE, key) else {
+                return Err(SpeciesError::HeritableKey {
+                    key: key.clone(),
+                    why: "unknown parameter",
+                });
+            };
+            let at = format!("heritable.{key}");
+            check_param(
+                &at,
+                spec.unit,
+                &Param {
+                    value: h.default,
+                    unit: h.unit.clone(),
+                    source: h.source.clone(),
+                },
+            )?;
+            if !(h.min.is_finite() && h.max.is_finite() && h.min <= h.default && h.default <= h.max)
+            {
+                return Err(SpeciesError::Value {
+                    at,
+                    why: format!(
+                        "default {} must lie within [min {}, max {}]",
+                        h.default, h.min, h.max
+                    ),
+                });
+            }
+        }
+        for spec in schema::HERITABLE {
+            if !self.heritable.contains_key(spec.key) {
+                return Err(SpeciesError::HeritableKey {
+                    key: spec.key.to_owned(),
+                    why: "missing",
+                });
+            }
+        }
+        for (index, l) in self.genome.loci.iter().enumerate() {
+            if !self.heritable.contains_key(&l.trait_name) {
+                return Err(SpeciesError::LocusTrait {
+                    index,
+                    trait_name: l.trait_name.clone(),
+                });
+            }
+            if !(l.effect.is_finite()
+                && l.dominance.is_finite()
+                && l.allele_sd.is_finite()
+                && l.allele_sd >= 0.0)
+            {
+                return Err(SpeciesError::Value {
+                    at: format!("genome.loci[{index}]"),
+                    why: "effect, dominance and allele_sd must be finite, allele_sd >= 0".into(),
+                });
+            }
+        }
+        check_param(
+            "genome.mutation_rate",
+            schema::MUTATION_RATE_UNIT,
+            &self.genome.mutation_rate,
+        )?;
+        for (spec, p) in self.phenology.entries() {
+            check_param(&format!("phenology.{}", spec.key), spec.unit, p)?;
+        }
+        let orders: Vec<u8> = self.roots.iter().map(|r| r.order).collect();
+        if orders.iter().enumerate().any(|(i, o)| usize::from(*o) != i) || orders.is_empty() {
+            return Err(SpeciesError::RootOrders {
+                n: orders.len(),
+                found: orders,
+            });
+        }
+        for r in &self.roots {
+            for (spec, p) in r.entries() {
+                check_param(&format!("roots[{}].{}", r.order, spec.key), spec.unit, p)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Samples a genotype from the species population: for each locus, two allele
+    /// values drawn from N(0, `allele_sd`), keyed by (world seed, plant entity, tick 0,
+    /// `GenotypeSample`). With zero variance every allele is exactly 0.
+    #[must_use]
+    pub fn sample_genotype(&self, world_seed: u64, plant_entity: u64) -> Genotype {
+        let mut s = RngKey::new(world_seed, plant_entity, 0, Purpose::GenotypeSample).stream();
+        let alleles = self
+            .genome
+            .loci
+            .iter()
+            .map(|l| {
+                let a = s.standard_normal();
+                let b = s.standard_normal();
+                if l.allele_sd > 0.0 {
+                    (a * l.allele_sd, b * l.allele_sd)
+                } else {
+                    (0.0, 0.0)
+                }
+            })
+            .collect();
+        Genotype { alleles }
+    }
+
+    /// The species-default genotype (all alleles zero).
+    #[must_use]
+    pub fn default_genotype(&self) -> Genotype {
+        Genotype {
+            alleles: vec![(0.0, 0.0); self.genome.loci.len()],
+        }
+    }
+
+    /// Maps a genotype to a phenotype (§3.12): for each heritable parameter,
+    /// `value = clamp(default + Σ_loci [effect · (a + b)/2 + dominance · |a − b|], min, max)`.
+    ///
+    /// The dominance form is provisional until M3 breeding (decision 0006).
+    #[must_use]
+    pub fn phenotype(&self, g: &Genotype) -> Phenotype {
+        let mut values: BTreeMap<String, f64> = self
+            .heritable
+            .iter()
+            .map(|(k, h)| (k.clone(), h.default))
+            .collect();
+        for (l, (a, b)) in self.genome.loci.iter().zip(&g.alleles) {
+            if let Some(v) = values.get_mut(&l.trait_name) {
+                *v += l.effect * 0.5 * (a + b) + l.dominance * (a - b).abs();
+            }
+        }
+        for (k, v) in &mut values {
+            let h = &self.heritable[k];
+            *v = v.clamp(h.min, h.max);
+        }
+        Phenotype { values }
+    }
+
+    /// Every numeric parameter as `(path, value, unit, source)`, in file order, for
+    /// model cards, the inspector and the provenance check in CI.
+    #[must_use]
+    pub fn provenance(&self) -> Vec<(String, f64, String, String)> {
+        let mut out = Vec::new();
+        for (spec, p) in self.constants.entries() {
+            out.push((
+                format!("constants.{}", spec.key),
+                p.value,
+                p.unit.clone(),
+                p.source.clone(),
+            ));
+        }
+        for (k, h) in &self.heritable {
+            out.push((
+                format!("heritable.{k}"),
+                h.default,
+                h.unit.clone(),
+                h.source.clone(),
+            ));
+        }
+        for (spec, p) in self.phenology.entries() {
+            out.push((
+                format!("phenology.{}", spec.key),
+                p.value,
+                p.unit.clone(),
+                p.source.clone(),
+            ));
+        }
+        for r in &self.roots {
+            for (spec, p) in r.entries() {
+                out.push((
+                    format!("roots[{}].{}", r.order, spec.key),
+                    p.value,
+                    p.unit.clone(),
+                    p.source.clone(),
+                ));
+            }
+        }
+        out
+    }
+}
+
+/// Allele values per locus, in genome order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Genotype {
+    /// `(maternal, paternal)` allele values per locus.
+    pub alleles: Vec<(f64, f64)>,
+}
+
+/// Phenotype values by heritable key, in the schema's units.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Phenotype {
+    /// Values by key.
+    pub values: BTreeMap<String, f64>,
+}
+
+impl Phenotype {
+    /// The value of a heritable parameter, or `None` for an unknown key.
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<f64> {
+        self.values.get(key).copied()
+    }
+}
+
+#[cfg(test)]
+mod tests;
