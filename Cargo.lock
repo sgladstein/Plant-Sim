@@ -449,6 +449,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-arch"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "ps-graph",
+ "ps-light",
+ "ps-physio",
+ "ps-rng",
+ "ps-soil",
+ "ps-species",
+ "ps-units",
+ "ps-weather",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "ps-bench"
 version = "0.1.0"
 dependencies = [

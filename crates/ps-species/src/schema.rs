@@ -96,8 +96,10 @@ param_group!(
         germination_ftsw: "-",
         /// Consecutive hours above thresholds to germinate.
         germination_hours: "h",
-        /// FTSW below which water stress begins.
+        /// FTSW below which stomatal conductance is reduced.
         ftsw_threshold: "-",
+        /// FTSW below which expansion growth is reduced.
+        ftsw_expansion_threshold: "-",
         /// Days of negative reserve before an organ dies.
         starvation_window: "day",
         /// Phloem conductance per unit segment cross-section over length (§3.9 step 3).
@@ -120,18 +122,84 @@ param_group!(
         growth_t_opt_high: "C",
         /// Temperature where the expansion multiplier reaches zero (high).
         growth_t_max: "C",
-        /// Daytime temperature above which flowers abort.
-        heat_abortion_t: "C",
+        /// Daily mean temperature below which no pods set.
+        pod_set_t_min: "C",
+        /// Lower end of the daily mean temperature range of full pod set.
+        pod_set_t_opt_low: "C",
+        /// Upper end of the daily mean temperature range of full pod set.
+        pod_set_t_opt_high: "C",
+        /// Daily mean temperature above which no pods set.
+        pod_set_t_max: "C",
         /// FTSW below which flowers abort.
         drought_abortion_ftsw: "-",
         /// Days over which one raceme opens its flowers.
         raceme_flowering_days: "day",
-        /// Thermal time for a pod to reach full length.
+        /// Days a flower stays open before it sets a pod or drops.
+        flower_lifespan: "day",
+        /// Probability that an open flower sets a pod with no stress.
+        pod_set_base: "-",
+        /// Probability that each ovule becomes a seed.
+        ovule_set: "-",
+        /// Potential dry mass of a pod wall.
+        pod_wall_mass: "g DM",
+        /// Thermal time for a pod wall to reach full size.
         pod_expansion: "Cd",
+        /// Thermal time from pod set to the start of seed fill.
+        seed_fill_delay: "Cd",
         /// Thermal time for seeds to fill.
         seed_fill: "Cd",
-        /// Root length per root dry mass.
-        specific_root_length: "m/g",
+        /// Thermal time between successive nodes on an axis.
+        phyllochron: "Cd",
+        /// Thermal time for a leaf to reach full size.
+        leaf_expansion: "Cd",
+        /// Thermal time for an internode to reach full length.
+        internode_expansion: "Cd",
+        /// Potential area of one unifoliate leaf.
+        unifoliate_area: "cm2",
+        /// Leaf size at the first trifoliate, relative to the potential.
+        leaf_first_fraction: "-",
+        /// Leaf size at the last main-stem node, relative to the potential.
+        leaf_last_fraction: "-",
+        /// Leaf size on branches, relative to the main stem.
+        branch_leaf_fraction: "-",
+        /// Internode length at the first main-stem node, relative to the potential.
+        internode_first_fraction: "-",
+        /// Internode length at the last main-stem node, relative to the potential.
+        internode_last_fraction: "-",
+        /// Internode length on branches, relative to the main stem.
+        branch_internode_fraction: "-",
+        /// Length of the leaf stalk at full size.
+        petiole_length: "cm",
+        /// Hypocotyl length above the soil surface.
+        hypocotyl_above: "cm",
+        /// Trifoliate nodes a branch makes before its terminal raceme.
+        branch_nodes: "-",
+        /// Angle of a new branch from the vertical.
+        branch_angle: "deg",
+        /// Reserve concentration at which a bud or raceme is fully fed.
+        bud_reserve_reference: "g C / g DM",
+        /// Distance, in nodes, over which apical dominance decays by a factor e.
+        apical_dominance_nodes: "-",
+        /// Days from emergence until the cotyledons drop.
+        cotyledon_lifespan: "day",
+        /// Absorptance of leaves for PAR.
+        leaf_absorptance: "-",
+        /// Nitrogen per dry mass of stems.
+        stem_n_fraction: "g N / g DM",
+        /// Nitrogen per dry mass of roots.
+        root_n_fraction: "g N / g DM",
+        /// Nitrogen per dry mass of flowers, pods and seeds.
+        fruit_n_fraction: "g N / g DM",
+        /// Length of one root segment, and of parent root covered by one cohort of laterals.
+        root_segment_length: "cm",
+        /// Share of the way to vertical a new internode turns per node (shoot gravitropism).
+        shoot_gravitropism: "-",
+        /// Days below the shade light threshold before a leaf senesces.
+        shade_senescence_days: "day",
+        /// Hypocotyl length per dry mass.
+        hypocotyl_specific_length: "cm/g",
+        reserve_feedback_onset: "g C / g DM",
+        reserve_feedback_full: "g C / g DM",
         /// Root water uptake coefficient: root length density times this is the hourly share of available water a cell can give.
         root_uptake_rate: "m2/h",
         /// Most water a meter of root can take up in an hour.
@@ -172,6 +240,16 @@ param_group!(
 /// Numeric fields of one root type (§3.7): key, unit, meaning.
 pub const ROOT_TYPE: &[Spec] = &[
     Spec {
+        key: "count",
+        unit: "-",
+        doc: "Number of axes of this type (1 for laterals, whose number follows from the parent's branch spacing).",
+    },
+    Spec {
+        key: "emergence",
+        unit: "Cd",
+        doc: "Thermal time from germination to the appearance of these axes (unused for laterals).",
+    },
+    Spec {
         key: "elongation",
         unit: "cm/day",
         doc: "Potential tip elongation at optimum temperature.",
@@ -184,7 +262,7 @@ pub const ROOT_TYPE: &[Spec] = &[
     Spec {
         key: "branch_spacing",
         unit: "cm",
-        doc: "Distance between lateral branches.",
+        doc: "Distance between laterals on this root (0 for none).",
     },
     Spec {
         key: "apical_zone",
@@ -194,7 +272,12 @@ pub const ROOT_TYPE: &[Spec] = &[
     Spec {
         key: "insertion_angle",
         unit: "deg",
-        doc: "Angle of laterals from the parent root.",
+        doc: "Angle from the vertical (axes from the seed) or from the parent root (laterals).",
+    },
+    Spec {
+        key: "diameter",
+        unit: "mm",
+        doc: "Root diameter; with the root tissue density it sets the specific root length.",
     },
 ];
 

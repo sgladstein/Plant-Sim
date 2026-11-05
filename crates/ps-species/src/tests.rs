@@ -13,7 +13,7 @@ fn bean_file_loads() {
     assert_eq!(s.id, "bush_bean");
     assert_eq!(s.growth_form, GrowthForm::Herb);
     assert_eq!(s.heritable.len(), schema::HERITABLE.len());
-    assert_eq!(s.roots.len(), 3);
+    assert_eq!(s.roots.len(), 5);
     assert!((s.constants.carbon_fraction.value - 0.45).abs() < 1e-15);
 }
 
@@ -173,4 +173,31 @@ fn trait_view_covers_every_heritable_key() {
     let t = s.phenotype(&s.default_genotype()).traits().unwrap();
     assert!((t.vcmax25 - 89.3).abs() < 1e-12);
     assert!((t.flowers_per_raceme - 6.0).abs() < 1e-12);
+}
+
+#[test]
+fn root_types_are_validated() {
+    let two_radicles = BEAN.replacen(
+        "RootType(name: \"basal_1\", origin: Basal,",
+        "RootType(name: \"basal_1\", origin: Radicle,",
+        1,
+    );
+    assert!(matches!(
+        Species::from_ron(&two_radicles),
+        Err(SpeciesError::Roots(_))
+    ));
+    let duplicate = BEAN.replacen("name: \"basal_2\"", "name: \"basal_1\"", 1);
+    assert!(matches!(
+        Species::from_ron(&duplicate),
+        Err(SpeciesError::Roots(_))
+    ));
+    let lateral_at_zero = BEAN.replacen(
+        "origin: Lateral, order: 1,",
+        "origin: Lateral, order: 0,",
+        1,
+    );
+    assert!(matches!(
+        Species::from_ron(&lateral_at_zero),
+        Err(SpeciesError::Roots(_))
+    ));
 }

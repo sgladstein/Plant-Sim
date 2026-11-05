@@ -406,13 +406,67 @@ pub struct Death {
     pub litter: GramsC,
 }
 
+/// Kills `root` and everything it carries (an axis dies with its basal internode, a
+/// pod with its seeds) and books the carbon (§3.9 step 6, daily step 4).
+/// `resorption_fraction` of each dead organ's structural carbon moves to the nearest
+/// living ancestor of `root`, which also pays any negative reserve (carbon the organ
+/// already respired, so litter is never negative; decision 0011); the rest of its
+/// structure and any positive reserve become litter. With no living ancestor
+/// everything, including a debt, goes to litter.
+///
+/// # Errors
+/// A [`GraphError`] if `root` is dead or missing.
+pub fn shed(
+    arena: &mut OrganArena,
+    p: &CarbonParams,
+    root: OrganId,
+    now: Hours,
+    ledger: &mut CarbonLedger,
+) -> Result<Vec<Death>, GraphError> {
+    let killed = arena.kill_subtree(root, now)?;
+    let ancestor = {
+        let mut a = arena.parent[root.index()];
+        while let Some(x) = a {
+            if arena.alive[x.index()] {
+                break;
+            }
+            a = arena.parent[x.index()];
+        }
+        a
+    };
+    let mut deaths = Vec::with_capacity(killed.len());
+    for (id, mass) in killed {
+        let structural = mass.to_carbon(p.carbon_fraction);
+        let resorbed = if ancestor.is_some() {
+            structural * p.resorption_fraction
+        } else {
+            GramsC(0.0)
+        };
+        let reserve = arena.reserve[id.index()];
+        let (litter, to_ancestor) = match ancestor {
+            Some(a) => {
+                let debt = GramsC(reserve.0.min(0.0));
+                arena.reserve[a.index()] += resorbed + debt;
+                (
+                    structural - resorbed + GramsC(reserve.0.max(0.0)),
+                    resorbed + debt,
+                )
+            }
+            None => (structural + reserve, GramsC(0.0)),
+        };
+        arena.reserve[id.index()] = GramsC(0.0);
+        ledger.litter += litter;
+        deaths.push(Death {
+            id,
+            resorbed: to_ancestor,
+            litter,
+        });
+    }
+    Ok(deaths)
+}
+
 /// Daily step 4, starvation part (§3.9 step 6): organs whose reserve has been negative
-/// for the starvation window die, with their whole subtree if they are a stem segment
-/// (an axis dies with its basal internode). `resorption_fraction` of each dead organ's
-/// structural carbon moves to the nearest living ancestor, which also pays any
-/// negative reserve (carbon the organ already respired, so litter is never negative;
-/// decision 0011); the rest of its structure and any positive reserve become litter.
-/// With no living ancestor everything, including a debt, goes to litter.
+/// for the starvation window die through [`shed`], with everything they carry.
 ///
 /// # Errors
 /// A [`GraphError`] only on an inconsistent arena.
@@ -429,50 +483,9 @@ pub fn starvation_deaths(
     let mut deaths = Vec::new();
     for root in starved {
         if !arena.alive[root.index()] {
-            continue; // already died with an ancestor's axis
+            continue; // already died with an ancestor
         }
-        let killed = if arena.kind[root.index()] == OrganKind::Internode {
-            arena.kill_subtree(root, now)?
-        } else {
-            vec![(root, arena.kill(root, now)?)]
-        };
-        let ancestor = {
-            let mut a = arena.parent[root.index()];
-            while let Some(x) = a {
-                if arena.alive[x.index()] {
-                    break;
-                }
-                a = arena.parent[x.index()];
-            }
-            a
-        };
-        for (id, mass) in killed {
-            let structural = mass.to_carbon(p.carbon_fraction);
-            let resorbed = if ancestor.is_some() {
-                structural * p.resorption_fraction
-            } else {
-                GramsC(0.0)
-            };
-            let reserve = arena.reserve[id.index()];
-            let (litter, to_ancestor) = match ancestor {
-                Some(a) => {
-                    let debt = GramsC(reserve.0.min(0.0));
-                    arena.reserve[a.index()] += resorbed + debt;
-                    (
-                        structural - resorbed + GramsC(reserve.0.max(0.0)),
-                        resorbed + debt,
-                    )
-                }
-                None => (structural + reserve, GramsC(0.0)),
-            };
-            arena.reserve[id.index()] = GramsC(0.0);
-            ledger.litter += litter;
-            deaths.push(Death {
-                id,
-                resorbed: to_ancestor,
-                litter,
-            });
-        }
+        deaths.extend(shed(arena, p, root, now, ledger)?);
     }
     debug_assert!(
         ledger.relative_residual(arena, p.carbon_fraction).abs() < LEDGER_TOLERANCE,

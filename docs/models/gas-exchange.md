@@ -36,6 +36,12 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
 - Water: `gs = 1.57 gc` (mol m⁻² s⁻¹ water vapor), `E = gs D / P`.
 - Leaf capacity: `c = 1` until the leaf is fully expanded, then linear to the floor (0.4)
   at the end of its lifespan (§3.8 leaf aging).
+- Sink feedback (decision 0013): capacity is also multiplied by
+  `f(C) = clamp(1 − (C − C_on)/(C_full − C_on), 0, 1)`, where `C = R / W` is the leaf's
+  own reserve concentration (g C per g DM). A leaf whose carbon cannot be exported or
+  used slows its photosynthesis (end-product inhibition). Below the table's lowest
+  capacity node (0.4) every flux is scaled from that node in proportion to capacity
+  (Vcmax, Jmax and Rd all scale with it, and Medlyn conductance follows assimilation).
 - Light classes: each hour a table of 17 PAR nodes (0, then 16 log-spaced from 1 to
   2000 µmol m⁻² s⁻¹) × 4 capacity nodes (1.0, 0.8, 0.6, 0.4) is solved (68 solves per
   plant-hour). A leaf part reads it linearly in PAR between neighboring nodes and
@@ -50,11 +56,11 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
 | rd25 | 0.88 | µmol m⁻² s⁻¹ | Pimentel 2011 (heritable) |
 | medlyn_g1 | 4.0 | kPa^0.5 | "~" herbaceous crop default (heritable) |
 | medlyn_g0 | 0.01 | mol m⁻² s⁻¹ | "~" design plan §11.4 |
-| quantum_yield α | 0.3 | mol mol⁻¹ | design plan §11.4 |
+| quantum_yield α | 0.3 | mol mol⁻¹ | design plan §11.4; per absorbed photon (plantecophys' 0.24 is per incident photon, about 0.3 × 0.8 absorptance) |
 | electron_transport_curvature θ | 0.7 | 1 | design plan §11.4 |
 | rd_q10 | 1.92 | 1 | "~" plantecophys default |
-| vcmax_activation, _deactivation, _entropy | 58550, 200000, 629.26 | J mol⁻¹, J mol⁻¹, J mol⁻¹ K⁻¹ | "~" plantecophys defaults |
-| jmax_activation, _deactivation, _entropy | 29680, 200000, 631.88 | same | "~" plantecophys defaults |
+| vcmax_activation, _deactivation, _entropy | 58550, 200000, 629.26 | J mol⁻¹, J mol⁻¹, J mol⁻¹ K⁻¹ | "~" Medlyn 2002 form, values for bean to validate |
+| jmax_activation, _deactivation, _entropy | 29680, 200000, 631.88 | same | "~" Medlyn 2002 form, values for bean to validate |
 | Kc25, Ec | 404.9, 79430 | µmol mol⁻¹, J mol⁻¹ | Bernacchi et al. 2001 |
 | Ko25, Eo | 278.4, 36380 | mmol mol⁻¹, J mol⁻¹ | Bernacchi et al. 2001 |
 | Γ*25, EΓ | 42.75, 37830 | µmol mol⁻¹, J mol⁻¹ | Bernacchi et al. 2001 |
@@ -62,6 +68,8 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
 | H2O/CO2 diffusivity ratio | 1.57 | 1 | plantecophys (Medlyn 2011 writes 1.6) |
 | VPD floor | 0.5 | kPa | plantecophys `vpdmin` |
 | leaf_capacity_floor | 0.4 | 1 | "~" design plan §3.8 |
+| reserve_feedback_onset C_on | 0.10 | g C / g DM | "~" about 18% non-structural carbohydrate in total dry mass (decision 0013) |
+| reserve_feedback_full C_full | 0.30 | g C / g DM | "~" about 40% non-structural carbohydrate (decision 0013) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -83,7 +91,8 @@ old leaves.
 - Water stress acts on the stomatal slope only, not on photosynthetic capacity.
 - The light-class table costs up to 3.0% in A between nodes (measured at 333 µmol m⁻² s⁻¹
   and capacity 0.7).
-- Bean temperature responses are plantecophys defaults, not bean measurements (WP12).
+- Bean temperature responses are "~" values in the Medlyn 2002 form, not bean
+  measurements (WP12).
 
 ## Validation
 - `ps-physio/tests/plantecophys.rs::gas_exchange_matches_plantecophys`: 1,008 cases

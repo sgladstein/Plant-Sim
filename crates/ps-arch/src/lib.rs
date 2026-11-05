@@ -1,0 +1,978 @@
+//! Growth-form modules (design plan §3.4, §3.7, §3.10, §3.11; WP8).
+//!
+//! M0 has one module, the determinate herb (bush bean), and the root system shared by
+//! all forms. A [`Plant`] owns its organ graph and the module state around it (axes,
+//! buds, racemes, flowers, pods, root axes) and runs the plant's part of the §3.2
+//! schedule:
+//!
+//! - hourly, [`Plant::water_demand`] (steps 3, 5 and 6: light, water status, gas
+//!   exchange) and, after the world's joint uptake (step 7), [`Plant::grow_hour`]
+//!   (steps 8 to 12 through `ps_physio::allocation`, plus germination and thermal time);
+//! - daily, [`Plant::day`] (steps 1 to 6: phenology, bud fate, initiation, senescence,
+//!   root elongation, light rebuild).
+//!
+//! The world (WP9) owns weather, soil, the action log and the hash.
+//! Model card: docs/models/herb-architecture.md; decisions 0013.
+
+pub mod geometry;
+pub mod params;
+mod roots;
+mod shoot;
+
+use ps_graph::{
+    ExpansionCurve, GraphError, LightCoeffs, NewOrgan, OrganArena, OrganId, OrganKind, Orientation,
+    SpecificSize,
+};
+use ps_light::SkySector;
+use ps_physio::allocation::{self, CarbonLedger, HourInputs, HourReport};
+use ps_physio::classes::CAPACITY_NODES;
+use ps_physio::{ClassTable, Events, LeafEnv, Phenology, PhysioError, Stage, leaf_capacity};
+use ps_rng::{Purpose, RngKey};
+use ps_soil::{RootCells, SoilError, SoilGrid, Uptake, stress_factor};
+use ps_species::{Species, Traits};
+use ps_units::{
+    Celsius, DegreeDays, GramsC, GramsDM, GramsN, Hours, KPa, KgWater, Meters, Ppm, UmolPerM2S,
+};
+use ps_weather::HourWeather;
+use serde::{Deserialize, Serialize};
+
+pub use geometry::V3;
+pub use params::{HerbParams, RootParams};
+
+/// kg of water per mol.
+const KG_PER_MOL_WATER: f64 = 0.018_015;
+
+/// Errors from the growth-form module.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ArchError {
+    /// The organ graph rejected an operation.
+    #[error(transparent)]
+    Graph(#[from] GraphError),
+    /// Physiology rejected its inputs.
+    #[error(transparent)]
+    Physio(#[from] PhysioError),
+    /// The soil rejected a root list.
+    #[error(transparent)]
+    Soil(#[from] SoilError),
+    /// An expansion curve could not be built.
+    #[error("expansion curve: {0}")]
+    Curve(String),
+}
+
+/// What an organ is in the architecture (finer than [`OrganKind`]).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Role {
+    /// The seed, then the collar at the base of the hypocotyl.
+    Collar,
+    /// The hypocotyl.
+    Hypocotyl,
+    /// A stem internode.
+    Stem,
+    /// A cotyledon.
+    Cotyledon,
+    /// A unifoliate leaf.
+    Unifoliate,
+    /// A trifoliate leaf.
+    Trifoliate,
+    /// An axillary bud.
+    Bud,
+    /// A raceme (an inflorescence axis).
+    Raceme,
+    /// A flower.
+    Flower,
+    /// A pod wall.
+    Pod,
+    /// A seed in a pod.
+    SeedInPod,
+    /// A root segment or a cohort of laterals.
+    Root,
+}
+
+/// Architecture data per organ, indexed like the arena.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Meta {
+    /// Role.
+    pub role: Role,
+    /// Where along the parent it attaches (1 = the parent's tip).
+    pub attach: f64,
+    /// Number of identical roots the organ stands for (a cohort of laterals).
+    pub multiplicity: f64,
+    /// Thermal age when expansion completed.
+    pub expanded: Option<DegreeDays>,
+    /// Yesterday's light index (leaves): mean of the direct and diffuse coefficients.
+    pub light_index: f64,
+    /// Consecutive days below the shade threshold (leaves).
+    pub shade_days: u32,
+    /// Potential area (leaves), for the petiole length.
+    pub potential_area: f64,
+}
+
+impl Meta {
+    fn new(role: Role) -> Self {
+        Self {
+            role,
+            attach: 1.0,
+            multiplicity: 1.0,
+            expanded: None,
+            light_index: 1.0,
+            shade_days: 0,
+            potential_area: 0.0,
+        }
+    }
+}
+
+/// A shoot axis: the main stem or a branch.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShootAxis {
+    /// Branching order.
+    pub order: u8,
+    /// The axis' first internode (the axis dies with it).
+    pub base: OrganId,
+    /// The organ new internodes attach to (the last internode, or the bud).
+    pub apex: OrganId,
+    /// Nodes made.
+    pub nodes: u32,
+    /// Nodes before the terminal raceme.
+    pub max_nodes: u32,
+    /// Thermal time since the last node.
+    pub since_node: DegreeDays,
+    /// No more nodes.
+    pub terminated: bool,
+    /// The terminal raceme, once made.
+    pub raceme: Option<OrganId>,
+    /// Azimuth of the axis' first leaf.
+    pub azimuth: f64,
+    /// The newest leaf, for the shade signal.
+    pub last_leaf: Option<OrganId>,
+}
+
+/// Fate of an axillary bud.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BudFate {
+    /// Waiting.
+    Dormant,
+    /// Grew into a branch.
+    Branch,
+    /// Became a raceme.
+    Raceme,
+}
+
+/// An axillary bud on the main stem.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Bud {
+    /// The bud organ.
+    pub id: OrganId,
+    /// Main-stem node.
+    pub rank: u32,
+    /// The subtending leaf.
+    pub leaf: OrganId,
+    /// Azimuth of the subtending leaf.
+    pub azimuth: f64,
+    /// Fate.
+    pub fate: BudFate,
+}
+
+/// A raceme opening its flowers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Raceme {
+    /// The raceme organ.
+    pub id: OrganId,
+    /// Flowers opened.
+    pub opened: u32,
+    /// Fractional flowers due.
+    pub due: f64,
+}
+
+/// An open flower.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Flower {
+    /// The flower organ.
+    pub id: OrganId,
+    /// Its raceme.
+    pub raceme: OrganId,
+    /// Days open.
+    pub days: u32,
+    /// Sum of daily pod-set temperature factors.
+    pub temperature: f64,
+    /// Sum of daily carbon factors.
+    pub carbon: f64,
+    /// Lowest daily FTSW while open.
+    pub min_ftsw: f64,
+}
+
+/// A pod.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Pod {
+    /// The pod organ.
+    pub id: OrganId,
+    /// Seeds created.
+    pub seeds: bool,
+}
+
+/// One root axis (a sequence of segments) or one lateral cohort.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RootAxis {
+    /// Index into [`HerbParams::roots`].
+    pub kind: usize,
+    /// Segments from base to tip, with the axis length at each segment's start.
+    pub segments: Vec<(OrganId, f64)>,
+    /// Realized length of completed segments.
+    pub length: f64,
+    /// Direction of the newest segment.
+    pub direction: V3,
+    /// Roots the axis stands for.
+    pub multiplicity: f64,
+    /// No more growth.
+    pub done: bool,
+    /// Lateral cohorts made.
+    pub laterals: u32,
+}
+
+/// Weather and soil seen during the current day, for daily rules.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DayStats {
+    /// Hours recorded.
+    pub hours: u32,
+    /// Sum of air temperatures.
+    pub t_sum: f64,
+    /// Lowest air temperature.
+    pub t_min: f64,
+    /// Lowest FTSW.
+    pub ftsw_min: f64,
+    /// Plant thermal time (air) gained, for axis phyllochrons.
+    pub thermal: f64,
+}
+
+impl Default for DayStats {
+    fn default() -> Self {
+        Self {
+            hours: 0,
+            t_sum: 0.0,
+            t_min: f64::INFINITY,
+            ftsw_min: 1.0,
+            thermal: 0.0,
+        }
+    }
+}
+
+/// Counts and totals after a day, for tests, the CSV and the validation report.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DayReport {
+    /// Days since sowing.
+    pub day: u32,
+    /// Phenological stage.
+    pub stage: Option<Stage>,
+    /// Main-stem nodes (the unifoliate node is node 1).
+    pub main_nodes: u32,
+    /// Branches.
+    pub branches: u32,
+    /// Living leaves.
+    pub leaves: u32,
+    /// Living leaf area, m².
+    pub leaf_area: f64,
+    /// Racemes.
+    pub racemes: u32,
+    /// Flowers opened so far.
+    pub flowers: u32,
+    /// Living pods.
+    pub pods: u32,
+    /// Living seeds in pods.
+    pub seeds: u32,
+    /// Root axes from the seed (order 0).
+    pub root_axes: u32,
+    /// Lateral cohorts.
+    pub lateral_cohorts: u32,
+    /// Total living root length, m.
+    pub root_length: f64,
+    /// Root dry mass, g.
+    pub root_mass: f64,
+    /// Total living structural dry mass, g.
+    pub dry_mass: f64,
+    /// Pod and seed dry mass, g.
+    pub fruit_mass: f64,
+    /// Height of the highest shoot point above the soil, m.
+    pub height: f64,
+    /// Water uptake shortfall today, kg.
+    pub shortfall: f64,
+}
+
+/// One plant: its organ graph and the growth-form state around it.
+#[derive(Clone, Debug)]
+pub struct Plant {
+    /// Parameters.
+    pub params: HerbParams,
+    /// World seed, for the plant's random streams.
+    pub world_seed: u64,
+    /// Plant entity id, for random keys.
+    pub entity: u64,
+    /// Organ graph.
+    pub arena: OrganArena,
+    /// Architecture data per organ.
+    pub meta: Vec<Meta>,
+    /// Carbon ledger.
+    pub ledger: CarbonLedger,
+    /// Phenology.
+    pub phenology: Phenology,
+    /// Collar position in the soil frame (x, y, z = −sowing depth).
+    pub collar_position: V3,
+    /// Sowing depth.
+    pub depth: Meters,
+    /// The seed / collar organ.
+    pub collar: OrganId,
+    /// The hypocotyl.
+    pub hypocotyl: OrganId,
+    /// Shoot axes; index 0 is the main stem once emerged.
+    pub axes: Vec<ShootAxis>,
+    /// Main-stem axillary buds.
+    pub buds: Vec<Bud>,
+    /// Racemes.
+    pub racemes: Vec<Raceme>,
+    /// Open flowers.
+    pub flowers: Vec<Flower>,
+    /// Pods.
+    pub pods: Vec<Pod>,
+    /// Root axes.
+    pub root_axes: Vec<RootAxis>,
+    /// Root types whose axes have appeared.
+    pub root_types_started: Vec<bool>,
+    /// Root length per soil cell, rebuilt daily.
+    pub roots: RootCells,
+    /// Organ base and tip positions, rebuilt daily.
+    pub positions: Vec<(V3, V3)>,
+    /// Consecutive germination hours.
+    pub germination_hours: u32,
+    /// Days since sowing.
+    pub day: u32,
+    /// Day of emergence.
+    pub emerged_day: Option<u32>,
+    /// Seed reserve at sowing.
+    pub seed_reserve: GramsC,
+    /// Flowers opened so far.
+    pub flowers_opened: u32,
+    /// Upper buds turned to racemes at flowering.
+    pub flowering_started: bool,
+    /// Leaves shed at maturity.
+    pub leaves_dropped: bool,
+    /// Today's weather and soil.
+    pub today: DayStats,
+    /// Today's uptake shortfall.
+    pub shortfall: KgWater,
+    /// Current FTSW.
+    pub ftsw: f64,
+    /// Stress factors on conductance and expansion.
+    pub stress: (f64, f64),
+    /// This hour's leaf income, indexed like the arena.
+    income: Vec<GramsC>,
+    sky: Vec<SkySector>,
+}
+
+/// Inputs to the plant's hourly steps.
+#[derive(Copy, Clone, Debug)]
+pub struct HourCtx<'a> {
+    /// The hour's weather.
+    pub weather: &'a HourWeather,
+    /// Clock hour 0 to 23 (index into the light coefficients).
+    pub hour: usize,
+    /// Sim tick.
+    pub tick: Hours,
+    /// Ambient CO2.
+    pub co2: Ppm,
+    /// Air pressure.
+    pub patm: KPa,
+}
+
+/// Share of potential mass a new organ starts with (decision 0013; ~).
+pub const PRIMORDIUM: f64 = 0.02;
+
+/// What [`Plant::spawn`] needs.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct Spawn {
+    pub kind: OrganKind,
+    pub role: Role,
+    pub parent: OrganId,
+    pub order: u8,
+    pub curve: ExpansionCurve,
+    pub specific: SpecificSize,
+    pub direction: V3,
+    pub azimuth: f64,
+    pub attach: f64,
+    pub multiplicity: f64,
+    pub potential_area: f64,
+}
+
+impl Spawn {
+    pub(crate) fn new(kind: OrganKind, role: Role, parent: OrganId, curve: ExpansionCurve) -> Self {
+        Self {
+            kind,
+            role,
+            parent,
+            order: 0,
+            curve,
+            specific: SpecificSize::Bulk,
+            direction: [0.0, 0.0, 1.0],
+            azimuth: 0.0,
+            attach: 1.0,
+            multiplicity: 1.0,
+            potential_area: 0.0,
+        }
+    }
+}
+
+pub(crate) fn curve(duration: DegreeDays, potential: GramsDM) -> Result<ExpansionCurve, ArchError> {
+    if potential.0 <= 0.0 {
+        return Ok(ExpansionCurve::none());
+    }
+    ExpansionCurve::new(duration, DegreeDays(0.5 * duration.0), potential)
+        .map_err(|e| ArchError::Curve(e.to_string()))
+}
+
+impl Plant {
+    /// Sows a seed at `collar_position` (soil frame; z is minus the sowing depth).
+    ///
+    /// The seed is four organs from the start (§3.10; decision 0013): the collar (the
+    /// embryo's root pole, where roots attach), the hypocotyl, not yet expanding, and the
+    /// two cotyledons on top of it holding the mobilizable reserve. Germination starts
+    /// the hypocotyl's expansion curve, which lifts the cotyledons to the surface.
+    ///
+    /// # Errors
+    /// [`ArchError::Graph`] only on an internal inconsistency.
+    pub fn sow(
+        species: &Species,
+        traits: &Traits,
+        world_seed: u64,
+        entity: u64,
+        collar_position: V3,
+        tick: Hours,
+    ) -> Result<Self, ArchError> {
+        let params = HerbParams::new(species, traits);
+        let mut arena = OrganArena::new();
+        let fixed = params.seed_mass.0 * (1.0 - params.seed_mobilizable);
+        let reserve =
+            GramsC(params.seed_mass.0 * params.seed_carbon_fraction * params.seed_mobilizable);
+        let organ = |kind, parent, structural: f64, reserve: GramsC, specific| NewOrgan {
+            kind,
+            parent,
+            axis_order: 0,
+            birth: tick,
+            curve: ExpansionCurve::none(),
+            specific,
+            orientation: Orientation::UP,
+            structural: GramsDM(structural),
+            reserve,
+            nitrogen: GramsN(0.0),
+        };
+        let collar = arena.add(
+            &organ(
+                OrganKind::Seed,
+                None,
+                0.2 * fixed,
+                GramsC(0.0),
+                SpecificSize::Bulk,
+            ),
+            &params.allometry,
+        )?;
+        let hypocotyl = arena.add(
+            &organ(
+                OrganKind::Internode,
+                Some(collar),
+                0.0,
+                GramsC(0.0),
+                SpecificSize::Length(params.hypocotyl_specific_length),
+            ),
+            &params.allometry,
+        )?;
+        let mut meta = vec![Meta::new(Role::Collar), Meta::new(Role::Hypocotyl)];
+        for k in 0..2u32 {
+            let az = f64::from(k) * core::f64::consts::PI;
+            let mut o = organ(
+                OrganKind::Cotyledon,
+                Some(hypocotyl),
+                0.4 * fixed,
+                reserve * 0.5,
+                SpecificSize::Bulk,
+            );
+            o.orientation = Orientation {
+                direction: geometry::from_azimuth(az + core::f64::consts::FRAC_PI_2, 0.3),
+                azimuth: ps_units::Radians(az),
+            };
+            arena.add(&o, &params.allometry)?;
+            meta.push(Meta::new(Role::Cotyledon));
+        }
+        let ledger = CarbonLedger::start(&arena, params.carbon.carbon_fraction);
+        let n_roots = params.roots.len();
+        let mut p = Self {
+            params,
+            world_seed,
+            entity,
+            arena,
+            meta,
+            ledger,
+            phenology: Phenology::default(),
+            collar_position,
+            depth: Meters(-collar_position[2]),
+            collar,
+            hypocotyl,
+            axes: Vec::new(),
+            buds: Vec::new(),
+            racemes: Vec::new(),
+            flowers: Vec::new(),
+            pods: Vec::new(),
+            root_axes: Vec::new(),
+            root_types_started: vec![false; n_roots],
+            roots: RootCells::default(),
+            positions: Vec::new(),
+            germination_hours: 0,
+            day: 0,
+            emerged_day: None,
+            seed_reserve: reserve,
+            flowers_opened: 0,
+            flowering_started: false,
+            leaves_dropped: false,
+            today: DayStats::default(),
+            shortfall: KgWater(0.0),
+            ftsw: 1.0,
+            stress: (1.0, 1.0),
+            income: Vec::new(),
+            sky: ps_light::sky_sectors().to_vec(),
+        };
+        p.positions = geometry::layout(&p.arena, &p.meta, p.collar_position);
+        Ok(p)
+    }
+
+    /// Creates an organ with a primordium: a small share of its potential mass built at
+    /// once from the parent's reserve (decision 0013), so that a new sink can hold
+    /// reserve and start growing. Moving carbon from reserve to structure leaves the
+    /// carbon stock unchanged.
+    pub(crate) fn spawn(&mut self, s: &Spawn, now: Hours) -> Result<OrganId, ArchError> {
+        let cf = self.params.carbon.carbon_fraction;
+        let pi = s.parent.index();
+        let available = self.arena.reserve[pi].0.max(0.0);
+        let mass = (PRIMORDIUM * s.curve.potential.0).min(0.5 * available / cf);
+        self.arena.reserve[pi] -= GramsC(mass * cf);
+        let id = self.arena.add(
+            &NewOrgan {
+                kind: s.kind,
+                parent: Some(s.parent),
+                axis_order: s.order,
+                birth: now,
+                curve: s.curve,
+                specific: s.specific,
+                orientation: Orientation {
+                    direction: geometry::unit(s.direction),
+                    azimuth: ps_units::Radians(s.azimuth),
+                },
+                structural: GramsDM(mass),
+                reserve: GramsC(0.0),
+                nitrogen: GramsN(0.0),
+            },
+            &self.params.allometry,
+        )?;
+        let mut m = Meta::new(s.role);
+        m.attach = s.attach;
+        m.multiplicity = s.multiplicity;
+        m.potential_area = s.potential_area;
+        self.meta.push(m);
+        Ok(id)
+    }
+
+    /// A random stream for organ `id` at `tick`.
+    pub(crate) fn stream(&self, id: OrganId, tick: Hours, purpose: Purpose) -> ps_rng::Stream {
+        let entity = (self.entity << 32) | u64::from(id.0);
+        RngKey::new(self.world_seed, entity, tick.0, purpose).stream()
+    }
+
+    /// Whether the seedling has emerged.
+    #[must_use]
+    pub fn emerged(&self) -> bool {
+        self.phenology.stage >= Stage::Emerged
+    }
+
+    fn soil_temperature(soil: &SoilGrid, z: f64) -> Celsius {
+        let c = soil.cell_size().0;
+        let (_, _, nz) = soil.dims();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let layer = (libm::floor((-z / c).max(0.0)) as usize).min(nz.saturating_sub(1));
+        soil.layer_temperature(layer)
+    }
+
+    /// Hourly steps 3, 5 and 6: water status, light and gas exchange. Stores each
+    /// leaf's carbon income for [`Plant::grow_hour`] and returns the plant's
+    /// transpiration demand for the world's joint uptake (step 7).
+    ///
+    /// # Errors
+    /// [`ArchError::Soil`] if the root list does not fit the soil.
+    pub fn water_demand(
+        &mut self,
+        ctx: &HourCtx<'_>,
+        soil: &SoilGrid,
+    ) -> Result<KgWater, ArchError> {
+        let wx = ctx.weather;
+        self.ftsw = if self.roots.cells().is_empty() {
+            1.0
+        } else {
+            soil.ftsw(&self.roots)?
+        };
+        let hp = &self.params;
+        self.stress = (
+            stress_factor(self.ftsw, hp.ftsw_conductance),
+            stress_factor(self.ftsw, hp.ftsw_expansion),
+        );
+        self.income.clear();
+        self.income.resize(self.arena.len(), GramsC(0.0));
+        let leaves: Vec<OrganId> = self
+            .arena
+            .alive_of(OrganKind::Leaf)
+            .filter(|id| self.arena.size[id.index()].area.0 > 0.0)
+            .collect();
+        let mut water = 0.0;
+        if !leaves.is_empty() {
+            let env = LeafEnv {
+                par: UmolPerM2S(0.0),
+                t_leaf: wx.t_air,
+                vpd: wx.vpd,
+                ca: ctx.co2,
+                patm: ctx.patm,
+            };
+            let table = ClassTable::build(&hp.leaf, &env, self.stress.0);
+            let sin_e = if wx.sun.is_up() {
+                wx.sun.direction()[2]
+            } else {
+                0.0
+            };
+            for id in leaves {
+                let i = id.index();
+                let a = ps_light::absorbed_par(
+                    &self.arena.light[i],
+                    ctx.hour,
+                    wx.direct,
+                    wx.diffuse,
+                    sin_e,
+                    hp.g_function,
+                    hp.absorptance,
+                );
+                let age = self.arena.thermal_age[i];
+                let w = self.arena.structural(id).0;
+                let conc = if w > 0.0 {
+                    self.arena.reserve[i].0 / w
+                } else {
+                    0.0
+                };
+                let cap = leaf_capacity(
+                    age,
+                    self.meta[i].expanded.unwrap_or(age),
+                    hp.leaf_lifespan,
+                    hp.capacity_floor,
+                ) * hp.sink_feedback(conc);
+                // The table spans capacities down to its lowest node; below it every
+                // flux scales with capacity (Vcmax, Jmax and Rd all do, and Medlyn
+                // conductance follows assimilation), so rates are scaled from that node.
+                let lowest = CAPACITY_NODES[3];
+                let scale = if cap < lowest { cap / lowest } else { 1.0 };
+                let sun = table.lookup(a.sunlit, cap.max(lowest));
+                let shade = table.lookup(a.shaded, cap.max(lowest));
+                let f = a.sunlit_fraction;
+                let area = self.arena.size[i].area.0;
+                let a_net = scale * (f * sun.a_net.0 + (1.0 - f) * shade.a_net.0);
+                let e = scale * (f * sun.e.0 + (1.0 - f) * shade.e.0);
+                self.income[i] = UmolPerM2S(a_net).carbon_per_hour(ps_units::M2(area));
+                water += e * area * 3600.0 * KG_PER_MOL_WATER;
+            }
+        }
+        Ok(KgWater(water))
+    }
+
+    /// The plant's roots, for the world's joint uptake.
+    #[must_use]
+    pub fn uptake_request(&self, demand: KgWater) -> ps_soil::PlantUptake<'_> {
+        ps_soil::PlantUptake {
+            demand,
+            roots: &self.roots,
+            rate: self.params.uptake_rate,
+            max_per_length: self.params.uptake_max,
+        }
+    }
+
+    /// Hourly steps 8 to 12 (allocation), plus germination and thermal time. `uptake`
+    /// is this plant's share of the joint uptake, for the shortfall log.
+    ///
+    /// # Errors
+    /// [`ArchError::Physio`] or [`ArchError::Graph`] on an internal inconsistency.
+    pub fn grow_hour(
+        &mut self,
+        ctx: &HourCtx<'_>,
+        soil: &SoilGrid,
+        uptake: Option<&Uptake>,
+    ) -> Result<HourReport, ArchError> {
+        let wx = ctx.weather;
+        if let Some(u) = uptake {
+            self.shortfall += u.shortfall;
+        }
+        let seed_t = Self::soil_temperature(soil, self.collar_position[2]);
+        // Germination (§3.10): seed cell above the FTSW threshold and warmer than the
+        // base temperature for consecutive hours.
+        if self.phenology.stage == Stage::Sown {
+            let ok = geometry::soil_cell(soil, self.collar_position).is_some_and(|c| {
+                soil.cell_ftsw(c) >= self.params.germination_ftsw
+                    && seed_t.0 > self.params.temperature.cardinal.base.0
+            });
+            self.germination_hours = if ok { self.germination_hours + 1 } else { 0 };
+        }
+        let n = self.arena.len();
+        self.income.resize(n, GramsC(0.0));
+        let temps: Vec<Celsius> = (0..n)
+            .map(|i| match self.arena.kind[i] {
+                OrganKind::Root | OrganKind::Seed => {
+                    let z = self
+                        .positions
+                        .get(i)
+                        .map_or(self.collar_position[2], |p| p.0[2]);
+                    Self::soil_temperature(soil, z)
+                }
+                _ => wx.t_air,
+            })
+            .collect();
+        let rep = allocation::hourly(
+            &mut self.arena,
+            &self.params.allometry,
+            &self.params.carbon,
+            &self.params.temperature,
+            &HourInputs {
+                temperature: &temps,
+                income: &self.income,
+                ftsw: self.ftsw,
+                stress: self.stress.1,
+            },
+            &mut self.ledger,
+        )?;
+        // Plant thermal time: soil at seed depth until emergence, then air.
+        let t_plant = if self.emerged() { wx.t_air } else { seed_t };
+        let dt = self.params.temperature.cardinal.hourly(t_plant);
+        self.phenology.accumulate(dt);
+        let emerged = self.emerged();
+        let d = &mut self.today;
+        d.hours += 1;
+        d.t_sum += wx.t_air.0;
+        d.t_min = d.t_min.min(wx.t_air.0);
+        d.ftsw_min = d.ftsw_min.min(self.ftsw);
+        if emerged {
+            d.thermal += self.params.temperature.cardinal.hourly(wx.t_air).0;
+        }
+        self.income.iter_mut().for_each(|c| *c = GramsC(0.0));
+        Ok(rep)
+    }
+
+    /// Daily steps 1 to 6 of §3.2 for this plant. `sun_path` is the next day's sun
+    /// direction for each clock hour (`None` below the horizon), for the light rebuild.
+    ///
+    /// # Errors
+    /// Any [`ArchError`] from an internal inconsistency.
+    pub fn day(
+        &mut self,
+        soil: &SoilGrid,
+        sun_path: &[Option<V3>; 24],
+        now: Hours,
+    ) -> Result<DayReport, ArchError> {
+        self.day += 1;
+        // 1. Phenology.
+        let events = self.events();
+        let before = self.phenology.stage;
+        self.phenology.advance(&self.params.thresholds, events);
+        let stage = self.phenology.stage;
+        if before == Stage::Sown && stage == Stage::Germinated {
+            self.germinate()?;
+        }
+        if before == Stage::Germinated && stage == Stage::Emerged {
+            self.emerge(now)?;
+        }
+        if stage < Stage::Mature {
+            // 2. Bud fate.
+            self.bud_fate(now)?;
+            // 3. Organ initiation.
+            self.grow_axes(now)?;
+            self.start_racemes(now)?;
+            self.flowering(now)?;
+            self.root_initiation(now, soil)?;
+        }
+        // 4. Senescence and shedding.
+        self.senescence(now)?;
+        // 5. Root elongation and branching.
+        if stage < Stage::Mature {
+            self.root_elongation(now, soil)?;
+        }
+        // 6. Light geometry, root cells, nitrogen, expansion records.
+        self.positions = geometry::layout(&self.arena, &self.meta, self.collar_position);
+        self.roots = geometry::root_cells(&self.arena, &self.positions, soil);
+        self.rebuild_light(sun_path);
+        self.update_nitrogen();
+        let rep = self.report();
+        self.today = DayStats::default();
+        self.shortfall = KgWater(0.0);
+        Ok(rep)
+    }
+
+    fn events(&self) -> Events {
+        let a = &self.arena;
+        Events {
+            germinated: self.germination_hours >= self.params.germination_hours,
+            trifoliate: a.alive_ids().any(|id| {
+                let i = id.index();
+                self.meta[i].role == Role::Trifoliate
+                    && a.expansion_age[i].0 >= 0.5 * a.curve[i].duration.0
+            }),
+            pod: a.alive_of(OrganKind::Pod).next().is_some(),
+            seed_filling: a.alive_of(OrganKind::SeedInPod).next().is_some(),
+        }
+    }
+
+    fn rebuild_light(&mut self, sun_path: &[Option<V3>; 24]) {
+        let hp = &self.params;
+        let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
+        let mut points = Vec::new();
+        let mut owner = Vec::new();
+        for &id in &leaves {
+            let i = id.index();
+            let node = self.positions[i].0;
+            let pts = geometry::leaf_points(
+                &self.arena,
+                &self.meta,
+                id,
+                node,
+                hp.petiole,
+                ps_units::M2(self.meta[i].potential_area),
+            );
+            owner.extend(std::iter::repeat_n(i, pts.len()));
+            points.extend(pts);
+        }
+        let extra: Vec<V3> = self
+            .arena
+            .alive_of(OrganKind::Internode)
+            .map(|id| self.positions[id.index()].1)
+            .collect();
+        let (_, coeffs) =
+            ps_light::rebuild_daily(&points, &extra, sun_path, &self.sky, hp.g_function);
+        let mut sums: Vec<(LightCoeffs, f64)> = vec![(zero_coeffs(), 0.0); self.arena.len()];
+        for (c, &i) in coeffs.iter().zip(&owner) {
+            let s = &mut sums[i];
+            for h in 0..24 {
+                s.0.direct[h] += c.direct[h];
+            }
+            s.0.diffuse += c.diffuse;
+            s.0.diffuse_absorbed += c.diffuse_absorbed;
+            s.0.rfr += c.rfr;
+            s.1 += 1.0;
+        }
+        let up: Vec<usize> = (0..24).filter(|h| sun_path[*h].is_some()).collect();
+        for &id in &leaves {
+            let i = id.index();
+            let (mut c, n) = sums[i];
+            if n == 0.0 {
+                continue;
+            }
+            for h in 0..24 {
+                c.direct[h] /= n;
+            }
+            c.diffuse /= n;
+            c.diffuse_absorbed /= n;
+            c.rfr /= n;
+            let direct_mean = if up.is_empty() {
+                0.0
+            } else {
+                up.iter().map(|h| c.direct[*h]).sum::<f64>()
+                    / f64::from(u32::try_from(up.len()).unwrap_or(1))
+            };
+            self.meta[i].light_index = 0.5 * (direct_mean + c.diffuse);
+            self.arena.light[i] = c;
+        }
+    }
+
+    fn update_nitrogen(&mut self) {
+        let [stem, root, fruit] = self.params.n_fraction;
+        // Dry, dormant tissue after maturity: no maintenance (decision 0013).
+        let alive = if self.phenology.stage == Stage::Mature {
+            0.0
+        } else {
+            1.0
+        };
+        let ids: Vec<OrganId> = self.arena.alive_ids().collect();
+        for id in ids {
+            let i = id.index();
+            let f = match self.arena.kind[i] {
+                OrganKind::Internode | OrganKind::Bud | OrganKind::Tendril => stem,
+                OrganKind::Root | OrganKind::Nodule => root,
+                OrganKind::Flower | OrganKind::Pod | OrganKind::SeedInPod => fruit,
+                // Leaves pay maintenance as dark respiration in gas exchange; seed
+                // tissues respire little (decision 0013).
+                OrganKind::Leaf | OrganKind::Seed | OrganKind::Cotyledon => 0.0,
+            };
+            self.arena.nitrogen[i] = GramsN(alive * f * self.arena.structural(id).0);
+            let c = &self.arena.curve[i];
+            if self.meta[i].expanded.is_none()
+                && c.potential.0 > 0.0
+                && c.is_complete(self.arena.expansion_age[i])
+            {
+                self.meta[i].expanded = Some(self.arena.thermal_age[i]);
+            }
+        }
+    }
+
+    /// Counts and totals now.
+    #[must_use]
+    pub fn report(&self) -> DayReport {
+        let a = &self.arena;
+        let alive = |k: OrganKind| a.alive_of(k);
+        let mass = |k: OrganKind| a.total_structural(k).0;
+        let height = a
+            .alive_ids()
+            .filter(|id| a.kind[id.index()] != OrganKind::Root)
+            .filter_map(|id| self.positions.get(id.index()))
+            .map(|p| p.1[2].max(p.0[2]))
+            .fold(0.0, f64::max);
+        let root_length: f64 = alive(OrganKind::Root)
+            .map(|id| a.size[id.index()].length.0)
+            .sum();
+        DayReport {
+            day: self.day,
+            stage: Some(self.phenology.stage),
+            main_nodes: self.axes.first().map_or(0, |x| x.nodes),
+            branches: u32::try_from(self.axes.iter().filter(|x| x.order > 0).count()).unwrap_or(0),
+            leaves: u32::try_from(alive(OrganKind::Leaf).count()).unwrap_or(0),
+            leaf_area: alive(OrganKind::Leaf)
+                .map(|id| a.size[id.index()].area.0)
+                .sum(),
+            racemes: u32::try_from(self.racemes.len()).unwrap_or(0),
+            flowers: self.flowers_opened,
+            pods: u32::try_from(alive(OrganKind::Pod).count()).unwrap_or(0),
+            seeds: u32::try_from(alive(OrganKind::SeedInPod).count()).unwrap_or(0),
+            root_axes: u32::try_from(
+                self.root_axes
+                    .iter()
+                    .filter(|x| self.params.roots[x.kind].order == 0)
+                    .count(),
+            )
+            .unwrap_or(0),
+            lateral_cohorts: u32::try_from(
+                self.root_axes
+                    .iter()
+                    .filter(|x| self.params.roots[x.kind].order > 0)
+                    .count(),
+            )
+            .unwrap_or(0),
+            root_length,
+            root_mass: mass(OrganKind::Root),
+            dry_mass: a.alive_ids().map(|id| a.structural(id).0).sum(),
+            fruit_mass: mass(OrganKind::Pod) + mass(OrganKind::SeedInPod),
+            height,
+            shortfall: self.shortfall.0,
+        }
+    }
+}
+
+fn zero_coeffs() -> LightCoeffs {
+    LightCoeffs {
+        rfr: 0.0,
+        ..LightCoeffs::default()
+    }
+}
+
+#[cfg(test)]
+mod tests;
