@@ -260,7 +260,7 @@ mod tests {
                     skeleton: ps_mesh::Skeleton::default(),
                     water_stress: 1.0,
                     first_flower: *first_flower,
-                    organ_values: std::collections::BTreeMap::new(),
+                    organ_values: std::sync::Arc::default(),
                     soil_water: SoilFace::default(),
                     container: true,
                     supports: Vec::new(),

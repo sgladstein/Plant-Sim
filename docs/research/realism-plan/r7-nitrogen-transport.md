@@ -51,7 +51,8 @@ growth changes little, which is why it comes last.
 
 ## 3. Simple level
 
-Today's pool model. Both levels run on the same R3c switch, `SetFidelity`, so a plant's
+Today's pool model (switching rules in [fidelity-levels.md](fidelity-levels.md)). Both
+levels run on the same R3c switch, `SetFidelity`, so a plant's
 hydraulics and nitrogen are always at the same level, and the owner's "follow zoom and
 speed" rule covers both.
 

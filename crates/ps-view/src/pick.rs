@@ -260,7 +260,7 @@ mod tests {
             },
             water_stress: 1.0,
             first_flower: None,
-            organ_values: std::collections::BTreeMap::new(),
+            organ_values: std::sync::Arc::default(),
             soil_water: crate::garden::SoilFace::default(),
             container: true,
             supports: Vec::new(),

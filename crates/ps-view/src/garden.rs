@@ -127,8 +127,9 @@ pub struct PotView {
     /// Sim hour the plant's first flower appeared, once it has flowered (WP20's
     /// flowering cue).
     pub first_flower: Option<f64>,
-    /// Per-lens values by organ id; NaN where a lens has no value for an organ.
-    pub organ_values: BTreeMap<Lens, Vec<f32>>,
+    /// Per-lens values by organ id; NaN where a lens has no value for an organ. Shared:
+    /// they change once per sim hour, the skeleton every frame.
+    pub organ_values: std::sync::Arc<BTreeMap<Lens, Vec<f32>>>,
     /// Soil water on the cut face.
     pub soil_water: SoilFace,
     /// Whether this view draws the container (soil, frame, glass). A plot holds many

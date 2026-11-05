@@ -282,6 +282,9 @@ largely about phosphorus (Lynch's work) [F for Strock 2017].
 
 ## 4. Level of detail: design sketch
 
+Superseded by the full spec, [fidelity-levels.md](fidelity-levels.md). This section is
+kept as the original sketch.
+
 Scott's rule: fully flow-resolved when zoomed in on a few plants at low speed;
 simplified for big plots, fast-forward and turn-based steps, as long as the outcomes
 stay similar.
