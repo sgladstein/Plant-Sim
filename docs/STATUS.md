@@ -12,9 +12,9 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 2 Weather and sun | #3 | done (PR #14) |
 | 3 Organ graph | #4 | done (PR #14) |
 | 4 Species schema | #5 | done (PR #15) |
-| 5 Soil and water | #6 | done (this PR) |
-| 6 Light | #7 | next |
-| 7 Physiology | #8 | not started |
+| 5 Soil and water | #6 | done (PR #16) |
+| 6 Light | #7 | done (this PR); per-leaf target missed on 2 of 57 leaves, see decision 0008 |
+| 7 Physiology | #8 | next |
 | 8 Herb architecture and roots | #9 | not started |
 | 9 World | #10 | not started |
 | 10 Export and CLI | #11 | not started |
@@ -26,7 +26,12 @@ None yet (WP11).
 
 ## Open questions for the owner
 - Set `main` as the repository's default branch in GitHub settings (the agent cannot change repo settings).
+- WP6 light: the single-plant check meets the plant-total target (+2.9% vs 3%) but 2 of 57 leaflets miss the 10% per-leaf target (worst 0.142). Accept 95% within 0.10 for M0, or keep the target and add a close-neighbor correction in WP12? (decision 0008)
 - WP13 (Bevy smoke test on the GTX 1070) should run around sessions 3 or 4 of M0.
+
+## Review follow-ups (fold into a later PR)
+- WP4 review: cross-field validation in `Species::validate` (t_base < t_opt < t_max, emergence < flowering < maturity, growth temperature ordering, finite tropisms, `#rrggbb` colors); a typed trait view of `Phenotype` before WP7/WP8; the discrete-trait rounding rule in the species model card; `specific_stem_length` likely 10–20 cm/g (WP12).
+- WP5 review (/mnt/project-files/reviews/wp5-review.md): derive the lateral fraction from a diffusivity (4e-5 m² h⁻¹ gives 0.1 at 2 cm) so 5 cm cells are right; per-column surface radiation so canopy shade dries only sunlit columns; `M2PerHour` and `M3` newtypes for `take_up` and `cell_volume`; interpolate the soil temperature lag; add "infiltration can fill a lower cell through a saturated one in the same hour" to known limits.
 
 ## Notes for the next session
 - Local checks: see CLAUDE.md "Session start".

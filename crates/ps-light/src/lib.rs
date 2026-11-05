@@ -1,0 +1,541 @@
+//! Light: turbid-medium voxel model (design plan §3.5, §3.2 hourly step 3 and daily
+//! step 6; WP6).
+//!
+//! Once a day, [`rebuild_daily`] fits an adaptive voxel grid around the shoot, spreads
+//! each leaf's area over its footprint (leaf area density, m² m⁻³), and marches rays
+//! from seven points on every leaf toward each of the day's 24 hourly sun positions and
+//! each of 16 sky sectors. The optical depth along a ray is `Σ k · LAD · path length`,
+//! where `k` is the G-function value for small leaves (Beer's law) and rises toward
+//! `−ln(1 − G)` for a leaf that fills its cell layer, because one leaf is one opaque
+//! blade rather than a cloud of area (decision 0008). The results are each leaf's
+//! [`LightCoeffs`]: 24 direct transmittances (the probability the leaf is sunlit that
+//! hour), one weighted diffuse transmittance, and the red:far-red proxy.
+//!
+//! Every hour, [`absorbed_par`] turns those coefficients and the hour's direct and
+//! diffuse radiation into absorbed PAR per unit leaf area for the sunlit and shaded parts
+//! of each leaf.
+//!
+//! A leaf's footprint is a horizontal disc of the leaf's area at its height, and a
+//! leaf's own footprint is excluded when its rays are marched, so an isolated leaf is
+//! fully lit while other foliage in the same cells still shades it. The seven ray
+//! origins lie in the plane of the blade (its normal), so a tilted leaf half under a
+//! neighbor is half shaded.
+//!
+//! Model card: docs/models/light.md.
+
+use core::f64::consts::PI;
+
+pub use ps_graph::LightCoeffs;
+use ps_units::{M2, Meters, UmolPerM2S, WPerM2};
+use serde::{Deserialize, Serialize};
+
+/// Most cells along any axis (§3.5).
+pub const MAX_CELLS_PER_AXIS: usize = 48;
+/// Smallest cell edge (§3.5).
+pub const MIN_CELL_M: f64 = 0.005;
+/// Margin added to the shoot's bounding box, as a fraction of its extent per side
+/// (20% in total per axis, §3.5).
+pub const MARGIN_FRACTION_PER_SIDE: f64 = 0.10;
+/// PAR share of global radiation ("~", 0.45 to 0.5 in the literature).
+pub const PAR_FRACTION: f64 = 0.5;
+/// Photon flux per watt of PAR, µmol J⁻¹ (daylight average; source in the light model card).
+pub const UMOL_PER_J_PAR: f64 = 4.57;
+/// Smallest sine of solar elevation used when projecting the beam onto leaves.
+pub const MIN_SIN_ELEVATION: f64 = 0.05;
+
+/// A leaf as the light model sees it: its center and one-sided area.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LeafPoint {
+    /// Leaf center (east, north, up), m.
+    pub center: [f64; 3],
+    /// One-sided leaf area.
+    pub area: M2,
+    /// Unit normal of the leaf blade (pointing up); `[0, 0, 1]` for a flat leaf.
+    pub normal: [f64; 3],
+}
+
+/// Radius of a disc with the leaf's area.
+#[must_use]
+pub fn leaf_radius(area: M2) -> f64 {
+    libm::sqrt(area.0.max(0.0) / PI)
+}
+
+/// The voxel grid of one day.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LightGrid {
+    /// Lower corner of the grid.
+    pub origin: [f64; 3],
+    /// Cell edge.
+    pub cell: Meters,
+    /// Cells per axis.
+    pub n: [usize; 3],
+    /// Leaf area density per cell, m² m⁻³, index `(k * ny + j) * nx + i`.
+    pub lad: Vec<f64>,
+    /// The G-function value the grid was built for.
+    pub g: f64,
+    /// Optical depth per unit path length per cell, m⁻¹: `Σ k_i · LAD_i` over the
+    /// leaves in the cell, with each leaf's `k_i` from [`LightGrid::extinction`].
+    pub depth: Vec<f64>,
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn as_f64(n: usize) -> f64 {
+    n as f64
+}
+
+impl LightGrid {
+    /// An empty grid with explicit geometry (tests and obstacles), for G-function
+    /// value `g`.
+    #[must_use]
+    pub fn with_geometry(origin: [f64; 3], cell: Meters, n: [usize; 3], g: f64) -> Self {
+        Self {
+            origin,
+            cell,
+            n,
+            lad: vec![0.0; n[0] * n[1] * n[2]],
+            g,
+            depth: vec![0.0; n[0] * n[1] * n[2]],
+        }
+    }
+
+    /// The adaptive grid of §3.5 around `leaves` (and any `extra` points, such as stem
+    /// tips), with 20% margin, at most 48 cells per axis and cells no smaller than 5 mm.
+    /// Returns `None` when there are no leaves. `g` is the G-function value.
+    #[must_use]
+    pub fn fit(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
+        let mut lo = [f64::INFINITY; 3];
+        let mut hi = [f64::NEG_INFINITY; 3];
+        for l in leaves {
+            let r = leaf_radius(l.area);
+            for a in 0..3 {
+                let pad = if a < 2 { r } else { 0.0 };
+                lo[a] = lo[a].min(l.center[a] - pad);
+                hi[a] = hi[a].max(l.center[a] + pad);
+            }
+        }
+        for p in extra {
+            for a in 0..3 {
+                lo[a] = lo[a].min(p[a]);
+                hi[a] = hi[a].max(p[a]);
+            }
+        }
+        if leaves.is_empty() {
+            return None;
+        }
+        let extent = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+        let largest = extent[0].max(extent[1]).max(extent[2]);
+        let padded = largest * (1.0 + 2.0 * MARGIN_FRACTION_PER_SIDE);
+        let cell = (padded / as_f64(MAX_CELLS_PER_AXIS)).max(MIN_CELL_M);
+        let mut origin = [0.0; 3];
+        let mut n = [1usize; 3];
+        for a in 0..3 {
+            let span = extent[a] * (1.0 + 2.0 * MARGIN_FRACTION_PER_SIDE);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let cells = (libm::ceil(span / cell).max(1.0) as usize).min(MAX_CELLS_PER_AXIS);
+            n[a] = cells;
+            let mid = 0.5 * (lo[a] + hi[a]);
+            origin[a] = mid - 0.5 * as_f64(cells) * cell;
+        }
+        let mut grid = Self::with_geometry(origin, Meters(cell), n, g);
+        grid.add_leaves(leaves);
+        Some(grid)
+    }
+
+    /// Cell volume, m³.
+    #[must_use]
+    pub fn cell_volume(&self) -> f64 {
+        self.cell.0 * self.cell.0 * self.cell.0
+    }
+
+    /// Cell coordinates of a point, if inside the grid.
+    #[must_use]
+    pub fn locate(&self, p: [f64; 3]) -> Option<[usize; 3]> {
+        let mut c = [0usize; 3];
+        for a in 0..3 {
+            let u = (p[a] - self.origin[a]) / self.cell.0;
+            if !(u >= 0.0 && u < as_f64(self.n[a])) {
+                return None;
+            }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let i = libm::floor(u) as usize;
+            c[a] = i.min(self.n[a] - 1);
+        }
+        Some(c)
+    }
+
+    /// Flat index of cell coordinates.
+    #[must_use]
+    pub fn flat(&self, c: [usize; 3]) -> usize {
+        (c[2] * self.n[1] + c[1]) * self.n[0] + c[0]
+    }
+
+    /// A leaf's footprint: its area spread over a horizontal disc of the same area at
+    /// the leaf's height, sampled on a lattice of spacing at most half a cell, as
+    /// `(flat cell index, leaf area density)` pairs sorted by index. Samples outside the
+    /// grid are dropped. (decision 0008: refines §3.5's "area at its center" so leaves
+    /// larger than a cell do not concentrate their area in one cell.)
+    #[must_use]
+    pub fn footprint(&self, l: &LeafPoint) -> Vec<(usize, f64)> {
+        let r = leaf_radius(l.area);
+        let h = 0.5 * self.cell.0;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let k = (libm::ceil(r / h) as usize).max(1);
+        let mut pts = Vec::new();
+        for j in 0..2 * k {
+            for i in 0..2 * k {
+                let u = (as_f64(i) + 0.5) / as_f64(k) - 1.0;
+                let w = (as_f64(j) + 0.5) / as_f64(k) - 1.0;
+                if u * u + w * w <= 1.0 {
+                    pts.push([l.center[0] + u * r, l.center[1] + w * r, l.center[2]]);
+                }
+            }
+        }
+        if pts.is_empty() {
+            pts.push(l.center);
+        }
+        let share = l.area.0 / as_f64(pts.len()) / self.cell_volume();
+        let mut cells: Vec<(usize, f64)> = Vec::new();
+        for p in pts {
+            if let Some(c) = self.locate(p) {
+                cells.push((self.flat(c), share));
+            }
+        }
+        cells.sort_by_key(|c| c.0);
+        let mut merged: Vec<(usize, f64)> = Vec::with_capacity(cells.len());
+        for (i, v) in cells {
+            match merged.last_mut() {
+                Some(last) if last.0 == i => last.1 += v,
+                _ => merged.push((i, v)),
+            }
+        }
+        merged
+    }
+
+    /// Adds each leaf's footprint to the grid.
+    pub fn add_leaves(&mut self, leaves: &[LeafPoint]) {
+        for l in leaves {
+            for (i, v) in self.footprint(l) {
+                self.lad[i] += v;
+                self.depth[i] += self.extinction(v) * v;
+            }
+        }
+    }
+
+    /// Extinction coefficient of one leaf's area in one cell, where it has leaf area
+    /// density `lad` (decision 0008). Within its footprint a leaf is one opaque blade,
+    /// not a Poisson cloud of area: crossing a cell layer where the leaf covers a
+    /// fraction `ΔL = lad · cell` of the layer, a ray is blocked with probability
+    /// `G · ΔL` (the positive binomial of Nilson 1971 with one leaf per layer), so
+    /// `k = −ln(1 − G·ΔL)/ΔL`. Small leaves (`ΔL → 0`) recover Beer's `k = G`.
+    #[must_use]
+    pub fn extinction(&self, lad: f64) -> f64 {
+        let dl = (lad * self.cell.0).clamp(0.0, 1.0);
+        let gdl = (self.g * dl).min(0.999);
+        if gdl < 1e-9 {
+            self.g
+        } else {
+            -libm::log(1.0 - gdl) / dl
+        }
+    }
+
+    /// The optical depth of a leaf's own footprint, as `(cell, depth density)` pairs
+    /// matching [`LightGrid::footprint`], for excluding it from its own rays.
+    #[must_use]
+    pub fn own_depth(&self, footprint: &[(usize, f64)]) -> Vec<(usize, f64)> {
+        footprint
+            .iter()
+            .map(|&(i, v)| (i, self.extinction(v) * v))
+            .collect()
+    }
+
+    /// `Σ LAD · length` along a ray (see [`LightGrid::path_sum`]): the leaf area index
+    /// crossed.
+    #[must_use]
+    pub fn path_lad(&self, from: [f64; 3], dir: [f64; 3], own: &[(usize, f64)]) -> f64 {
+        self.path_sum(&self.lad, from, dir, own)
+    }
+
+    /// Optical depth along a ray; the transmittance is `exp(−depth)`. `own` is the
+    /// leaf's [`LightGrid::own_depth`].
+    #[must_use]
+    pub fn path_depth(&self, from: [f64; 3], dir: [f64; 3], own: &[(usize, f64)]) -> f64 {
+        self.path_sum(&self.depth, from, dir, own)
+    }
+
+    /// `Σ field · length` along the ray from `from` in unit direction `dir` until it
+    /// leaves the grid (Amanatides and Woo 1987 traversal). `own` is the leaf's own
+    /// contribution to `field` (sorted by cell), excluded wherever the ray crosses it.
+    fn path_sum(&self, field: &[f64], from: [f64; 3], dir: [f64; 3], own: &[(usize, f64)]) -> f64 {
+        let Some(mut c) = self.locate(from) else {
+            return 0.0;
+        };
+        let s = self.cell.0;
+        let mut step = [0isize; 3];
+        let mut t_max = [f64::INFINITY; 3];
+        let mut t_delta = [f64::INFINITY; 3];
+        for a in 0..3 {
+            if dir[a] > 0.0 {
+                step[a] = 1;
+                let boundary = self.origin[a] + as_f64(c[a] + 1) * s;
+                t_max[a] = (boundary - from[a]) / dir[a];
+                t_delta[a] = s / dir[a];
+            } else if dir[a] < 0.0 {
+                step[a] = -1;
+                let boundary = self.origin[a] + as_f64(c[a]) * s;
+                t_max[a] = (boundary - from[a]) / dir[a];
+                t_delta[a] = -s / dir[a];
+            }
+        }
+        let mut t = 0.0;
+        let mut sum = 0.0;
+        loop {
+            let a = if t_max[0] <= t_max[1] && t_max[0] <= t_max[2] {
+                0
+            } else if t_max[1] <= t_max[2] {
+                1
+            } else {
+                2
+            };
+            let t_next = t_max[a];
+            let idx = self.flat(c);
+            let mut v = field[idx];
+            if let Ok(k) = own.binary_search_by_key(&idx, |o| o.0) {
+                v = (v - own[k].1).max(0.0);
+            }
+            sum += v * (t_next - t);
+            t = t_next;
+            // Advance along axis a.
+            let next = c[a].checked_add_signed(step[a]);
+            match next {
+                Some(i) if i < self.n[a] => c[a] = i,
+                _ => break,
+            }
+            t_max[a] += t_delta[a];
+            if !t_next.is_finite() {
+                break;
+            }
+        }
+        sum
+    }
+}
+
+/// A sky sector for diffuse light: its central direction and its weight.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SkySector {
+    /// Unit vector toward the sector center (east, north, up).
+    pub direction: [f64; 3],
+    /// Share of diffuse irradiance on a horizontal surface from this sector (sum 1).
+    pub weight: f64,
+}
+
+/// The 16 sky sectors of §3.5: two elevation bands (0° to 45°, 45° to 90°) × eight
+/// azimuths, weighted for a standard overcast sky (radiance ∝ (1 + 2 sin β)/3, Moon and
+/// Spencer 1942) integrated over each band for irradiance on a horizontal surface.
+#[must_use]
+pub fn sky_sectors() -> [SkySector; 16] {
+    // Irradiance on a horizontal surface from elevation β per unit β (per azimuth):
+    // radiance (1 + 2 sin β)/3 × sin β (projection) × cos β (solid angle).
+    let density = |b: f64| (1.0 + 2.0 * libm::sin(b)) * libm::sin(b) * libm::cos(b);
+    // Midpoint integration of each band: its weight and its weighted mean elevation.
+    let band = |b0: f64, b1: f64| {
+        let steps = 512u32;
+        let h = (b1 - b0) / f64::from(steps);
+        let (mut w, mut wb) = (0.0, 0.0);
+        for i in 0..steps {
+            let b = b0 + (f64::from(i) + 0.5) * h;
+            w += density(b) * h;
+            wb += density(b) * b * h;
+        }
+        (w, wb / w)
+    };
+    let bands = [band(0.0, PI / 4.0), band(PI / 4.0, PI / 2.0)];
+    let total = bands[0].0 + bands[1].0;
+    let mut out = [SkySector {
+        direction: [0.0, 0.0, 1.0],
+        weight: 0.0,
+    }; 16];
+    for (b, (w, elev)) in bands.iter().enumerate() {
+        for k in 0..8u32 {
+            let az = (f64::from(k) + 0.5) * PI / 4.0;
+            let ce = libm::cos(*elev);
+            out[b * 8 + k as usize] = SkySector {
+                direction: [ce * libm::sin(az), ce * libm::cos(az), libm::sin(*elev)],
+                weight: w / total / 8.0,
+            };
+        }
+    }
+    out
+}
+
+/// Daily rebuild (§3.2 daily step 6): fits the grid and computes every leaf's
+/// coefficients for the next day.
+///
+/// `sun_path[h]` is the unit vector toward the sun at the midpoint of hour `h`, or
+/// `None` when the sun is below the horizon. `g` is the G-function value. Returns the
+/// grid (for lenses and debugging) and one [`LightCoeffs`] per leaf, in input order.
+#[must_use]
+pub fn rebuild_daily(
+    leaves: &[LeafPoint],
+    extra_bounds: &[[f64; 3]],
+    sun_path: &[Option<[f64; 3]>; 24],
+    sky: &[SkySector],
+    g: f64,
+) -> (Option<LightGrid>, Vec<LightCoeffs>) {
+    let Some(grid) = LightGrid::fit(leaves, extra_bounds, g) else {
+        return (None, Vec::new());
+    };
+    let coeffs = coefficients(&grid, leaves, sun_path, sky);
+    (Some(grid), coeffs)
+}
+
+/// Per-leaf coefficients on a given grid (which must already hold the leaves' area),
+/// using the grid's G-function value.
+#[must_use]
+pub fn coefficients(
+    grid: &LightGrid,
+    leaves: &[LeafPoint],
+    sun_path: &[Option<[f64; 3]>; 24],
+    sky: &[SkySector],
+) -> Vec<LightCoeffs> {
+    leaves
+        .iter()
+        .map(|l| {
+            let own = grid.footprint(l);
+            let own_depth = grid.own_depth(&own);
+            let pts = sample_points(l);
+            // Mean transmittance over the leaf's sample points (decision 0008).
+            let trans = |d: [f64; 3]| {
+                pts.iter()
+                    .map(|p| libm::exp(-grid.path_depth(*p, d, &own_depth)))
+                    .fold(0.0, |a, b| a + b)
+                    / as_f64(pts.len())
+            };
+            let mut direct = [0.0; 24];
+            for (h, sun) in sun_path.iter().enumerate() {
+                if let Some(d) = sun {
+                    direct[h] = trans(*d);
+                }
+            }
+            let diffuse = sky
+                .iter()
+                .map(|s| s.weight * trans(s.direction))
+                .fold(0.0, |a, b| a + b);
+            let lai_above = grid.path_lad(l.center, [0.0, 0.0, 1.0], &own);
+            LightCoeffs {
+                direct,
+                diffuse,
+                sunlit_fraction: 0.0,
+                rfr: red_far_red(lai_above),
+            }
+        })
+        .collect()
+}
+
+/// Number of points on a leaf's disc from which rays are cast: the center and a ring.
+pub const SAMPLE_POINTS: usize = 7;
+
+/// The leaf's sample points: its center and six points on a ring at `r/√2` (the ring
+/// that splits the disc into equal-area halves), in the plane of the leaf blade.
+#[must_use]
+pub fn sample_points(l: &LeafPoint) -> [[f64; 3]; SAMPLE_POINTS] {
+    let rr = leaf_radius(l.area) * core::f64::consts::FRAC_1_SQRT_2;
+    let (u, v) = blade_basis(l.normal);
+    let mut out = [l.center; SAMPLE_POINTS];
+    for (k, p) in out.iter_mut().skip(1).enumerate() {
+        let a = as_f64(k) * PI / 3.0;
+        let (ca, sa) = (libm::cos(a), libm::sin(a));
+        for i in 0..3 {
+            p[i] += rr * (ca * u[i] + sa * v[i]);
+        }
+    }
+    out
+}
+
+/// Two orthonormal vectors spanning the blade plane of a leaf with normal `n`. A
+/// zero or non-finite normal is treated as horizontal.
+fn blade_basis(n: [f64; 3]) -> ([f64; 3], [f64; 3]) {
+    let len = libm::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+    if !(len > 1e-12 && len.is_finite()) {
+        return ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    }
+    let n = [n[0] / len, n[1] / len, n[2] / len];
+    let a = if n[0].abs() < 0.9 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let cross = |x: [f64; 3], y: [f64; 3]| {
+        [
+            x[1] * y[2] - x[2] * y[1],
+            x[2] * y[0] - x[0] * y[2],
+            x[0] * y[1] - x[1] * y[0],
+        ]
+    };
+    let u = cross(n, a);
+    let ul = libm::sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    let u = [u[0] / ul, u[1] / ul, u[2] / ul];
+    (u, cross(n, u))
+}
+
+/// Red:far-red proxy from the leaf area index above a leaf (§3.5):
+/// `1.2 · exp(−0.5 · LAI_above)`, clipped to [0.2, 1.2].
+#[must_use]
+pub fn red_far_red(lai_above: f64) -> f64 {
+    (1.2 * libm::exp(-0.5 * lai_above)).clamp(0.2, 1.2)
+}
+
+/// Absorbed PAR of one leaf in one hour, per unit leaf area.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AbsorbedPar {
+    /// Share of the leaf that is sunlit this hour.
+    pub sunlit_fraction: f64,
+    /// Absorbed PAR on the sunlit part (diffuse plus beam).
+    pub sunlit: UmolPerM2S,
+    /// Absorbed PAR on the shaded part (diffuse only).
+    pub shaded: UmolPerM2S,
+}
+
+impl AbsorbedPar {
+    /// Area-weighted mean absorbed PAR over the leaf.
+    #[must_use]
+    pub fn mean(&self) -> UmolPerM2S {
+        UmolPerM2S(
+            self.sunlit_fraction * self.sunlit.0 + (1.0 - self.sunlit_fraction) * self.shaded.0,
+        )
+    }
+}
+
+/// Hourly step 3 of §3.2 for one leaf. `direct` and `diffuse` are horizontal
+/// irradiances of global radiation; `sin_elevation` is the sine of the sun's elevation;
+/// `absorptance` is leaf PAR absorptance.
+///
+/// Beam on the sunlit part, per unit leaf area: `G · I_b,horizontal / sin β`
+/// (the beam's flux normal to the sun times the mean projection G).
+#[must_use]
+pub fn absorbed_par(
+    c: &LightCoeffs,
+    hour: usize,
+    direct: WPerM2,
+    diffuse: WPerM2,
+    sin_elevation: f64,
+    g: f64,
+    absorptance: f64,
+) -> AbsorbedPar {
+    let to_par = PAR_FRACTION * UMOL_PER_J_PAR * absorptance;
+    let diffuse_par = c.diffuse * diffuse.0.max(0.0) * to_par;
+    let (fraction, beam) = if sin_elevation > 0.0 && direct.0 > 0.0 {
+        let f = c.direct[hour.min(23)];
+        let b = g * direct.0 / sin_elevation.max(MIN_SIN_ELEVATION) * to_par;
+        (f, b)
+    } else {
+        (0.0, 0.0)
+    };
+    AbsorbedPar {
+        sunlit_fraction: fraction,
+        sunlit: UmolPerM2S(diffuse_par + beam),
+        shaded: UmolPerM2S(diffuse_par),
+    }
+}
+
+#[cfg(test)]
+mod tests;
