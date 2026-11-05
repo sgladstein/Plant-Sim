@@ -5153,6 +5153,7 @@ dependencies = [
  "libm",
  "ps-arch",
  "ps-graph",
+ "ps-light",
  "ps-soil",
  "ps-species",
  "ps-units",

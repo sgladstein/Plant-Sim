@@ -29,3 +29,5 @@ jobs:
         run: cargo nextest run --workspace --exclude ps-view --exclude ps-ui --exclude ps-app --locked --no-tests=warn
       - name: golden hashes
         run: cargo run --locked -p ps-cli -- hash data/scenarios/single_pot.ron data/scenarios/two_pot_sun_shade.ron --check-golden tests/golden
+      - name: golden hashes, 30-plant plot (30 days)
+        run: cargo run --locked -p ps-cli -- hash data/scenarios/plot_30_beans.ron --days 30 --check-golden tests/golden

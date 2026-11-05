@@ -10,6 +10,10 @@ use crate::WorldError;
 
 /// The scenario schema version this build reads.
 pub const SCENARIO_SCHEMA: u32 = 1;
+/// Smallest side of a plot, cm (§7 WP21: 1 × 1 to 3 × 3 m).
+pub const PLOT_MIN_CM: f64 = 100.0;
+/// Largest side of a plot, cm.
+pub const PLOT_MAX_CM: f64 = 300.0;
 
 /// Start date and hour on the sim clock (local mean solar time, decision 0005).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +55,22 @@ pub enum SoilSpec {
         /// Pot center in the garden, m (east, north); used from M1.
         position_m: (f64, f64),
     },
+    /// A rectangular plot bed (M2, WP21): 5 cm cells, bottom draining to a deep layer
+    /// that never returns water, and one light grid for all its plants (decision 0019).
+    Plot {
+        /// Soil id, unique in the scenario.
+        id: u32,
+        /// East-west size, cm (100 to 300).
+        width_cm: f64,
+        /// North-south size, cm (100 to 300).
+        length_cm: f64,
+        /// Depth, cm.
+        depth_cm: f64,
+        /// Texture class.
+        texture: Texture,
+        /// Plot center in the garden, m (east, north).
+        position_m: (f64, f64),
+    },
 }
 
 impl SoilSpec {
@@ -58,8 +78,22 @@ impl SoilSpec {
     #[must_use]
     pub fn id(&self) -> u32 {
         match self {
-            Self::Pot { id, .. } => *id,
+            Self::Pot { id, .. } | Self::Plot { id, .. } => *id,
         }
+    }
+
+    /// The container's center in the garden, m (east, north).
+    #[must_use]
+    pub fn position_m(&self) -> (f64, f64) {
+        match self {
+            Self::Pot { position_m, .. } | Self::Plot { position_m, .. } => *position_m,
+        }
+    }
+
+    /// Whether the container's plants share one light grid (a plot).
+    #[must_use]
+    pub fn shared_light(&self) -> bool {
+        matches!(self, Self::Plot { .. })
     }
 }
 
@@ -188,6 +222,26 @@ impl Scenario {
         for (i, id) in ids.iter().enumerate() {
             if ids[..i].contains(id) {
                 return bad(format!("soil id {id} appears twice"));
+            }
+        }
+        for spec in &self.soils {
+            if let SoilSpec::Plot {
+                id,
+                width_cm,
+                length_cm,
+                depth_cm,
+                ..
+            } = spec
+            {
+                let side = |v: &f64| v.is_finite() && (PLOT_MIN_CM..=PLOT_MAX_CM).contains(v);
+                if !side(width_cm) || !side(length_cm) {
+                    return bad(format!(
+                        "plot {id} is {width_cm} x {length_cm} cm; sides must be {PLOT_MIN_CM} to {PLOT_MAX_CM} cm"
+                    ));
+                }
+                if !(depth_cm.is_finite() && *depth_cm >= 10.0) {
+                    return bad(format!("plot {id} depth {depth_cm} cm"));
+                }
             }
         }
         let known = |id: &u32| ids.contains(id);

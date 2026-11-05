@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use ps_light::{LeafPoint, rebuild_daily, sky_sectors};
+use ps_light::{LeafPoint, rebuild_daily, rebuild_plot, sky_sectors};
 use ps_units::M2;
 
 const LEAVES: &str = include_str!("fixtures/plant_leaves.csv");
@@ -111,13 +111,21 @@ struct Comparison {
 }
 
 fn compare(r: &Reference, g: f64) -> Comparison {
+    compare_with(r, g, false)
+}
+
+fn compare_with(r: &Reference, g: f64, plot: bool) -> Comparison {
     let n = r.leaves.len();
     let sky = sky_sectors();
     let mut sun_path = [None; 24];
     for (h, d) in r.sun_dirs.iter().enumerate() {
         sun_path[8 + h] = Some(*d);
     }
-    let (_, c) = rebuild_daily(&r.leaves, &[[0.0, 0.0, 0.0]], &sun_path, &sky, g);
+    let (_, c) = if plot {
+        rebuild_plot(&r.leaves, &[[0.0, 0.0, 0.0]], &sun_path, &sky, g)
+    } else {
+        rebuild_daily(&r.leaves, &[[0.0, 0.0, 0.0]], &sun_path, &sky, g)
+    };
     assert_eq!(c.len(), n);
 
     // Per leaf: the daily light index, the mean of the direct coefficients over the
@@ -227,4 +235,25 @@ fn sim_plant_against_ray_tracer() {
     );
     assert!(leaf_angle_g.within * 100 >= 75 * leaf_angle_g.n);
     assert!(leaf_angle_g.worst < 0.25);
+}
+
+/// WP21 (decision 0019): a plant on the plot light grid (3 cm cells) against the same
+/// ray tracer. Pins today's result.
+#[test]
+fn plot_grid_light_against_ray_tracer() {
+    let synthetic = compare_with(&reference(LEAVES, TRACE), 0.5, true);
+    let sim = compare_with(&reference(LEAVES_60, TRACE_60), 0.5, true);
+    println!("synthetic\n{}sim 60-day\n{}", synthetic.report, sim.report);
+    assert!(
+        synthetic.total_rel.abs() < 0.03,
+        "{:+.4}",
+        synthetic.total_rel
+    );
+    assert!(synthetic.within * 100 >= 85 * synthetic.n);
+    assert!(
+        (0.0..0.10).contains(&sim.total_rel),
+        "{:+.4}",
+        sim.total_rel
+    );
+    assert!(sim.within * 100 >= 65 * sim.n);
 }

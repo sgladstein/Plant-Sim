@@ -16,6 +16,7 @@ use ps_soil::{SoilError, SoilGrid, SoilHour, WaterLedger};
 use ps_species::Species;
 use ps_units::{Celsius, Degrees, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
 use ps_weather::{DateHour, HourWeather, Preset, WeatherSeries};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub use hash::hash_of;
@@ -25,7 +26,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.2.0";
+pub const MODEL_VERSION: &str = "0.3.0";
 
 /// Air pressure used for gas exchange, kPa (sea level; no site elevation in M0).
 const PATM_KPA: f64 = 101.325;
@@ -35,6 +36,8 @@ const IRRIGATION_HOUR: u64 = 6;
 const SOIL_T_INITIAL: f64 = 15.0;
 /// Soil grid cell size in pots, m (§3.6).
 const POT_CELL: f64 = 0.02;
+/// Soil cell edge in plots, m (§3.6).
+const PLOT_CELL: f64 = 0.05;
 /// Canopy extinction for radiation reaching the soil surface.
 const SOIL_EXTINCTION: f64 = 0.5;
 
@@ -137,6 +140,9 @@ pub struct SoilEntry {
     /// Share of rain reaching this soil (0 under a rain shelter).
     #[serde(default = "one")]
     pub rain_fraction: f64,
+    /// Whether this soil's plants share one light grid (a plot; decision 0019).
+    #[serde(default)]
+    pub shared_light: bool,
     /// Automatic watering.
     pub irrigation: Irrigation,
     /// Water applied by actions, waiting for the next hourly step, mm.
@@ -300,7 +306,7 @@ fn weather_for(s: &Scenario, c: &Catalog) -> Result<WeatherSeries, WorldError> {
     }
 }
 
-fn pot(spec: &SoilSpec) -> Result<SoilGrid, WorldError> {
+fn soil_grid(spec: &SoilSpec) -> Result<SoilGrid, WorldError> {
     match spec {
         SoilSpec::Pot {
             diameter_cm,
@@ -314,6 +320,27 @@ fn pot(spec: &SoilSpec) -> Result<SoilGrid, WorldError> {
             *texture,
             Celsius(SOIL_T_INITIAL),
         )?),
+        SoilSpec::Plot {
+            width_cm,
+            length_cm,
+            depth_cm,
+            texture,
+            ..
+        } => {
+            let cells = |cm: f64| {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let n = libm::round(cm * 0.01 / PLOT_CELL).max(1.0) as usize;
+                n
+            };
+            Ok(SoilGrid::new_box(
+                cells(*width_cm),
+                cells(*length_cm),
+                cells(*depth_cm),
+                Meters(PLOT_CELL),
+                *texture,
+                Celsius(SOIL_T_INITIAL),
+            )?)
+        }
     }
 }
 
@@ -348,7 +375,8 @@ impl World {
             let id = spec.id();
             soils.push(SoilEntry {
                 id,
-                grid: pot(spec)?,
+                grid: soil_grid(spec)?,
+                shared_light: spec.shared_light(),
                 radiation_fraction: scenario.radiation_fraction.get(&id).copied().unwrap_or(1.0),
                 rain_fraction: scenario.rain_fraction.get(&id).copied().unwrap_or(1.0),
                 irrigation: scenario
@@ -771,23 +799,23 @@ impl World {
                 co2,
                 patm: KPa(PATM_KPA),
             };
-            let members: Vec<usize> = (0..self.state.plants.len())
-                .filter(|p| self.state.plants[*p].soil == si)
-                .collect();
+            // Each plant's hourly work depends only on itself and the shared soil, so
+            // the plants of a soil run in parallel; collect keeps plant order, so the
+            // result does not depend on the thread count.
+            let WorldState { plants, soils, .. } = &mut self.state;
+            let mut members: Vec<&mut PlantEntry> =
+                plants.iter_mut().filter(|e| e.soil == si).collect();
             // 3, 5, 6. Light, water status, gas exchange: each plant's demand, from
             // the soil before this hour's water moves.
-            let mut demand = Vec::with_capacity(members.len());
-            for &p in &members {
-                let soil = &self.state.soils[si].grid;
-                demand.push(self.state.plants[p].plant.water_demand(&ctx, soil)?);
-            }
+            let soil = &soils[si].grid;
+            let demand: Vec<KgWater> = members
+                .par_iter_mut()
+                .map(|e| e.plant.water_demand(&ctx, soil))
+                .collect::<Result<_, _>>()?;
             // 4. Soil water: rain, irrigation and action water; radiation under the canopy.
-            let leaf_area: f64 = members
-                .iter()
-                .map(|p| self.state.plants[*p].plant.leaf_area())
-                .sum();
-            let irr = Self::irrigation_mm(&self.state.soils[si], hour, day);
-            let entry = &mut self.state.soils[si];
+            let leaf_area: f64 = members.iter().map(|e| e.plant.leaf_area()).sum();
+            let irr = Self::irrigation_mm(&soils[si], hour, day);
+            let entry = &mut soils[si];
             let lai = leaf_area / entry.grid.surface_area().max(1e-12);
             let water_in = wx.rain.0 * entry.rain_fraction + irr + entry.pending_mm;
             entry.pending_mm = 0.0;
@@ -801,17 +829,17 @@ impl World {
             let requests: Vec<ps_soil::PlantUptake<'_>> = members
                 .iter()
                 .zip(&demand)
-                .map(|(p, d)| self.state.plants[*p].plant.uptake_request(*d))
+                .map(|(e, d)| e.plant.uptake_request(*d))
                 .collect();
-            let joint = self.state.soils[si].grid.take_up(&requests)?;
-            self.state.soils[si].ledger.accumulate(&joint.ledger);
+            let joint = soils[si].grid.take_up(&requests)?;
+            soils[si].ledger.accumulate(&joint.ledger);
             // 8 to 12. Carbon.
-            for (k, &p) in members.iter().enumerate() {
-                let soil = &self.state.soils[si].grid;
-                self.state.plants[p]
-                    .plant
-                    .grow_hour(&ctx, soil, joint.plants.get(k))?;
-            }
+            let soil = &soils[si].grid;
+            members
+                .par_iter_mut()
+                .enumerate()
+                .map(|(k, e)| e.plant.grow_hour(&ctx, soil, joint.plants.get(k)))
+                .collect::<Result<Vec<_>, _>>()?;
         }
         self.state.tick += 1;
         if hour == 23 {
@@ -846,11 +874,11 @@ impl World {
                 rain += h.rain.0;
             }
         }
-        for p in 0..self.state.plants.len() {
+        let reports = self.daily_plant_steps(&path, Hours(now))?;
+        for (p, report) in reports.into_iter().enumerate() {
             let si = self.state.plants[p].soil;
             let entry = &self.state.soils[si];
             let soil = &entry.grid;
-            let report = self.state.plants[p].plant.day(soil, &path, Hours(now))?;
             let roots = &self.state.plants[p].plant.roots;
             let ftsw = if roots.cells().is_empty() {
                 // No roots yet: the mean over the soil's cells.
@@ -883,6 +911,63 @@ impl World {
         self.state.hashed_log = self.state.applied;
         self.state.hashed_rows = self.state.history.len();
         Ok(())
+    }
+
+    /// Daily steps 1 to 6 for every plant, in parallel (each plant depends only on
+    /// itself and its soil). A pot plant builds its own light grid; the plants of a
+    /// plot share one grid, built from all their leaves once their geometry is updated
+    /// (decision 0019). Returns the reports in plant order.
+    fn daily_plant_steps(
+        &mut self,
+        path: &[Option<[f64; 3]>; 24],
+        now: Hours,
+    ) -> Result<Vec<DayReport>, WorldError> {
+        let WorldState { plants, soils, .. } = &mut self.state;
+        let soils: &[SoilEntry] = soils;
+        // Pots: the whole daily step. Plots: up to the light rebuild.
+        let mut reports: Vec<Option<DayReport>> = plants
+            .par_iter_mut()
+            .map(|e| {
+                let soil = &soils[e.soil].grid;
+                if soils[e.soil].shared_light {
+                    e.plant.day_before_light(soil, now)?;
+                    Ok(None)
+                } else {
+                    e.plant.day(soil, path, now).map(Some)
+                }
+            })
+            .collect::<Result<_, ArchError>>()?;
+        let sky = ps_light::sky_sectors();
+        for (si, entry) in soils.iter().enumerate() {
+            if !entry.shared_light {
+                continue;
+            }
+            let members: Vec<usize> = (0..plants.len())
+                .filter(|&p| plants[p].soil == si)
+                .collect();
+            let Some(&first) = members.first() else {
+                continue;
+            };
+            let mut leaves = Vec::new();
+            let mut extra = Vec::new();
+            let mut counts = Vec::with_capacity(members.len());
+            for &p in &members {
+                let (l, x) = plants[p].plant.light_inputs();
+                counts.push(l.len());
+                leaves.extend(l);
+                extra.extend(x);
+            }
+            // One G per plot: the first plant's (one species per plot until WP23).
+            let g = plants[first].plant.g_function();
+            let (_, coeffs) = ps_light::rebuild_plot(&leaves, &extra, path, &sky, g);
+            let mut at = 0;
+            for (&p, n) in members.iter().zip(counts) {
+                let mine = coeffs.get(at..at + n).unwrap_or(&[]);
+                at += n;
+                reports[p] = Some(plants[p].plant.day_after_light(path, Some(mine)));
+            }
+        }
+        Ok(reports.into_iter().flatten().collect())
     }
 
     /// Total water taken up by a soil's plants since the start.

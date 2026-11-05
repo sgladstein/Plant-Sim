@@ -29,6 +29,10 @@ pub const LATENT_HEAT_J_PER_KG: f64 = 2.45e6;
 pub const WATER_DENSITY: f64 = 1000.0;
 /// Share of the gradient moved to each horizontal neighbor per hour (§3.6).
 pub const LATERAL_FRACTION: f64 = 0.1;
+/// Cell edge at which [`LATERAL_FRACTION`] applies, m. Other cells scale it as a
+/// diffusivity, by `(reference / cell)²` (4e-5 m² per hour; WP21, decision 0019), so a
+/// plot's 5 cm cells move 1.6% per hour.
+pub const LATERAL_REFERENCE_CELL_M: f64 = 0.02;
 /// Fraction of radiation reaching wet bare soil that evaporates water ("~", about
 /// Priestley-Taylor at 20 °C with net radiation 0.6 of global).
 pub const EVAPORATION_COEFFICIENT: f64 = 0.5;
@@ -550,7 +554,17 @@ impl SoilGrid {
         }
     }
 
+    /// The share of a water difference that moves between two neighboring cells in
+    /// an hour: [`LATERAL_FRACTION`] at 2 cm, scaled as a diffusivity for other cell
+    /// sizes and capped at 0.25 so the explicit step stays stable.
+    #[must_use]
+    pub fn lateral_fraction(&self) -> f64 {
+        let r = LATERAL_REFERENCE_CELL_M / self.cell.0;
+        (LATERAL_FRACTION * r * r).min(0.25)
+    }
+
     fn redistribute_laterally(&mut self) {
+        let fraction = self.lateral_fraction();
         let mut delta = vec![KgWater(0.0); self.water.len()];
         for z in 0..self.nz {
             for y in 0..self.ny {
@@ -562,7 +576,7 @@ impl SoilGrid {
                     // Each pair once: +x and +y neighbors.
                     let mut pair = |j: usize| {
                         if self.active[j] {
-                            let f = (self.water[i] - self.water[j]) * LATERAL_FRACTION;
+                            let f = (self.water[i] - self.water[j]) * fraction;
                             delta[i] -= f;
                             delta[j] += f;
                         }

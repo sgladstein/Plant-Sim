@@ -252,3 +252,66 @@ fn invalid_start_dates_are_rejected() {
     s.start.day = 30;
     assert!(s.validate().is_err());
 }
+
+/// WP21 (decision 0019): a plot grows its plants in one soil and one light grid, and
+/// the result does not depend on how many threads step the plants.
+#[test]
+fn a_plot_is_independent_of_the_thread_count() {
+    let (s, c) = short("plot_30_beans.ron", 20);
+    let hash = |threads: usize| {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
+        pool.install(|| run(&s, &c).state_hash())
+    };
+    assert_eq!(hash(1), hash(4));
+}
+
+#[test]
+fn neighbors_in_a_plot_take_each_others_light() {
+    // The same plant alone on the plot and among 29 neighbors: once the canopy is
+    // up, its leaves get less light in the crowd.
+    let (crowd, c) = short("plot_30_beans.ron", 45);
+    let mut alone = crowd.clone();
+    let center = 14;
+    alone.sowings = vec![crowd.sowings[center].clone()];
+    let light = |s: &Scenario, plant: usize| {
+        let w = run(s, &c);
+        let p = &w.state().plants[plant].plant;
+        let leaves: Vec<_> = p.arena.alive_of(ps_graph::OrganKind::Leaf).collect();
+        let area: f64 = leaves
+            .iter()
+            .map(|id| p.arena.size[id.index()].area.0)
+            .sum();
+        leaves
+            .iter()
+            .map(|id| p.arena.size[id.index()].area.0 * p.meta[id.index()].light_index)
+            .sum::<f64>()
+            / area
+    };
+    let (in_crowd, by_itself) = (light(&crowd, center), light(&alone, 0));
+    assert!(
+        in_crowd < 0.85 * by_itself,
+        "light index {in_crowd:.3} in the plot vs {by_itself:.3} alone"
+    );
+}
+
+#[test]
+fn plots_outside_the_size_range_are_rejected() {
+    let (ok, _) = load("plot_30_beans.ron");
+    assert!(ok.validate().is_ok());
+    for (w, l) in [(90.0, 120.0), (150.0, 320.0), (f64::NAN, 120.0)] {
+        let mut s = ok.clone();
+        if let ps_world::scenario::SoilSpec::Plot {
+            width_cm,
+            length_cm,
+            ..
+        } = &mut s.soils[0]
+        {
+            *width_cm = w;
+            *length_cm = l;
+        }
+        assert!(s.validate().is_err(), "{w} x {l} cm accepted");
+    }
+}
