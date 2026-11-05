@@ -26,7 +26,11 @@ cargo run --release -p ps-app -- [--day N] [--speed H] [--paused] [--lens NAME] 
 ```
 
 `--present` and `--frame-latency` set the swap chain's present mode (default auto vsync)
-and maximum queued frames, for frame-pacing tests.
+and maximum queued frames, for frame-pacing tests. `--bench-frames N [--bench-out FILE.csv]`
+records N frame times (real time between frames, so vsync waits count) after the pipelines
+are ready and a 120-frame warm-up, writes one row per frame plus a `# summary` line
+(adapter, backend, size, present mode, mean, p50, p95, p99, max), prints the summary, and
+exits. Example: `plant-sim --day 45 --present fifo --frame-latency 2 --bench-frames 2000`.
 
 Lens names: off, light, soil-water, plant-water, roots, carbon, phenology, shade.
 `--screenshot` waits until the GPU pipelines have compiled (`ps_view::Ready`) plus 60

@@ -5,7 +5,8 @@
 //!
 //! ```text
 //! plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
-//!           [--present auto|fifo|mailbox|immediate] [--frame-latency N]
+//!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
+//!           [--bench-frames N] [--bench-out FILE.csv]
 //! ```
 //!
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
@@ -13,7 +14,9 @@
 //! the GPU pipelines have compiled and the scene has settled, saves the window and exits
 //! (for headless checks and bug reports). `--present` and `--frame-latency` set the
 //! swap chain's present mode (default auto vsync) and maximum queued frames (default
-//! the driver's), for frame-pacing tests.
+//! the driver's), for frame-pacing tests. `--bench-frames N` records N frame times after
+//! the pipelines are ready and a 120-frame warm-up, writes them to `--bench-out`
+//! (default frame-times.csv) with a summary line (mean, p50, p95, p99, max), and exits.
 
 // Converting sim f64 and counts to f32 for display is intended.
 #![allow(
@@ -22,6 +25,7 @@
     clippy::cast_sign_loss
 )]
 
+mod bench;
 mod demo_source;
 
 use std::path::PathBuf;
@@ -41,6 +45,9 @@ struct Options {
     screenshot: Option<PathBuf>,
     present: PresentMode,
     frame_latency: Option<std::num::NonZero<u32>>,
+    present_name: String,
+    bench_frames: Option<u32>,
+    bench_out: PathBuf,
 }
 
 fn parse_present(name: &str) -> Result<PresentMode> {
@@ -77,6 +84,9 @@ fn parse_args() -> Result<Options> {
         screenshot: None,
         present: PresentMode::AutoVsync,
         frame_latency: None,
+        present_name: "auto".into(),
+        bench_frames: None,
+        bench_out: PathBuf::from("frame-times.csv"),
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -88,14 +98,24 @@ fn parse_args() -> Result<Options> {
             "--paused" => o.paused = true,
             "--lens" => o.lens = parse_lens(&value()?)?,
             "--screenshot" => o.screenshot = Some(PathBuf::from(value()?)),
-            "--present" => o.present = parse_present(&value()?)?,
+            "--present" => {
+                o.present_name = value()?;
+                o.present = parse_present(&o.present_name)?;
+            }
+            "--bench-frames" => {
+                o.bench_frames = Some(anyhow::Context::context(
+                    value()?.parse::<u32>(),
+                    "--bench-frames",
+                )?);
+            }
+            "--bench-out" => o.bench_out = PathBuf::from(value()?),
             "--frame-latency" => {
                 let n = anyhow::Context::context(value()?.parse::<u32>(), "--frame-latency")?;
                 o.frame_latency = std::num::NonZero::new(n);
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv]"
                 );
                 std::process::exit(0);
             }
@@ -128,6 +148,14 @@ fn main() -> Result<()> {
     .insert_resource(options.lens)
     .insert_resource(options.clone())
     .add_systems(Update, demo_source::drive.in_set(ViewSet::Source));
+    if let Some(frames) = options.bench_frames {
+        app.insert_resource(bench::BenchConfig {
+            frames: frames.max(1),
+            out: options.bench_out.clone(),
+            present: options.present_name.clone(),
+        })
+        .add_systems(Last, bench::record);
+    }
     if options.screenshot.is_some() {
         app.add_systems(Update, screenshot_and_exit);
     }
