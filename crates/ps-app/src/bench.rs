@@ -62,12 +62,15 @@ pub fn stats(ms: &[f64]) -> Option<Stats> {
     })
 }
 
-/// The CSV: one row per frame, then summary rows as comments.
+/// The CSV: one row per frame (frame time, and how long the limiter held it), then the
+/// summary as a comment. A spike with a near-zero hold means the time went elsewhere
+/// (rendering, present, the sim snapshot), not to the limiter.
 #[must_use]
-pub fn csv(ms: &[f64], summary: &str) -> String {
-    let mut s = String::from("frame,ms\n");
+pub fn csv(ms: &[f64], limiter_ms: &[f64], summary: &str) -> String {
+    let mut s = String::from("frame,ms,limiter_ms\n");
     for (i, v) in ms.iter().enumerate() {
-        let _ = writeln!(s, "{i},{v:.4}");
+        let held = limiter_ms.get(i).copied().unwrap_or(0.0);
+        let _ = writeln!(s, "{i},{v:.4},{held:.4}");
     }
     let _ = writeln!(s, "# {summary}");
     s
@@ -77,6 +80,8 @@ pub fn csv(ms: &[f64], summary: &str) -> String {
 pub(crate) struct Recorder {
     after_ready: u32,
     ms: Vec<f64>,
+    /// Time the frame limiter held each frame, ms (0 when the cap is off).
+    limiter_ms: Vec<f64>,
 }
 
 #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
@@ -98,6 +103,12 @@ pub(crate) fn record(
         return;
     }
     rec.ms.push(time.delta_secs_f64() * 1000.0);
+    // The limiter runs in Last, after this system, so this is the previous frame's hold,
+    // which falls inside this frame's delta.
+    let held = cap
+        .as_ref()
+        .map_or(0.0, |c| c.last_wait.as_secs_f64() * 1000.0);
+    rec.limiter_ms.push(held);
     if rec.ms.len() < config.frames as usize {
         return;
     }
@@ -120,7 +131,7 @@ pub(crate) fn record(
     );
     info!("bench: {summary}");
     println!("{summary}");
-    match std::fs::write(&config.out, csv(&rec.ms, &summary)) {
+    match std::fs::write(&config.out, csv(&rec.ms, &rec.limiter_ms, &summary)) {
         Ok(()) => info!("bench: wrote {}", config.out.display()),
         Err(e) => error!("bench: could not write {}: {e}", config.out.display()),
     }
@@ -146,7 +157,10 @@ mod tests {
 
     #[test]
     fn csv_has_header_rows_and_summary() {
-        let text = csv(&[1.0, 2.5], "x");
-        assert_eq!(text, "frame,ms\n0,1.0000\n1,2.5000\n# x\n");
+        let text = csv(&[1.0, 2.5], &[0.5], "x");
+        assert_eq!(
+            text,
+            "frame,ms,limiter_ms\n0,1.0000,0.5000\n1,2.5000,0.0000\n# x\n"
+        );
     }
 }

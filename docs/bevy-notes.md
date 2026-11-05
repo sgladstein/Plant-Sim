@@ -27,7 +27,7 @@ cargo run --release -p ps-app -- [--day N] [--speed H] [--paused] [--lens NAME] 
 
 `--present` and `--frame-latency` set the swap chain's present mode and maximum queued
 frames. **The default is mailbox** (Bevy falls back to immediate, then FIFO) with a frame
-cap at the monitor's refresh rate (60 if unknown); `--fps-cap N` changes the cap, 0 turns
+cap at twice the monitor's refresh rate (120 if unknown); `--fps-cap N` changes the cap, 0 turns
 it off, and FIFO/auto vsync are never capped. `--window WxH` sets the logical window size
 and keeps it; without it the 1600x900 default shrinks to fit 92% of the primary monitor. `--bench-frames N [--bench-out FILE.csv]`
 records N frame times (real time between frames, so vsync waits count) after the pipelines
@@ -123,6 +123,11 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
   capped 21 spikes. Each capped spike was followed by a short frame, so the limiter's
   sleep woke late (a coarse Windows timer), not the present path. The limiter now learns
   how late `sleep` wakes and spins that long before each deadline (`display::next_slack`).
+- After that change the capped spikes stayed (#48 on c00d9af: 28 spikes of ~30 ms, each
+  with a catch-up frame; uncapped still 0), so the late sleep was not the cause; something
+  blocks a whole display interval when frames are paced at exactly 60. The default cap is
+  now twice the refresh rate, and the bench CSV has a `limiter_ms` column (how long the
+  limiter held each frame) to tell limiter time from render/present time on a spike.
 - `--window WxH` is in physical pixels and clamped to the monitor (it was logical, so
   2353×1324 became 4118×2317 at 175%).
 - DX12 baseline without DXC (#40 build): cold start about 175 s on every launch (no
