@@ -1,0 +1,50 @@
+name: render
+
+# The Bevy crates (ps-view, ps-ui, ps-app), kept out of the sim jobs (design plan §11.7).
+# The Windows job uploads a release build of the app for the owner to run.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: render
+      - name: clippy (pedantic as errors)
+        run: cargo clippy -p ps-view -p ps-ui -p ps-app --all-targets --locked -- -D warnings
+      - name: tests
+        run: cargo test -p ps-view -p ps-ui -p ps-app --locked
+
+  windows-app:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: render-release
+      - name: build the app (release)
+        run: cargo build -p ps-app --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plant-sim-windows
+          path: target/release/plant-sim.exe

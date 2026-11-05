@@ -10,6 +10,7 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
 
+# Sim jobs never compile Bevy (design plan §11.7); render.yml covers ps-view, ps-ui, ps-app.
 jobs:
   test:
     runs-on: windows-latest
@@ -23,8 +24,8 @@ jobs:
         with:
           tool: cargo-nextest
       - name: build
-        run: cargo build --workspace --all-targets --locked
+        run: cargo build --workspace --exclude ps-view --exclude ps-ui --exclude ps-app --all-targets --locked
       - name: sim tests
-        run: cargo nextest run --workspace --locked --no-tests=warn
+        run: cargo nextest run --workspace --exclude ps-view --exclude ps-ui --exclude ps-app --locked --no-tests=warn
       - name: golden hashes
         run: cargo run --locked -p ps-cli -- hash data/scenarios/single_pot.ron data/scenarios/two_pot_sun_shade.ron --check-golden tests/golden
