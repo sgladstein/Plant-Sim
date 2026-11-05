@@ -42,6 +42,7 @@ The viewer reads `ps_view::Garden` and `SkyState` only. Swapping the stand-in fo
 - WP13 (Bevy smoke test on the GTX 1070) passed its frame-time gate on 2026-11-05 with stand-in plants: Vulkan 2.7 ms per frame, DX12 5.8 ms (budget 16 ms). Re-check on the real sim. The viewer thread has the follow-ups (default backend, slow cold-start screenshots, see-through side panel).
 
 ## Review follow-ups (fold into a later PR)
+- Viewer (PR #38): at day 60 of the full-sun pot at least one root tip sits outside the soil grid on the +x side, through the pot wall. Roots need clamping or deflecting at the pot boundary (ps-arch root elongation).
 - WP4 review: cross-field validation in `Species::validate` (t_base < t_opt < t_max, emergence < flowering < maturity, growth temperature ordering, finite tropisms, `#rrggbb` colors); the discrete-trait rounding rule in the species model card; `specific_stem_length` likely 10–20 cm/g (WP12). (The typed `Traits` view landed with WP7.)
 - WP5 review (/mnt/project-files/reviews/wp5-review.md): derive the lateral fraction from a diffusivity (4e-5 m² h⁻¹ gives 0.1 at 2 cm) so 5 cm cells are right; per-column surface radiation so canopy shade dries only sunlit columns; `M2PerHour` and `M3` newtypes for `take_up` and `cell_volume`; interpolate the soil temperature lag; add "infiltration can fill a lower cell through a saturated one in the same hour" to known limits.
 
