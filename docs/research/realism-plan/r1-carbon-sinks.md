@@ -86,18 +86,21 @@ The hypocotyl is an internode for this rule and carries the whole shoot, so it b
 the thickest stem, which is what a bean looks like.
 
 ### 3.3 Roots: OpenSimRoot secondary growth
-OpenSimRoot's bean set gives a radial growth rate rising to 0.003 cm/day by about day
-29, scaled per root class: 4 for the tap root (2 after day 40), 0.7 for basal roots (0.4
-later), 0.6 to 0.2 for hypocotyl-borne roots, 0.1 to 0.3 for laterals [F, archive roots
-note §1, from growthrates.xml].
+OpenSimRoot's bean set gives a **diameter** increment rising to 0.003 cm/day by segment
+age 29 days (it integrates to about 0.1 cm by day 43), times a root-class factor keyed on
+the segment's **distance from the root base**: tap root 4 from 0 to 20 cm, falling to 2
+at 40 cm and beyond; basal roots 0.7 to 20 cm, 0.4 from 40 cm; hypocotyl-borne roots 0.6
+at the base to 0.2 at 50 cm; laterals 0.1 (fast laterals 0.3 to 0.2) [F, growthrates.xml,
+checked in the R1 to R3 [numbers](numbers/README.md)]. A tap root near the collar then reaches about 4.9 mm
+by day 43.
 
 Hourly, per root segment and cohort:
 
-`ΔW_s,pot = 2π r L · (dr/dt)_type(age) · Δt · ρ_root · f_T,soil · s_w`
+`ΔW_s,pot = 2π r L · (dr/dt)_type(age, x) · Δt · ρ_root · f_T,soil · s_w`
 
-- `(dr/dt)_type(age)` is the species table times the root type's factor. Key the age on
-  the **segment's own age**, so older (basal) segments are wider and taper emerges. If
-  OpenSimRoot keys it on plant age, record the deviation in the decision.
+- `(dr/dt)_type(age, x)` is half the species diameter table at the segment's own age,
+  times the root type's factor at its distance `x` from the root base. Taper comes from
+  the distance key, as in OpenSimRoot.
 - For a lateral cohort, `L` already includes the multiplicity, so the formula holds per
   root.
 - Priority 0.4, root construction cost, soil-layer temperature as today.
@@ -168,8 +171,9 @@ masses as separate columns so old numbers stay comparable.
 ### 4.2 Root exudation
 Each root organ pays `e × its maintenance respiration` per hour as exudate, from its
 reserve, booked as a new `exudation` line in the carbon ledger (carbon leaving the
-plant to the soil). `e = 0.67` (OpenSimRoot bean: exudation about two thirds of root
-respiration) [F, archive roots note]. Paid like maintenance, so it never takes a reserve
+plant to the soil). `e = 0.4` (the 0.3 to 0.5 range from legume exudation of about 3%
+and rhizodeposition of 5 to 10% of assimilated carbon, against root respiration of about
+20%; OpenSimRoot's 0.67 is high) [F, [numbers](numbers/README.md)]. Paid like maintenance, so it never takes a reserve
 below what maintenance may.
 
 ### 4.3 Seed-driven nitrogen stripping
@@ -193,10 +197,10 @@ decision and in the nitrogen card.
 
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
-| `storage_capacity` (`s_max`) | 0.25 bean stem and root, 0.35 wheat stem | g NSC g⁻¹ DM | ~ calibrated to the stem decline of §6; [K, to verify] for wheat |
+| `storage_capacity` (`s_max`) | 0.25 bean stem and root (0.15 to 0.30), 0.28 wheat stem (0.25 to 0.30, Davidson and Chevalier 1992 [F]) | g NSC g⁻¹ DM | ~ calibrated to the stem decline of §6; [K, to verify] for wheat |
 | `storage_on`, `storage_off` (`C_on`, `C_off`) | 0.12, 0.06 | g C g⁻¹ DM | ~ between the growth floor 0.05 and the feedback onset 0.10 |
 | `storage_refill_rate`, `storage_release_rate` (`k_s`, `k_r`) | 0.05, 0.02 | h⁻¹ | ~ |
-| `exudation_fraction` (`e`) | 0.67 | - | OpenSimRoot bean exudates.xml [F] |
+| `exudation_fraction` (`e`) | 0.4 (0.3 to 0.5) | - | [numbers](numbers/README.md) [F, I]; OpenSimRoot bean exudates.xml has 0.67 |
 | `seed_fill_mining_first` | true | - | CROPGRO order "seeds served first after R5" [F, archive m2-m3 science] |
 
 ### 4.5 Done when (R1b)
@@ -224,7 +228,8 @@ per day".
   `v̂` by `min(θ_max, k_p · angle(u, v̂))`, plus today's gravitropism and noise.
 - Only new internodes bend; grown ones don't move (as today's rule for orientation).
 - Parameters: `phototropism_weight` `k_p` 0.3 (~), `phototropism_max_per_day` `θ_max`
-  10° (~) [K, to verify against bean seedling bending data].
+  10° (~; conservative, 20 to 30° is defensible from seedling bending in sunflower and pea
+  [F, [numbers](numbers/README.md)]).
 - Done when: a single_pot plant next to a wall obstacle leans away from it (the tip's
   horizontal offset points away from the wall), and its leaves get more light than with
   phototropism off.
@@ -235,10 +240,10 @@ per day".
 
 | Id (proposed) | Scenario | Variable | Band | Source |
 | --- | --- | --- | --- | --- |
-| `stem_share_peak` | single_pot | stem / (stem + leaf) dry mass at R6 | 0.35 to 0.55 (sim leaf includes petiole, field stem includes petiole) | UFGA8501 Seafarer and Isabella (0.59, 0.66 with petioles) [F]; band [I] |
+| `stem_share_peak` | single_pot | stem / (stem + leaf) dry mass at R6 | 0.35 to 0.60 (sim leaf includes petiole, field stem includes petiole) | UFGA8501 Seafarer and Isabella (0.59, 0.66 with petioles) [F]; pots 0.43 to 0.48 (Lopes 1983) [F] |
 | `stem_decline_fill` | single_pot | stem dry mass, R6 peak to maturity | −10 to −35% | UFGA8501 (−36%, −33%, including petioles) [F]; band [I] |
-| `basal_stem_diameter` | single_pot | hypocotyl diameter at R6 | 5 to 10 mm | [K, to verify] |
-| `tap_root_diameter` | single_pot | tap root diameter 5 cm below the collar at R6 | 3 to 8 mm | [K, to verify; shovelomics measure it, Burridge et al. 2016] |
+| `basal_stem_diameter` | single_pot | hypocotyl diameter at R6 | 4.5 to 10 mm | Anjos 2018, Rodríguez Rodríguez 2026 [F, [numbers](numbers/README.md)] |
+| `tap_root_diameter` | single_pot | tap root diameter 5 cm below the collar at R6 | 2 to 6 mm, Info | Burridge et al. 2016 (up to 3 mm at 35 to 45 days) [F]; OpenSimRoot about 5 mm by day 43 [I] |
 | `feedback_loss_fill` | single_pot | mean daily feedback loss over seed fill | at most 0.35 | [I], diagnostic |
 | existing `root_shoot_seed_fill` | single_pot | root:shoot at seed fill | 0.08 to 0.30 | Pinzón 2024, Acosta-Díaz 2007 [F] |
 

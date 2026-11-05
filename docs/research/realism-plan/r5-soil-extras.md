@@ -43,8 +43,12 @@ Per column, vertical flux between neighbouring cells from Darcy's law on total h
 
 `q_{i→i+1} = K_{i+½} · ((ψ_i − ψ_{i+1}) / Δz + 1)` (downward positive, head in m),
 
-with `K(θ)` from Mualem–van Genuchten using R3a's anchored retention parameters and a
-saturated conductivity `K_s` per texture.
+with `K(θ)` from Mualem–van Genuchten using R3a's anchored retention parameters (`θ_r`
+0, and `n` 1.17 to 1.29 after the research check, [numbers](numbers/README.md)) and a
+saturated conductivity `K_s` per texture. With `n` that low, Mualem's `K` drops by orders
+of magnitude just below saturation, so use the air-entry form of Ippisch et al. 2006
+(a small air-entry head, ~ 2 cm) [K, to verify], and check the loam drainage target with
+it before tuning `K_s`.
 
 - **Solver:** backward Euler on each column with `K` taken at the start of the hour and
   the retention curve linearized there (one Picard step): a tridiagonal system, solved
@@ -70,7 +74,8 @@ saturated conductivity `K_s` per texture.
 | --- | --- | --- | --- |
 | `K_s` loam, sand, clay | 0.25, 7.1, 0.05 | m day⁻¹ | Carsel and Parrish 1988 [K, to verify] |
 | Mualem pore connectivity `l` | 0.5 | - | Mualem 1976 [K] |
-| `n` per texture | as R3a | - | as R3a |
+| `n`, `α` per texture | as R3a (`θ_r` 0) | - | as R3a |
+| Air-entry head `h_e` | 2 | cm | ~ (Ippisch et al. 2006 form) |
 | Pond store before runoff | 5 | mm | ~ |
 
 ### 3.3 Done when (R5a)
@@ -119,7 +124,8 @@ not. Nitrogen ledger closes with the denitrification line.
 - **State:** bulk density `BD` per cell (kg m⁻³), default per texture (the nitrogen card
   already lists 1300, 1550, 1250) [F]. Scenarios can set layers (a plough pan) or a
   raised bed (loose soil).
-- **Effects on water:** `θ_s = 1 − BD / 2650` and `K_s × (BD_ref / BD)^m` (~), so
+- **Effects on water:** `θ_s = 1 − BD / 2650` (R3a's `n` and `α` are re-solved for the
+  cell's `θ_s`, keeping FC and WP; closed form, at a BD change only) and `K_s × (BD_ref / BD)^m` (~), so
   compacted soil holds less air and drains slower (feeds R5a and R5b).
 - **Penetration resistance:** `Q(BD, ψ)` from an empirical pedotransfer function (for
   example Whalley et al. 2007, from bulk density and water potential [K, to verify]).
