@@ -26,6 +26,8 @@ ps-session.workspace = true
 bevy.workspace = true
 anyhow.workspace = true
 mimalloc.workspace = true
+serde.workspace = true
+ron.workspace = true
 
 [features]
 # Links the DXC shader compiler statically (Windows). Without DXC, DX12 compiles shaders

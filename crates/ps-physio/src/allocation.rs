@@ -18,13 +18,55 @@ pub const MIN_LENGTH: f64 = 5e-3;
 /// Relative tolerance of the carbon ledger (CLAUDE.md).
 pub const LEDGER_TOLERANCE: f64 = 1e-9;
 
+/// Carbon used per carbon built, by organ class (decision 0032): tissue richer in
+/// protein and lipid costs more glucose per gram (CROPGRO's composition costs).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ConstructionCost {
+    /// Leaves.
+    pub leaf: f64,
+    /// Stems (internodes and sheaths), buds and tendrils.
+    pub stem: f64,
+    /// Roots and nodules.
+    pub root: f64,
+    /// Flowers, pods, seeds and the sown seed's organs.
+    pub fruit: f64,
+}
+
+impl ConstructionCost {
+    /// The same cost for every organ.
+    #[must_use]
+    pub const fn uniform(c: f64) -> Self {
+        Self {
+            leaf: c,
+            stem: c,
+            root: c,
+            fruit: c,
+        }
+    }
+
+    /// The cost of building an organ of kind `kind`.
+    #[must_use]
+    pub const fn of(&self, kind: OrganKind) -> f64 {
+        match kind {
+            OrganKind::Leaf => self.leaf,
+            OrganKind::Internode | OrganKind::Bud | OrganKind::Tendril => self.stem,
+            OrganKind::Root | OrganKind::Nodule => self.root,
+            OrganKind::Seed
+            | OrganKind::Cotyledon
+            | OrganKind::Flower
+            | OrganKind::Pod
+            | OrganKind::SeedInPod => self.fruit,
+        }
+    }
+}
+
 /// Species carbon constants.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CarbonParams {
     /// g C per g DM.
     pub carbon_fraction: f64,
-    /// g C used per g C built.
-    pub construction_cost: f64,
+    /// g C used per g C built, by organ class (decision 0032).
+    pub construction_cost: ConstructionCost,
     /// Maintenance at 20 °C, g C per g N per day.
     pub maintenance_rate_20c: f64,
     /// Q10 of maintenance.
@@ -48,7 +90,12 @@ impl CarbonParams {
         let starvation_hours = (c.starvation_window.value * 24.0).round().max(1.0) as u32;
         Self {
             carbon_fraction: c.carbon_fraction.value,
-            construction_cost: c.construction_cost.value,
+            construction_cost: ConstructionCost {
+                leaf: c.construction_cost_leaf.value,
+                stem: c.construction_cost_stem.value,
+                root: c.construction_cost_root.value,
+                fruit: c.construction_cost_fruit.value,
+            },
             maintenance_rate_20c: c.maintenance_rate_20c.value,
             maintenance_q10: c.maintenance_q10.value,
             reserve_floor: c.reserve_floor.value,
@@ -397,7 +444,8 @@ pub fn hourly_recording(
         if is_expanding_kind(arena.kind[i]) {
             pot *= inp.stress.clamp(0.0, 1.0);
         }
-        let demand = pot * cf * p.construction_cost;
+        let cost = p.construction_cost.of(arena.kind[i]);
+        let demand = pot * cf * cost;
         if demand <= 0.0 {
             continue;
         }
@@ -408,7 +456,7 @@ pub fn hourly_recording(
         rep.unmet += GramsC(unmet);
         if spent > 0.0 {
             arena.reserve[i] -= GramsC(spent);
-            let (built, resp) = growth_split(GramsC(spent), p.construction_cost);
+            let (built, resp) = growth_split(GramsC(spent), cost);
             arena.grow(id, GramsDM(built.0 / cf), allometry)?;
             rep.growth += GramsC(spent);
             ledger.growth_respiration += resp;

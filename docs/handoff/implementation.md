@@ -16,10 +16,10 @@ keep implementing the design plan from the repository alone.
 - Review follow-ups that are not a WP get their own small PR, such as the light fix (#75), the validation harness (#81) and the root fix. Record them in STATUS.
 
 **Every model change carries five things in the same PR:**
-1. A decision record, `docs/decisions/NNNN-title.md`, from `TEMPLATE.md`. Number it as the next free number; 0030 is the latest.
+1. A decision record, `docs/decisions/NNNN-title.md`, from `TEMPLATE.md`. Number it as the next free number; 0032 is the latest.
 2. A model card update in `docs/models/` for every equation or default that changes.
 3. A minor bump of `MODEL_VERSION` in `crates/ps-world/src/lib.rs`, plus `model_version` in every scenario under `data/scenarios/` (sed them all).
-4. A species schema bump in `crates/ps-species/src/schema.rs`, if a species file key changes. Schema is at 8.
+4. A species schema bump in `crates/ps-species/src/schema.rs`, if a species file key changes. Schema is at 10.
 5. Regenerated goldens:
    ```sh
    B=target/release/ps-cli   # after cargo build --release -p ps-cli
@@ -60,62 +60,44 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - M0 gates fail the build; everything else is Info.
 - Targets, sources and bands are documented in `docs/validation-data.md` and `data/validation/`.
 
-## 2. Current state (2026-11-05, end of this thread)
+## 2. Current state (2026-11-05, re-tune PR)
 
-**Model and data.** Model 0.11.0 if the root PR is merged (else 0.10.0). Species schema 7.
+**Model and data.** Model 0.15.0, species schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
 
 **Merged today:**
-- #73: WP25 (harvest, obstacles, supports mid-run, weather files, apical hold; decision 0024).
-- #75: leaf-angle light (each leaf intercepts by its own |n·d|, obstacles intersected analytically; decision 0025).
-- #77: the plantecophys R check is its own workflow, which runs only when the photosynthesis fixture changes, weekly, or by hand. It installs R from apt and takes 30 s.
-- #80: plant-to-plant variation (decision 0027, from a separate thread).
-- #81: multi-seed validation (decision 0026).
+- #87: lateral roots stay in the soil (decision 0028, model 0.11.0).
+- #95: pole beans find their stake; variation-review items (decision 0029, model 0.12.0). Pole heights pass on seed means.
+- #98: grass blades sample light at 3 points per strip (decision 0030, model 0.13.0), the owner's option (a) for dense wheat speed: about -12 to -15% on wheat_stand.
+- The re-tune PR (decision 0032, model 0.15.0): development trapezoid 7 / 25 / 33 / 42 °C with the calendar kept, Medlyn g1 5.79, per-organ construction cost keys (all 1.25 for now), pole internode_last_fraction 1.75.
 
-**In flight: lateral root fix, PR #87 (decision 0028, model 0.11.0).**
-- Lateral root cohorts now keep their tips in active soil. Before, 31% of them poked out of the pot wall or bottom.
-- On branch `claude/project-thread-ur2udi`. Validation is unchanged by it: 65 of 87 on seed means.
-- The viewer half of that bug, drawn copies of a cohort turned upward out of the soil, belongs to the viewer workstream: `ps-mesh` `axes.rs` `copy_transforms` should turn copies about vertical and clamp them to the pot.
+**Validation at 0.15.0, seed means.** 68 of 87 pass, every M0 gate passes. The misses:
+- **Thermal-time phenology.** The seven checks against two literature bases that disagree with each other.
+- **Wheat.** Five checks: the stand is too short and low-yielding, spaced plants tiller too little.
+- **Drought and heat seed size** (drought_seed_size, drought_seeds_per_pod, heat_seed_mass, heat_seed_size): seed number does not adjust to carbon after pod set, so seed size takes every shortfall. Needs a seed abortion rule.
+- **shade_height, nar_early, root_shoot_seed_fill.**
 
-**Validation at 0.10.0, seed means.** 65 of 87 pass, every M0 gate passes. The misses:
-- **Thermal-time phenology.** Flowering, pod set and maturity checks miss against two different literature bases.
-- **Pole bean.** Height is 1.38 m at day 60 (target 1.5) and 1.86 m at day 75 (target 2.0), with a wide seed spread.
-- **Wheat stand.** Too short and low-yielding.
-- **Drought and heat seed-size responses.**
-- **Shade height.**
-- **nar_early.**
-- **root_shoot_seed_fill.**
-
-**Speed (perf thread, 4 cores).** single_pot about 2.3 ms per sim-day (target 2). plot_30_beans about 24.7 ms (M2 target 20). wheat_stand about 110 ms.
+**Speed (perf thread, 4 cores).** single_pot about 2.3 ms per sim-day (target 2). plot_30_beans about 24.7 ms (M2 target 20). wheat_stand about 108 ms after #98. The perf thread has a bit-identical speed-up in flight.
 
 ## 3. Next steps, in order
 
-1. **Merge #87 (root fix) if it is not merged yet.** Check CI first.
-2. **Vine capture sweep (variation review).** Capture sweeps a fixed 6 cm, so with sowing scatter some pole beans never find their support and lodge. Make the sweep grow with free tip length. Don't let sowing scatter move a seed sown within 5 cm of a support. Batch the other variation-review items into the same model bump (patch lattice keyed by (soil, ix, iy), leaf_scatter keyed by node and leaf index, per-internode length CV). They are listed in STATUS. Re-read pole_height_day60 on seed means afterwards.
-3. **WP26, sim side.**
-   - Save/load already exists: `World::snapshot_ron` / `from_snapshot_ron`, `World::replay`, and ps-cli `replay`.
-   - Missing:
-     - a session-level save that doesn't stop the sim (`Session::save_ron`);
-     - the done-when test, "replay of a saved plot matches its hash": plot_30_beans with WP25 actions (harvest, cut, obstacle, support), saved mid-run, loaded and finished, must match both the uninterrupted run and a replay of its log;
-     - lens data: competition (each plant's light share, or absorbed against open-sky potential), nitrogen (organ N concentration and soil mineral N, both already in state), temperature (soil temperature now; leaf temperature after WP27), and per-organ carbon import and export for the flow arrows (a new derived field that the hash leaves out).
-   - The UI half goes to the viewer workstream.
-4. **WP27, leaf energy balance.** Leaf temperature from radiation, wind and transpiration, coupled to the gas-exchange solver. Done-when: the leaf-air difference is in the literature range on a hot still day. It changes almost every golden.
+1. **WP27, leaf energy balance** (research: `docs/research/wp27-leaf-energy-balance/README.md`, PR #93). Leaf temperature from radiation, wind and transpiration, coupled to the gas-exchange solver. Needs wind on `HourWeather` (the CSV reader drops `wind_m_s`; presets need a daily mean spread over the day, as DSSAT does). The owner chose radiation frost on leaf temperature for leaves only; flowers and pods stay on air temperature. Done-when: the leaf-air difference is in the literature range on a hot still day. It changes almost every golden.
+2. **Seed abortion after pod set** (decision 0032, not done). The root of the drought and heat seed-size misses.
+3. **Per-organ construction costs** (decision 0032): CROPGRO's leaf 1.39, stem 1.29, root 1.25, fruit 1.36 go in with the transport and priority revisit (decision 0009), since the leaf cost alone takes the shade-internode M0 gate to +17%.
+4. **WP26, sim side** (its own thread): session save, the replay done-when test, lens data for competition, nitrogen, temperature and carbon flow.
 5. **Light follow-ups (decision 0025).**
    - The within-cell "who is on top" limit is now the whole sim-plant ray-tracer error (+3.8%). Fix it before reading stand yields.
    - Heliotropism and a spread of leaf angles: every bean leaflet tilts about 19°. Put each leaf's blade normal in `Meta` for the viewer.
-   - Soil-surface radiation under obstacles.
+   - Soil-surface radiation under obstacles. A grass strip's footprint is still a disc (decision 0030).
 6. **WP25 follow-ups.**
    - `Harvested::mature` per pod.
    - Bud eligibility below a cut.
    - Topping in flower and branch-as-leader.
    - The weather README note: hour labels are the hour start.
-7. **Then M3 (WP28 to WP32).** Decision 0023 fixed the genome choices: two-tier mutation 1e-3 QTL / 1e-5 named, light linkage, a seed-colour rule table.
+7. **Validation note.** `Day(60)` reads `days_since_sowing` 61, and pole_height_day60 passes by a thin margin; say so in the target notes or ask the owner.
 
 ## 4. Open owner questions (also in STATUS)
 
-- **WP7 (decision 0009).** Two readings of the plan's text to confirm:
-  - priority is the share of an organ's own available reserve it may spend per hour;
-  - the water stress factor multiplies the stomatal slope.
-- **Dense wheat speed (111 ms per sim-day).** Fewer rays per leaf, or one light sample per tiller? Both are model choices, and the owner has not picked.
+- Answered 2026-11-05 (HANDOFF §2): the WP7 readings (decision 0009) are confirmed; dense wheat speed took option (a), 3 light points per blade (decision 0030); pole bean targets stay 1.5 m at day 60 and 2 m at day 75.
 - **WP13.** Re-check the GTX 1070 frame time on the real sim, not the stand-ins. It is viewer-side.
 
 ## 5. Gotchas

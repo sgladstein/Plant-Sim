@@ -149,12 +149,19 @@ pub struct SimSource {
     weather: WeatherSeries,
     pots: BTreeMap<u32, PotInfo>,
     plants: BTreeMap<u32, PlantFrames>,
+    /// Each plant's lens values and the (snapshot sequence, high-speed flag) they were
+    /// computed for: they do not change between sim hours, so frames that only
+    /// interpolate reuse them.
+    lens_values: BTreeMap<u32, ((u64, bool), LensValues)>,
     seq: u64,
     snapshot: std::sync::Arc<Snapshot>,
     /// Resume at this speed once the startup step (`--day`) has finished.
     resume_speed: Option<f64>,
     /// The tick the startup step goes to; the source reports busy until it is reached.
     startup_tick: u64,
+    /// Snapshot sequence, interpolation fraction (bits) and high-speed flag of the
+    /// garden on screen.
+    shown: Option<(u64, u32, bool)>,
     /// The sim hour at which day 0 starts (minus the scenario's start hour).
     day_start_hour: f64,
     /// Plant id and soil id of each pot on screen, in garden order.
@@ -214,10 +221,12 @@ impl SimSource {
             weather,
             pots,
             plants: BTreeMap::new(),
+            lens_values: BTreeMap::new(),
             seq: 0,
             snapshot,
             resume_speed,
             startup_tick,
+            shown: None,
             day_start_hour: -f64::from(scenario.start.hour),
             on_screen: Vec::new(),
             template,
@@ -266,6 +275,13 @@ impl SimSource {
             .map_or([0.0; 2], |i| {
                 [f64::from(i.size.width) * 0.5, f64::from(i.size.depth) * 0.5]
             })
+    }
+
+    /// Replaces the label of soil `soil` (an experiment names its pots by their level).
+    pub fn relabel(&mut self, soil: u32, label: String) {
+        if let Some(info) = self.pots.get_mut(&soil) {
+            info.label = label;
+        }
     }
 
     /// Label of the pot at garden index `pot`.
@@ -590,6 +606,136 @@ pub fn charts_from(history: &[DayRow], pot_of: &BTreeMap<u32, usize>) -> Vec<Cha
         .collect()
 }
 
+/// A plant's lens values, by organ.
+type LensValues = BTreeMap<Lens, Vec<f32>>;
+
+/// Fills the garden and the sky for the snapshot on screen at `frac` of its hour.
+#[allow(clippy::too_many_lines)] // One field per view.
+fn show(
+    src: &mut SimSource,
+    snap: &Snapshot,
+    frac: f32,
+    high_speed: bool,
+    garden: &mut Garden,
+    sky: &mut SkyState,
+) {
+    let tick = snap.tick;
+    let day0 = tick - tick % 24;
+    let day_weather: [Option<HourWeather>; 24] =
+        core::array::from_fn(|k| src.weather.at(Hours(day0 + k as u64)).copied());
+    let weather = snap
+        .weather
+        .or_else(|| src.weather.at(Hours(tick)).copied());
+
+    // Sky: the hour's sun, or the day's noon sun at mean light in high-speed mode (§2.2).
+    if let Some(w) = weather {
+        let (sun, global) = if high_speed {
+            let noon = day_weather[12].unwrap_or(w);
+            let mean = day_weather
+                .iter()
+                .flatten()
+                .map(|w| w.global.0)
+                .sum::<f64>()
+                / 24.0;
+            (noon.sun.direction(), (mean * 2.0) as f32)
+        } else {
+            (w.sun.direction(), w.global.0 as f32)
+        };
+        sky.sun_direction = Vec3::new(sun[0] as f32, sun[1] as f32, sun[2] as f32);
+        sky.global = global;
+        sky.cloud_fraction = w.cloud_fraction as f32;
+    }
+
+    let mut pots = Vec::with_capacity(snap.plants.len());
+    let mut on_screen = Vec::with_capacity(snap.plants.len());
+    let mut drawn = std::collections::BTreeSet::new();
+    for p in &snap.plants {
+        let Some(soil) = snap.soils.get(p.soil) else {
+            continue;
+        };
+        let (Some(info), Some(frames)) = (src.pots.get(&soil.id), src.plants.get(&p.id)) else {
+            continue;
+        };
+        let (a, b) = (&frames.previous, &frames.current);
+        let mut skeleton = Skeleton::lerp(&a.skeleton, &b.skeleton, frac);
+        let stress = a.stress + (b.stress - a.stress) * frac;
+        ps_mesh::pose(
+            &mut skeleton,
+            Pose {
+                lean: a.lean.lerp(b.lean, frac),
+                wilt: ps_mesh::wilt_of_stress(stress),
+            },
+        );
+        on_screen.push((p.id, soil.id));
+        let container = drawn.insert(soil.id);
+        pots.push(PotView {
+            label: if container || !info.shared {
+                info.label.clone()
+            } else {
+                String::new()
+            },
+            center: info.center,
+            size: info.size,
+            skeleton,
+            water_stress: stress,
+            first_flower: first_flower(p),
+            organ_values: {
+                let key = (snap.seq, high_speed);
+                match src.lens_values.get(&p.id) {
+                    Some((k, v)) if *k == key => v.clone(),
+                    _ => {
+                        let v = organ_values(
+                            p,
+                            tick,
+                            &day_weather,
+                            weather.as_ref(),
+                            info.radiation_fraction,
+                            high_speed,
+                        );
+                        src.lens_values.insert(p.id, (key, v.clone()));
+                        v
+                    }
+                }
+            },
+            // A bed's glass shows the soil nearest it (the south row of cells); a pot's
+            // cutaway runs through its one plant.
+            soil_water: soil_slice(
+                soil,
+                if info.shared {
+                    0.0
+                } else {
+                    p.plant.collar_position[1]
+                },
+            ),
+            supports: if container {
+                let added = snap.added_supports.iter().filter(|s| s.soil == soil.id);
+                info.supports
+                    .iter()
+                    .copied()
+                    .chain(added.map(support_view))
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            obstacles: if container {
+                let added = snap.added_obstacles.iter().filter(|o| o.soil == soil.id);
+                info.obstacles
+                    .iter()
+                    .copied()
+                    .chain(added.map(obstacle_view))
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            container,
+        });
+    }
+    garden.pots = pots;
+    garden.hour = snap.hour;
+    garden.stand_in_lenses.clear();
+    src.on_screen = on_screen;
+}
+
 fn season(month: u32) -> &'static str {
     match month {
         3..=5 => "spring",
@@ -718,111 +864,13 @@ pub fn drive(
     let tick = snap.tick;
     let frac = (snap.hour - tick as f64).clamp(0.0, 1.0) as f32;
     let high_speed = !snap.paused && snap.speed > ps_ui::HIGH_SPEED;
-
-    let day0 = tick - tick % 24;
-    let day_weather: [Option<HourWeather>; 24] =
-        core::array::from_fn(|k| src.weather.at(Hours(day0 + k as u64)).copied());
-    let weather = snap
-        .weather
-        .or_else(|| src.weather.at(Hours(tick)).copied());
-
-    // Sky: the hour's sun, or the day's noon sun at mean light in high-speed mode (§2.2).
-    if let Some(w) = weather {
-        let (sun, global) = if high_speed {
-            let noon = day_weather[12].unwrap_or(w);
-            let mean = day_weather
-                .iter()
-                .flatten()
-                .map(|w| w.global.0)
-                .sum::<f64>()
-                / 24.0;
-            (noon.sun.direction(), (mean * 2.0) as f32)
-        } else {
-            (w.sun.direction(), w.global.0 as f32)
-        };
-        sky.sun_direction = Vec3::new(sun[0] as f32, sun[1] as f32, sun[2] as f32);
-        sky.global = global;
-        sky.cloud_fraction = w.cloud_fraction as f32;
+    // The garden and sky on screen are a function of these three: leave them (and their
+    // change flags) alone while they hold, so a paused garden costs nothing to draw.
+    let shown = (snap.seq, frac.to_bits(), high_speed);
+    if src.shown != Some(shown) {
+        src.shown = Some(shown);
+        show(&mut src, &snap, frac, high_speed, &mut garden, &mut sky);
     }
-
-    let mut pots = Vec::with_capacity(snap.plants.len());
-    let mut on_screen = Vec::with_capacity(snap.plants.len());
-    let mut drawn = std::collections::BTreeSet::new();
-    for p in &snap.plants {
-        let Some(soil) = snap.soils.get(p.soil) else {
-            continue;
-        };
-        let (Some(info), Some(frames)) = (src.pots.get(&soil.id), src.plants.get(&p.id)) else {
-            continue;
-        };
-        let (a, b) = (&frames.previous, &frames.current);
-        let mut skeleton = Skeleton::lerp(&a.skeleton, &b.skeleton, frac);
-        let stress = a.stress + (b.stress - a.stress) * frac;
-        ps_mesh::pose(
-            &mut skeleton,
-            Pose {
-                lean: a.lean.lerp(b.lean, frac),
-                wilt: ps_mesh::wilt_of_stress(stress),
-            },
-        );
-        on_screen.push((p.id, soil.id));
-        let container = drawn.insert(soil.id);
-        pots.push(PotView {
-            label: if container || !info.shared {
-                info.label.clone()
-            } else {
-                String::new()
-            },
-            center: info.center,
-            size: info.size,
-            skeleton,
-            water_stress: stress,
-            first_flower: first_flower(p),
-            organ_values: organ_values(
-                p,
-                tick,
-                &day_weather,
-                weather.as_ref(),
-                info.radiation_fraction,
-                high_speed,
-            ),
-            // A bed's glass shows the soil nearest it (the south row of cells); a pot's
-            // cutaway runs through its one plant.
-            soil_water: soil_slice(
-                soil,
-                if info.shared {
-                    0.0
-                } else {
-                    p.plant.collar_position[1]
-                },
-            ),
-            supports: if container {
-                let added = snap.added_supports.iter().filter(|s| s.soil == soil.id);
-                info.supports
-                    .iter()
-                    .copied()
-                    .chain(added.map(support_view))
-                    .collect()
-            } else {
-                Vec::new()
-            },
-            obstacles: if container {
-                let added = snap.added_obstacles.iter().filter(|o| o.soil == soil.id);
-                info.obstacles
-                    .iter()
-                    .copied()
-                    .chain(added.map(obstacle_view))
-                    .collect()
-            } else {
-                Vec::new()
-            },
-            container,
-        });
-    }
-    garden.pots = pots;
-    garden.hour = snap.hour;
-    garden.stand_in_lenses.clear();
-    src.on_screen = on_screen;
 
     if charts.rows != snap.history.len() || charts.pots.len() != garden.pots.len() {
         let pot_of: BTreeMap<u32, usize> = snap
@@ -859,6 +907,9 @@ pub fn drive(
         date.year, date.month, date.day, date.hour
     );
     season(date.month).clone_into(&mut time_ui.season);
+    let weather = snap
+        .weather
+        .or_else(|| src.weather.at(Hours(snap.tick)).copied());
     let mut line = weather.map_or_else(String::new, |w| {
         format!(
             "{:.1} °C · {:.0} W/m² · {:.0}% cloud{}",

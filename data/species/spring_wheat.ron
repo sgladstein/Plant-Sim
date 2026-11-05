@@ -2,13 +2,16 @@
 // Every number has a unit and a source; "~" means a guess to validate. Bean-only
 // constants the grass module does not read say so in their source.
 Species(
-  schema: 9,
+  schema: 10,
   id: "spring_wheat",
   name: "Spring wheat",
   growth_form: Grass,
   constants: (            // not heritable
     carbon_fraction: (value: 0.45, unit: "g C / g DM", source: "typical (design plan §6.1)"),
-    construction_cost: (value: 1.25, unit: "g C / g C", source: "~ (design plan §3.8: 20% growth respiration)"),
+    construction_cost_leaf: (value: 1.25, unit: "g C / g C", source: "~ (design plan §3.8: 20% growth respiration); the per-organ costs of decision 0032 are bean composition values, not applied to wheat"),
+    construction_cost_stem: (value: 1.25, unit: "g C / g C", source: "~ as construction_cost_leaf"),
+    construction_cost_root: (value: 1.25, unit: "g C / g C", source: "~ as construction_cost_leaf"),
+    construction_cost_fruit: (value: 1.25, unit: "g C / g C", source: "~ as construction_cost_leaf"),
     maintenance_rate_20c: (value: 0.218, unit: "g C / g N / day", source: "Ryan 1991, as the CLM base rate 2.525e-6 g C g-1 N s-1 at 20 C (decision 0011; the plan's 0.015 was a per-dry-mass value)"),
     maintenance_q10: (value: 2.0, unit: "-", source: "~ (design plan §3.8)"),
     medlyn_g0: (value: 0.01, unit: "mol/m2/s", source: "~ (design plan §11.4)"),
@@ -97,7 +100,7 @@ Species(
     "vcmax25": (default: 110.0, min: 40.0, max: 200.0, unit: "umol/m2/s", source: "~ flag leaf 90 to 130 (research m2-m3 notes [K, to verify])"),
     "jmax25": (default: 190.0, min: 70.0, max: 320.0, unit: "umol/m2/s", source: "~ flag leaf 150 to 230 (research m2-m3 notes [K, to verify])"),
     "rd25": (default: 1.0, min: 0.3, max: 2.5, unit: "umol/m2/s", source: "~"),
-    "medlyn_g1": (default: 5.8, min: 1.5, max: 8.0, unit: "kPa^0.5", source: "Lin 2015: C3 crops 5.8 (research m2-m3 notes [K, to verify])"),
+    "medlyn_g1": (default: 5.8, min: 1.5, max: 8.0, unit: "kPa^0.5", source: "CLM5 PFT table (Lin et al. 2015): spring wheat 5.79, rounded (docs/research/retune/items-1-4.md item 4)"),
     "nodes_before_terminal": (default: 9.0, min: 5.0, max: 14.0, unit: "-", source: "~ final main-stem leaf number 8 to 9 in spring wheat (research m2-m3 notes [K, to verify])"),
     "habit": (default: 0.0, min: 0.0, max: 1.0, unit: "0 determinate / 1 indeterminate", source: "unused by the grass"),
     "bud_activation": (default: 0.6, min: 0.0, max: 1.0, unit: "-", source: "unused by the grass (grass.site_filling)"),
@@ -135,6 +138,7 @@ Species(
   phenology: (
     t_base: (value: 0.0, unit: "C", source: "WALTer and APSIM-Wheat use base 0 C"),
     t_opt: (value: 26.0, unit: "C", source: "APSIM-Wheat [K, to verify] (research m2-m3 notes)"),
+    t_opt_high: (value: 26.0, unit: "C", source: "equal to t_opt: APSIM-Wheat's single optimum (decision 0032)"),
     t_max: (value: 34.0, unit: "C", source: "APSIM-Wheat [K, to verify] (research m2-m3 notes)"),
     emergence: (value: 81.0, unit: "Cd", source: "WALTer: sowing to emergence 81 Cd (s.d. 30)"),
     flowering: (value: 900.0, unit: "Cd", source: "~ heading near 850 Cd for 9 leaves at an 85 Cd phyllochron, at least 760 at 15 h days (FAO X8234E), plus about 50 Cd to anthesis"),

@@ -34,6 +34,17 @@ fn bean_at_reference_conditions() {
     assert!(g.iterations <= 2 * gas::MAX_ITERATIONS);
 }
 
+/// Decision 0032 (re-tune item 1): Pimentel et al. 2011 measured A of about 20 µmol
+/// m⁻² s⁻¹ at Ca 380 and PPFD 700 on cv. Carioca at 25 °C. The sim's leaf, at its
+/// Ci-basis Vcmax and Jmax, lands within 15% of it, so the values stay.
+#[test]
+fn bean_matches_pimentel_at_ppfd_700() {
+    let (s, t) = bean();
+    let p = LeafParams::from_species(&s, &t);
+    let g = gas::solve(&p, &env(700.0, 25.0, 1.5, 380.0), 1.0, 1.0);
+    assert!((17.0..=23.0).contains(&g.a_net.0), "{g:?}");
+}
+
 #[test]
 fn darkness_gives_respiration_and_g0() {
     let (s, t) = bean();
@@ -123,6 +134,7 @@ fn three_point_thermal_time() {
     let c = Cardinal {
         base: Celsius(8.0),
         opt: Celsius(28.0),
+        opt_high: Celsius(28.0),
         max: Celsius(38.0),
     };
     assert!(c.rate(Celsius(5.0)).abs() < 1e-15);
@@ -133,6 +145,25 @@ fn three_point_thermal_time() {
     // 24 hours at 18 °C is 10 °C·day.
     let day: f64 = (0..24).map(|_| c.hourly(Celsius(18.0)).0).sum();
     assert!((day - 10.0).abs() < 1e-12);
+}
+
+/// Decision 0032: the bean's development trapezoid, 7 / 25 / 33 / 42 °C, holds its
+/// plateau rate of 18 °C·day from 25 to 33 °C.
+#[test]
+fn trapezoid_thermal_time() {
+    let c = Cardinal {
+        base: Celsius(7.0),
+        opt: Celsius(25.0),
+        opt_high: Celsius(33.0),
+        max: Celsius(42.0),
+    };
+    assert!(c.rate(Celsius(7.0)).abs() < 1e-15);
+    assert!((c.rate(Celsius(20.0)) - 13.0).abs() < 1e-12);
+    for t in [25.0, 29.0, 33.0] {
+        assert!((c.rate(Celsius(t)) - 18.0).abs() < 1e-12, "{t}");
+    }
+    assert!((c.rate(Celsius(37.5)) - 9.0).abs() < 1e-12);
+    assert!(c.rate(Celsius(42.0)).abs() < 1e-15);
 }
 
 #[test]
@@ -180,8 +211,8 @@ fn stages_advance_in_order() {
     assert_eq!(ph.advance(&th, ev), None, "not germinated");
     ev.germinated = true;
     assert_eq!(ph.advance(&th, ev), Some(Stage::Germinated));
-    ph.accumulate(D(79.0));
-    assert_eq!(ph.advance(&th, ev), None, "79 of 80 Cd since germination");
+    ph.accumulate(D(89.0));
+    assert_eq!(ph.advance(&th, ev), None, "89 of 90 Cd since germination");
     ph.accumulate(D(1.0));
     assert_eq!(ph.advance(&th, ev), Some(Stage::Emerged));
     // Flowering needs both the trifoliate and the thermal time.
@@ -197,11 +228,35 @@ fn stages_advance_in_order() {
     assert_eq!(
         ph.advance(&th, ev),
         None,
-        "maturity at 900 Cd since germination"
+        "maturity at 965 Cd since germination"
     );
     // The 30 Cd the seed waited before germinating do not count (decision 0011).
     assert!((ph.since_sowing.0 - ph.since_germination.0 - 30.0).abs() < 1e-12);
-    ph.accumulate(D(420.0));
+    ph.accumulate(D(475.0));
     assert_eq!(ph.advance(&th, ev), Some(Stage::Mature));
     assert_eq!(ph.advance(&th, ev), None);
+}
+
+/// Decision 0032: each organ kind is built at its class's construction cost.
+#[test]
+fn construction_cost_by_organ_class() {
+    use ps_graph::OrganKind as K;
+    let c = crate::ConstructionCost {
+        leaf: 1.39,
+        stem: 1.29,
+        root: 1.25,
+        fruit: 1.36,
+    };
+    assert!((c.of(K::Leaf) - 1.39).abs() < 1e-15);
+    for k in [K::Internode, K::Bud, K::Tendril] {
+        assert!((c.of(k) - 1.29).abs() < 1e-15, "{k:?}");
+    }
+    for k in [K::Root, K::Nodule] {
+        assert!((c.of(k) - 1.25).abs() < 1e-15, "{k:?}");
+    }
+    for k in [K::Seed, K::Cotyledon, K::Flower, K::Pod, K::SeedInPod] {
+        assert!((c.of(k) - 1.36).abs() < 1e-15, "{k:?}");
+    }
+    let u = crate::ConstructionCost::uniform(1.25);
+    assert!((u.of(K::Leaf) - 1.25).abs() < 1e-15);
 }

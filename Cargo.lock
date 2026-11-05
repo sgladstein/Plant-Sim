@@ -4970,6 +4970,8 @@ dependencies = [
  "ps-view",
  "ps-weather",
  "ps-world",
+ "ron 0.10.1",
+ "serde",
 ]
 
 [[package]]

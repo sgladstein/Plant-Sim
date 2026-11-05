@@ -60,7 +60,7 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
 | vcmax25 | 89.3 | µmol m⁻² s⁻¹ | Pimentel 2011 (heritable) |
 | jmax25 | 159.8 | µmol m⁻² s⁻¹ | Pimentel 2011 (heritable) |
 | rd25 | 0.88 | µmol m⁻² s⁻¹ | Pimentel 2011 (heritable) |
-| medlyn_g1 | 4.0 | kPa^0.5 | "~" herbaceous crop default (heritable) |
+| medlyn_g1 | 5.79 | kPa^0.5 | CLM5 PFT table (Lin et al. 2015): soybean, spring wheat, cotton, rice; no bean value found (heritable; decision 0032, was 4.0) |
 | medlyn_g0 | 0.01 | mol m⁻² s⁻¹ | "~" design plan §11.4 |
 | quantum_yield α | 0.3 | mol mol⁻¹ | design plan §11.4; per absorbed photon (plantecophys' 0.24 is per incident photon, about 0.3 × 0.8 absorptance) |
 | electron_transport_curvature θ | 0.7 | 1 | design plan §11.4 |

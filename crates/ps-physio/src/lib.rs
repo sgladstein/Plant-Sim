@@ -17,7 +17,9 @@ pub mod phenology;
 pub mod respiration;
 pub mod thermal;
 
-pub use allocation::{CarbonLedger, CarbonParams, HourInputs, HourReport, Temperature};
+pub use allocation::{
+    CarbonLedger, CarbonParams, ConstructionCost, HourInputs, HourReport, Temperature,
+};
 pub use classes::{ClassTable, Rates};
 pub use gas::{GasExchange, LeafEnv, LeafParams, Limitation, PeakedArrhenius};
 pub use phenology::{Events, Phenology, Stage, Thresholds};
@@ -78,6 +80,7 @@ impl Cardinal {
         Self {
             base: ps_units::Celsius(p.t_base.value),
             opt: ps_units::Celsius(p.t_opt.value),
+            opt_high: ps_units::Celsius(p.t_opt_high.value),
             max: ps_units::Celsius(p.t_max.value),
         }
     }

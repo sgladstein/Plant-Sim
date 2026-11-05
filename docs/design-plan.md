@@ -118,7 +118,7 @@ Hourly step, in order (in the code, steps 3, 5 and 6 run from the soil as it sta
 8. Maintenance respiration per organ, paid from the organ's own reserve.
 9. Carbon income: each leaf adds its hourly net assimilation to its own reserve.
 10. Transport: one relaxation pass of reserve exchange between neighboring organs (§3.9).
-11. Thermal time: each organ and the plant accumulate degree-hours with the three-point temperature response (§3.11).
+11. Thermal time: each organ and the plant accumulate degree-hours with the development temperature response (§3.11; a trapezoid since decision 0032).
 12. Growth: each organ computes potential growth for the hour from its expansion curve, takes what its reserve can pay after growth respiration, updates dimensions and structural mass, and carries unmet demand forward (§3.9).
 13. Ledger: water and carbon balance accumulators update; in debug builds a relative mismatch above 1e-9 panics.
 
@@ -238,7 +238,7 @@ Emergent consequences this is designed to give: shaded lower leaves and branches
 
 ### 3.11 Phenology, temperature and reproduction
 
-- **Thermal time**: three-point response, zero below 8 °C, linear to an optimum at 28 °C, falling to zero at 38 °C (\~; species cardinal temperatures), accumulated hourly.
+- **Thermal time**: a trapezoid, zero below the base, linear to an optimum plateau, falling to zero at the maximum (species cardinal temperatures, accumulated hourly). The bean uses 7 / 25 / 33 / 42 °C (decision 0032; the plan had a three-point response, 8 / 28 / 38 °C); wheat keeps a single optimum.
 - **Stages** on the standard V and R scale: sowing, emergence, first trifoliate, further vegetative nodes, flowering, pod set, seed fill, maturity. Phase thresholds count thermal time from germination, so a seed waiting in dry or cold soil does not flower early (decision 0011). Greenhouse data put sowing to maturity near 800 °C·day; cycle lengths of 65 to 93 days; flowering near 40% of the cycle (§8.2).
 - **Flowers** open over \~10 days per raceme. Each flower sets a pod with a probability driven by: the raceme's parent internode reserve over the previous three days (carbon), daytime temperature above \~32 °C (heat abortion through pollen failure), and FTSW below 0.3 (drought abortion). Pod number is the yield component drought and heat hit hardest in beans, and this is how the model reproduces it.
 - **Pods** expand over \~20 days to full length, then **seeds** fill over \~20 days as the strongest sinks; 3 to 6 seeds per pod; final seed mass is a species parameter reduced by unmet demand.
