@@ -42,7 +42,9 @@ mismatch, and for date checks in scenario validation.
    per day. They cover `single_pot` and `two_pot_sun_shade`. CI runs
    `ps-cli hash --check-golden` on Linux and Windows. When a platform has no file, the
    command prints the hashes instead of failing, which is how the Windows file is
-   first recorded. Debug and release builds give the same hashes. The scenario is part
+   first recorded. Debug and release builds give the same hashes, and the first Windows CI run
+   (MSVC) printed the Linux hashes day for day, so the windows-x86_64 files are the same.
+   A missing file fails the check unless `--allow-missing` is given. The scenario is part
    of the hash, so `--days` changes every day's hash, and a 40-day run's day-30 hash is
    not a 90-day run's day-30 hash.
 6. **Cutting** goes through `allocation::cut`. Nothing is resorbed, and each cut

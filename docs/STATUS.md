@@ -56,7 +56,7 @@ None yet (WP11).
 
 ## Notes for the next session
 - WP9 (decision 0014, model card world-and-schedule): `ps_world::World` steps scenarios from `data/scenarios/`, keeps the action log, writes RON snapshots and a full-state hash per day. For the viewer: `WorldState.plants[i].plant` carries `positions` (base, tip per organ, soil-grid frame) and `meta` (role, attach, multiplicity); `World::snapshot_ron`/`from_snapshot_ron` round-trip bit for bit.
-- WP10: golden hashes for linux-x86_64 are committed; the windows-x86_64 file comes from the first CI run of `ps-cli hash --check-golden`, which prints hashes when a platform has no file.
+- WP10: golden hashes for linux-x86_64 and windows-x86_64 are committed and identical (the Windows CI run reproduced Linux day for day). CI fails on a mismatch or a missing file.
 - WP11/WP12, first response runs (decision 0015): heat at flowering cuts seed weight by 21% (cited 50 to 71%), drought from flowering by 19%, shade 50% cuts total mass by 35% but pods rise and root mass falls sixfold.
 - WP16 (sim thread) runs in its own thread; the viewer thread does the viewer side.
 - WP12: regenerate the light ray tracer fixture from a sim-exported 60-day plant and re-run `single_plant_matches_ray_tracer`; tighten its bounds if every leaf passes (decision 0008).
