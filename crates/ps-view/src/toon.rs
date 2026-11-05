@@ -60,15 +60,19 @@ pub enum Style {
     /// Cel shading with ink lines.
     #[default]
     Illustrated,
+    /// Painterly soft: PBR lighting under a full-screen watercolor pass
+    /// (`crate::painterly`), with a painted sky.
+    Painterly,
 }
 
 impl Style {
-    /// Parses `natural` or `illustrated`.
+    /// Parses `natural`, `illustrated` or `painterly`.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "natural" => Some(Self::Natural),
             "illustrated" => Some(Self::Illustrated),
+            "painterly" => Some(Self::Painterly),
             _ => None,
         }
     }
@@ -77,7 +81,8 @@ impl Style {
     #[must_use]
     pub fn strength(self) -> f32 {
         match self {
-            Self::Natural => 0.0,
+            // Painterly keeps PBR lighting; its look comes from the full-screen pass.
+            Self::Natural | Self::Painterly => 0.0,
             Self::Illustrated => 1.0,
         }
     }

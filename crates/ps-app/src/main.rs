@@ -8,7 +8,7 @@
 //! plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
 //!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 //!           [--bench-frames N] [--bench-out FILE.csv]
-//!           [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated]
+//!           [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated|painterly]
 //!           [--window WxH] [--fps-cap N]
 //! ```
 //!
@@ -199,7 +199,7 @@ fn parse_args() -> Result<Options> {
             "--look" => {
                 let v = value()?;
                 o.look = anyhow::Context::with_context(ps_view::toon::Style::parse(&v), || {
-                    format!("--look takes natural or illustrated, got {v}")
+                    format!("--look takes natural, illustrated or painterly, got {v}")
                 })?;
             }
             "--fps-cap" => {
@@ -227,7 +227,7 @@ fn parse_args() -> Result<Options> {
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated] [--window WxH] [--fps-cap N]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated|painterly] [--window WxH] [--fps-cap N]"
                 );
                 std::process::exit(0);
             }

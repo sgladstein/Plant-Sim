@@ -22,6 +22,7 @@ pub mod dressing;
 pub mod garden;
 pub mod lens;
 pub mod look;
+pub mod painterly;
 pub mod pick;
 pub mod ready;
 pub mod scene;
@@ -55,6 +56,7 @@ impl Plugin for PlantViewPlugin {
     fn build(&self, app: &mut App) {
         ready::build(app);
         toon::register(app);
+        painterly::build(app);
         app.init_resource::<Garden>()
             .init_resource::<SkyState>()
             .init_resource::<Lens>()
@@ -86,6 +88,7 @@ impl Plugin for PlantViewPlugin {
                     camera::apply_rig,
                     camera::apply_insets,
                     sky::update_sky,
+                    painterly::apply_style,
                     pick::click_to_select,
                     pick::outline_selection,
                 )

@@ -102,7 +102,12 @@ fn f16_bits(v: f32) -> u16 {
 
 /// Fills cube texel data (`Rgba16Float`) with the sky gradient.
 fn sky_texels(tint: [f32; 3]) -> Vec<u8> {
-    let n = SKY_FACE as usize;
+    cube_texels(SKY_FACE, |d| sky_gradient(d, tint))
+}
+
+/// Fills `face`² cube texel data (`Rgba16Float`) from a radiance function of direction.
+fn cube_texels(face: u32, radiance: impl Fn(Vec3) -> [f32; 3]) -> Vec<u8> {
+    let n = face as usize;
     let mut data = Vec::with_capacity(n * n * 6 * 8);
     for face in 0..6 {
         for y in 0..n {
@@ -112,7 +117,7 @@ fn sky_texels(tint: [f32; 3]) -> Vec<u8> {
                     (x as f32 + 0.5) / n as f32,
                     (y as f32 + 0.5) / n as f32,
                 );
-                let c = sky_gradient(d, tint);
+                let c = radiance(d);
                 for ch in [c[0], c[1], c[2], 1.0] {
                     data.extend_from_slice(&f16_bits(ch).to_le_bytes());
                 }
@@ -125,14 +130,51 @@ fn sky_texels(tint: [f32; 3]) -> Vec<u8> {
 /// A sky cubemap image with the gradient.
 #[must_use]
 pub fn sky_cubemap(tint: [f32; 3]) -> Image {
+    cube_image(SKY_FACE, sky_texels(tint))
+}
+
+/// The sky cubemap for a style: the smooth gradient, or the painted sky
+/// (`crate::painterly`) when `painted`. The painted washes are computed once and cached.
+#[must_use]
+pub fn styled_sky_cubemap(painted: bool, tint: [f32; 3]) -> Image {
+    if !painted {
+        return sky_cubemap(tint);
+    }
+    static PAINTED: std::sync::OnceLock<Vec<[f32; 3]>> = std::sync::OnceLock::new();
+    let base = PAINTED.get_or_init(|| {
+        let n = crate::painterly::SKY_FACE as usize;
+        let mut v = Vec::with_capacity(n * n * 6);
+        for face in 0..6 {
+            for y in 0..n {
+                for x in 0..n {
+                    v.push(crate::painterly::sky_gradient(cube_dir(
+                        face,
+                        (x as f32 + 0.5) / n as f32,
+                        (y as f32 + 0.5) / n as f32,
+                    )));
+                }
+            }
+        }
+        v
+    });
+    let mut data = Vec::with_capacity(base.len() * 8);
+    for c in base {
+        for ch in [c[0] * tint[0], c[1] * tint[1], c[2] * tint[2], 1.0] {
+            data.extend_from_slice(&f16_bits(ch).to_le_bytes());
+        }
+    }
+    cube_image(crate::painterly::SKY_FACE, data)
+}
+
+fn cube_image(face: u32, data: Vec<u8>) -> Image {
     let mut image = Image::new(
         Extent3d {
-            width: SKY_FACE,
-            height: SKY_FACE,
+            width: face,
+            height: face,
             depth_or_array_layers: 6,
         },
         TextureDimension::D2,
-        sky_texels(tint),
+        data,
         TextureFormat::Rgba16Float,
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     );
@@ -152,15 +194,24 @@ pub struct SkyImages {
     pub fill: Handle<Image>,
     /// Tint the backdrop was last built with.
     pub tint: [f32; 3],
+    /// Whether the backdrop is the painted sky (`Style::Painterly`).
+    pub painted: bool,
 }
 
 /// Creates the sky images (Startup, before the camera spawns).
-pub(crate) fn setup_sky_images(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn setup_sky_images(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    style: Res<crate::toon::Style>,
+) {
     let tint = [1.0; 3];
+    let painted = *style == crate::toon::Style::Painterly;
     commands.insert_resource(SkyImages {
-        backdrop: images.add(sky_cubemap(tint)),
+        backdrop: images.add(styled_sky_cubemap(painted, tint)),
         fill: images.add(sky_cubemap(tint)),
         tint,
+        painted,
     });
 }
 

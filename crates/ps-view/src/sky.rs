@@ -93,6 +93,7 @@ pub(crate) fn update_sky(
     mut suns: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
     mut images: ResMut<Assets<Image>>,
     mut sky_images: ResMut<crate::look::SkyImages>,
+    style: Res<crate::toon::Style>,
     mut cameras: Query<
         (
             &mut bevy::light::Skybox,
@@ -111,15 +112,18 @@ pub(crate) fn update_sky(
     // The sky cubemap does the fill now; a little flat ambient keeps night readable.
     ambient.brightness = 15.0 + 40.0 * daylight;
     let tint = crate::look::sky_tint(sin_e, sky.cloud_fraction);
-    if tint
-        .iter()
-        .zip(&sky_images.tint)
-        .any(|(a, b)| (a - b).abs() > 0.01)
+    let painted = *style == crate::toon::Style::Painterly;
+    if painted != sky_images.painted
+        || tint
+            .iter()
+            .zip(&sky_images.tint)
+            .any(|(a, b)| (a - b).abs() > 0.01)
     {
         if let Some(mut img) = images.get_mut(&sky_images.backdrop) {
-            *img = crate::look::sky_cubemap(tint);
+            *img = crate::look::styled_sky_cubemap(painted, tint);
         }
         sky_images.tint = tint;
+        sky_images.painted = painted;
     }
     let backdrop = 120.0 + 900.0 * daylight.min(1.0);
     for (mut skybox, mut env, mut fog) in &mut cameras {
@@ -127,7 +131,11 @@ pub(crate) fn update_sky(
         env.intensity = 40.0 + 1100.0 * daylight;
         // The fog matches the sky texel at the horizon exactly, so there is no seam at
         // dusk where the tint is strongest.
-        let h = crate::look::sky_gradient(Vec3::X, tint);
+        let h = if painted {
+            crate::painterly::horizon(tint)
+        } else {
+            crate::look::sky_gradient(Vec3::X, tint)
+        };
         let k = backdrop * crate::look::EXPOSURE;
         fog.color = Color::linear_rgb(h[0] * k, h[1] * k, h[2] * k);
     }
