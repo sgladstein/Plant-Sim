@@ -125,10 +125,11 @@ pub(crate) fn update_sky(
     for (mut skybox, mut env, mut fog) in &mut cameras {
         skybox.brightness = backdrop;
         env.intensity = 40.0 + 1100.0 * daylight;
-        let h = crate::look::HORIZON;
-        // 0.9: the fog lands a touch brighter than the sky texel at the horizon.
-        let k = 0.9 * backdrop * crate::look::EXPOSURE;
-        fog.color = Color::linear_rgb(h[0] * tint[0] * k, h[1] * tint[1] * k, h[2] * tint[2] * k);
+        // The fog matches the sky texel at the horizon exactly, so there is no seam at
+        // dusk where the tint is strongest.
+        let h = crate::look::sky_gradient(Vec3::X, tint);
+        let k = backdrop * crate::look::EXPOSURE;
+        fog.color = Color::linear_rgb(h[0] * k, h[1] * k, h[2] * k);
     }
     for (mut light, mut t) in &mut suns {
         // Direct light only; clouds turn it into ambient.

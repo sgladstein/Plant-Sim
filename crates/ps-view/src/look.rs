@@ -196,3 +196,42 @@ pub fn camera_bundle(sky: &SkyImages) -> impl Bundle {
         },
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn noon_tint_is_neutral() {
+        let t = sky_tint(1.0, 0.0);
+        assert!(t.iter().all(|&v| (v - 1.0).abs() < 1e-6), "{t:?}");
+        let dusk = sky_tint(0.0, 0.0);
+        assert!(dusk[0] > dusk[2]);
+        let night = sky_tint(-0.5, 0.0);
+        assert!(night[2] > night[0]);
+    }
+
+    #[test]
+    fn cubemap_has_six_square_faces() {
+        let n = SKY_FACE as usize;
+        assert!(SKY_FACE.is_power_of_two());
+        assert_eq!(sky_texels([1.0; 3]).len(), n * n * 6 * 8);
+        let img = sky_cubemap([1.0; 3]);
+        assert_eq!(img.texture_descriptor.size.depth_or_array_layers, 6);
+    }
+
+    #[test]
+    fn horizon_matches_fog_color_and_zenith_is_blue() {
+        let h = sky_gradient(Vec3::X, [1.0; 3]);
+        assert!(h.iter().zip(HORIZON).all(|(a, b)| (a - b).abs() < 1e-6));
+        let z = sky_gradient(Vec3::Y, [1.0; 3]);
+        assert!(z[2] > z[0]);
+    }
+
+    #[test]
+    fn f16_encoder_round_trips_simple_values() {
+        assert_eq!(f16_bits(1.0), 0x3c00);
+        assert_eq!(f16_bits(0.5), 0x3800);
+        assert_eq!(f16_bits(0.0), 0);
+    }
+}
