@@ -108,10 +108,18 @@ param_group!(
         shade_light_threshold: "-",
         /// Red:far-red below which shade avoidance acts.
         shade_rfr_threshold: "-",
+        /// Daily absorbed PAR per leaf area above which low light causes no shade
+        /// response (decision 0018).
+        shade_dli_onset: "mol/m2/day",
+        /// Daily absorbed PAR per leaf area at or below which the shade response is
+        /// full.
+        shade_dli_full: "mol/m2/day",
         /// Maximum internode length multiplier under shade.
         shade_internode_factor: "-",
         /// Maximum specific leaf area multiplier under shade.
         shade_sla_factor: "-",
+        /// Pod-set probability multiplier under full shade (decision 0018).
+        shade_pod_set_factor: "-",
         /// Air temperature that kills leaves.
         leaf_frost_kill: "C",
         /// Temperature where the expansion multiplier reaches zero (low).
@@ -178,6 +186,9 @@ param_group!(
         branch_angle: "deg",
         /// Reserve concentration at which a bud or raceme is fully fed.
         bud_reserve_reference: "g C / g DM",
+        /// Reserve concentration at the raceme's node at which a closing flower sets a
+        /// pod with the full base probability (decision 0018).
+        pod_set_reserve_reference: "g C / g DM",
         /// Distance, in nodes, over which apical dominance decays by a factor e.
         apical_dominance_nodes: "-",
         /// Days from emergence until the cotyledons drop.

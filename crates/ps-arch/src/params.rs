@@ -5,7 +5,8 @@ use ps_physio::allocation::{CarbonParams, Temperature};
 use ps_physio::{Cardinal, GrowthTemperature, LeafParams, Thresholds};
 use ps_species::{RootOrigin, Species, Traits};
 use ps_units::{
-    Celsius, DegreeDays, GPerM3, GramsDM, KgPerMH, M2, M2PerG, M2PerHour, MPerG, Meters, Radians,
+    Celsius, DegreeDays, GPerM3, GramsDM, KgPerMH, M2, M2PerG, M2PerHour, MPerG, Meters,
+    MolPerM2Day, Radians,
 };
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,23 @@ pub fn optimum_rate(cardinal: &Cardinal) -> f64 {
 }
 
 /// One root type in model units.
+/// The light a new organ's node sees, for the shade response.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ShadeSignal {
+    /// Red:far-red proxy (1.2 in the open).
+    pub rfr: f64,
+    /// Yesterday's absorbed PAR per leaf area, mol m⁻² day⁻¹, if known.
+    pub dli: Option<MolPerM2Day>,
+}
+
+impl ShadeSignal {
+    /// No shade.
+    pub const OPEN: Self = Self {
+        rfr: 1.2,
+        dli: None,
+    };
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RootParams {
     /// Name from the species file.
@@ -123,6 +141,8 @@ pub struct HerbParams {
     pub bud_activation: f64,
     /// Reserve concentration of a fully fed bud, g C per g DM.
     pub bud_reserve_reference: f64,
+    /// Reserve concentration at which a flower sets with the full base probability.
+    pub pod_set_reserve_reference: f64,
     /// Apical dominance decay length in nodes.
     pub dominance_nodes: f64,
     /// Shade senescence light threshold.
@@ -131,10 +151,16 @@ pub struct HerbParams {
     pub shade_days: u32,
     /// Red:far-red threshold of shade avoidance.
     pub shade_rfr: f64,
+    /// Daily absorbed PAR (mol m⁻² day⁻¹) at which the low-light response starts.
+    pub shade_dli_onset: MolPerM2Day,
+    /// Daily absorbed PAR (mol m⁻² day⁻¹) at which the low-light response is full.
+    pub shade_dli_full: MolPerM2Day,
     /// Internode multiplier at full shade avoidance.
     pub shade_internode: f64,
     /// SLA multiplier at full shade avoidance.
     pub shade_sla: f64,
+    /// Pod-set multiplier at full shade.
+    pub shade_pod_set: f64,
     /// Leaf lifespan in thermal age.
     pub leaf_lifespan: DegreeDays,
     /// Air temperature that kills leaves.
@@ -276,12 +302,16 @@ impl HerbParams {
             shoot_gravitropism: c.shoot_gravitropism.value,
             bud_activation: t.bud_activation,
             bud_reserve_reference: c.bud_reserve_reference.value,
+            pod_set_reserve_reference: c.pod_set_reserve_reference.value,
             dominance_nodes: c.apical_dominance_nodes.value.max(1e-9),
             shade_light: c.shade_light_threshold.value,
             shade_days: round(c.shade_senescence_days.value),
             shade_rfr: c.shade_rfr_threshold.value,
+            shade_dli_onset: MolPerM2Day(c.shade_dli_onset.value),
+            shade_dli_full: MolPerM2Day(c.shade_dli_full.value),
             shade_internode: c.shade_internode_factor.value,
             shade_sla: c.shade_sla_factor.value,
+            shade_pod_set: c.shade_pod_set_factor.value,
             leaf_lifespan: DegreeDays(t.leaf_lifespan),
             frost: Celsius(c.leaf_frost_kill.value),
             flowers_per_raceme: round(t.flowers_per_raceme).max(1),
@@ -340,13 +370,19 @@ impl HerbParams {
         first + (last - first) * x
     }
 
-    /// Shade-avoidance multiplier for `max` at red:far-red `rfr`: 1 at the threshold,
-    /// linear to `max` at the proxy's floor of 0.2 (§3.4).
+    /// Shade multiplier for `max`. The response is the stronger of two signals
+    /// (§3.4, decision 0018): red:far-red `rfr` (1 at the threshold, linear to `max`
+    /// at the proxy's floor of 0.2) and low light, `dli` the daily absorbed PAR per
+    /// leaf area (1 at the onset, linear to `max` at the full value).
     #[must_use]
-    pub fn shade_factor(&self, rfr: f64, max: f64) -> f64 {
+    pub fn shade_factor(&self, signal: ShadeSignal, max: f64) -> f64 {
         let span = (self.shade_rfr - 0.2).max(1e-9);
-        let x = ((self.shade_rfr - rfr) / span).clamp(0.0, 1.0);
-        1.0 + (max - 1.0) * x
+        let x_rfr = ((self.shade_rfr - signal.rfr) / span).clamp(0.0, 1.0);
+        let x_light = signal.dli.map_or(0.0, |d| {
+            let span = (self.shade_dli_onset.0 - self.shade_dli_full.0).max(1e-9);
+            ((self.shade_dli_onset.0 - d.0) / span).clamp(0.0, 1.0)
+        });
+        1.0 + (max - 1.0) * x_rfr.max(x_light)
     }
 
     /// Sink feedback on leaf capacity (decision 0013): 1 below the onset reserve

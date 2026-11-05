@@ -13,6 +13,8 @@ replayed exactly.
 ## Equations
 - Clock hour of tick `t`: `(start_hour + t) mod 24`; day: `(start_hour + t) div 24`.
 - Shade cloth: radiation seen by a soil and its plants `= fraction × radiation`.
+- Rain shelter: rain reaching a soil `= rain_fraction × rain` (scenario `rain_fraction`
+  per soil, default 1; decision 0018). Irrigation and action water are not affected.
 - Soil surface radiation: `global × fraction × exp(−0.5 × LAI)`, with LAI the soil's
   plants' leaf area over the soil surface area.
 - Watering to field capacity: `mm = Σ_cells max(0, θ_fc V − W) / A_surface` (kg over m²
@@ -36,7 +38,7 @@ replayed exactly.
 | --- | --- | --- | --- |
 | in | scenario | RON | data/scenarios |
 | in | species files, weather file | RON, CSV | data/ (kept in the catalog) |
-| in | scenario events, heat wave | tick, kind; °C | the scenario's treatments (decision 0015) |
+| in | scenario events, heat wave, shade cloth, rain shelter | tick, kind; °C; - | the scenario's treatments (decisions 0015, 0018) |
 | in | actions | tick, kind | player, scripts, replay |
 | out | daily rows per plant, with the day's weather and soil water | - | `ps-export` CSV (decision 0015) |
 | out | full-state hash per day | u64 | golden tests |

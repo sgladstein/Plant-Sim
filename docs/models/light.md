@@ -100,6 +100,13 @@ interception as it grows, and shade between neighboring plants.
   irradiance-weighted band elevations rather than the radiance-weighted ones.
 - The beam uses the mean projection G, not each leaf's own normal; heliotropism cannot
   matter yet.
+- G is one number for every direction. The sim's blades all tilt about 19°, so their
+  true G is near 0.9 for a high sun and lower near the horizon. With G = 0.5 a 60-day
+  plant gets about 10% too much light (decision 0018). The fix planned for WP21 is G
+  per direction from the drawn leaf normals (area-weighted |n·d|).
+- Per leaf, about a third of a 60-day plant's leaflets are off by more than 0.10 at
+  G = 0.5, and a fifth at G = 0.65. Part of that is the grid limit above (who is on
+  top within a cell). A known limit at the M0 exit.
 - No scattering: light reflected or transmitted by leaves is ignored, so deep shade is a
   little too dark. Fine for M0; revisit if gas exchange in deep shade looks low.
 - Coefficients are computed once a day; leaf movement within the day is ignored.
@@ -121,6 +128,13 @@ interception as it grows, and shade between neighboring plants.
   M0, worst 0.122); 50 of 57 within max(0.05, 10% relative), reported but not gated.
   At 48 cells it was +2.9%, 55/57, worst 0.142 (decision 0010). The test also
   prints each leaf's worst single sun direction. See decision 0008.
+- `sim_plant_against_ray_tracer` (same file): the WP12 re-check on a 60-day sim plant
+  (74 leaflets, `plant60_*`, exported by the ps-arch test `export_leaves_for_ray_tracer`,
+  traced with `light_raytrace.py --leaves`). With the species G of 0.5 the plant total
+  is +9.9%, 49 of 74 leaflets are within 0.10 and the worst is 0.32. With G = 0.65 the
+  total is −1.9%, 60 of 74 are within 0.10 and the worst is 0.23. The sim draws every
+  blade tilted about 19° from horizontal, a planophile canopy, and G = 0.5 assumes
+  spherical leaf angles, so the model shades the plant too little (decision 0018).
 - `isolated_leaf_is_fully_lit`, `leaf_under_another_is_shaded`, `grid_respects_limits`,
   `sky_weights_sum_to_one` (also checks the absorption weights sum to 12/7),
   `ray_from_below_the_grid_enters_it`, `bounded_traversal_is_bit_identical`, `rfr_proxy`, `absorbed_par_splits_sunlit_and_shaded`,

@@ -25,7 +25,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.1.0";
+pub const MODEL_VERSION: &str = "0.2.0";
 
 /// Air pressure used for gas exchange, kPa (sea level; no site elevation in M0).
 const PATM_KPA: f64 = 101.325;
@@ -122,6 +122,10 @@ impl Catalog {
 }
 
 /// One soil and its management.
+fn one() -> f64 {
+    1.0
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SoilEntry {
     /// Scenario id.
@@ -130,6 +134,9 @@ pub struct SoilEntry {
     pub grid: SoilGrid,
     /// Share of radiation reaching this soil and its plants.
     pub radiation_fraction: f64,
+    /// Share of rain reaching this soil (0 under a rain shelter).
+    #[serde(default = "one")]
+    pub rain_fraction: f64,
     /// Automatic watering.
     pub irrigation: Irrigation,
     /// Water applied by actions, waiting for the next hourly step, mm.
@@ -343,6 +350,7 @@ impl World {
                 id,
                 grid: pot(spec)?,
                 radiation_fraction: scenario.radiation_fraction.get(&id).copied().unwrap_or(1.0),
+                rain_fraction: scenario.rain_fraction.get(&id).copied().unwrap_or(1.0),
                 irrigation: scenario
                     .irrigation
                     .get(&id)
@@ -781,7 +789,7 @@ impl World {
             let irr = Self::irrigation_mm(&self.state.soils[si], hour, day);
             let entry = &mut self.state.soils[si];
             let lai = leaf_area / entry.grid.surface_area().max(1e-12);
-            let water_in = wx.rain.0 + irr + entry.pending_mm;
+            let water_in = wx.rain.0 * entry.rain_fraction + irr + entry.pending_mm;
             entry.pending_mm = 0.0;
             let led = entry.grid.step_hour(&SoilHour {
                 water_in: Millimeters(water_in),

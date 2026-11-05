@@ -3,8 +3,9 @@
 
 use ps_species::Species;
 
-use crate::HerbParams;
 use crate::geometry::{deflect, from_azimuth, norm};
+use crate::{HerbParams, ShadeSignal};
+use ps_units::MolPerM2Day;
 
 fn params() -> HerbParams {
     let s = Species::from_ron(include_str!("../../../data/species/bush_bean.ron")).unwrap();
@@ -56,8 +57,30 @@ fn sink_feedback_falls_from_onset_to_full() {
 #[test]
 fn shade_factor_is_one_in_the_open() {
     let p = params();
-    assert!((p.shade_factor(1.2, 1.5) - 1.0).abs() < 1e-12);
-    assert!((p.shade_factor(0.2, 1.5) - 1.5).abs() < 1e-12);
+    assert!((p.shade_factor(ShadeSignal::OPEN, 1.5) - 1.0).abs() < 1e-12);
+    let dark_rfr = ShadeSignal {
+        rfr: 0.2,
+        dli: None,
+    };
+    assert!((p.shade_factor(dark_rfr, 1.5) - 1.5).abs() < 1e-12);
+}
+
+#[test]
+fn low_light_alone_gives_the_shade_response() {
+    let p = params();
+    let at = |d: f64| {
+        p.shade_factor(
+            ShadeSignal {
+                rfr: 1.2,
+                dli: Some(MolPerM2Day(d)),
+            },
+            1.5,
+        )
+    };
+    assert!((at(p.shade_dli_onset.0 + 1.0) - 1.0).abs() < 1e-12);
+    assert!((at(p.shade_dli_full.0) - 1.5).abs() < 1e-12);
+    let mid = 0.5 * (p.shade_dli_onset.0 + p.shade_dli_full.0);
+    assert!((at(mid) - 1.25).abs() < 1e-12);
 }
 
 #[test]

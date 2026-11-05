@@ -30,13 +30,14 @@ use ps_rng::{Purpose, RngKey};
 use ps_soil::{RootCells, SoilError, SoilGrid, Uptake, stress_factor};
 use ps_species::{Species, Traits};
 use ps_units::{
-    Celsius, DegreeDays, GramsC, GramsDM, GramsN, Hours, KPa, KgWater, Meters, Ppm, UmolPerM2S,
+    Celsius, DegreeDays, GramsC, GramsDM, GramsN, Hours, KPa, KgWater, Meters, MolPerM2Day, Ppm,
+    UmolPerM2S,
 };
 use ps_weather::HourWeather;
 use serde::{Deserialize, Serialize};
 
 pub use geometry::V3;
-pub use params::{HerbParams, RootParams};
+pub use params::{HerbParams, RootParams, ShadeSignal};
 
 /// kg of water per mol.
 const KG_PER_MOL_WATER: f64 = 0.018_015;
@@ -90,6 +91,9 @@ pub enum Role {
     Root,
 }
 
+/// Days over which the leaf light record averages (decision 0018).
+const DLI_MEMORY_DAYS: f64 = 3.0;
+
 /// Architecture data per organ, indexed like the arena.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Meta {
@@ -107,6 +111,16 @@ pub struct Meta {
     pub shade_days: u32,
     /// Potential area (leaves), for the petiole length.
     pub potential_area: f64,
+    /// PAR absorbed so far today per unit leaf area (leaves), mol m⁻².
+    #[serde(default)]
+    pub par_today: MolPerM2Day,
+    /// Hours counted in `par_today`.
+    #[serde(default)]
+    pub par_hours: u32,
+    /// Running mean of daily absorbed PAR per unit leaf area (leaves), mol m⁻² day⁻¹;
+    /// `None` until the leaf has seen a whole day (decision 0018).
+    #[serde(default)]
+    pub dli: Option<MolPerM2Day>,
 }
 
 impl Meta {
@@ -119,6 +133,9 @@ impl Meta {
             light_index: 1.0,
             shade_days: 0,
             potential_area: 0.0,
+            par_today: MolPerM2Day(0.0),
+            par_hours: 0,
+            dli: None,
         }
     }
 }
@@ -198,6 +215,13 @@ pub struct Flower {
     pub temperature: f64,
     /// Sum of daily carbon factors.
     pub carbon: f64,
+    /// Sum of daily shade factors on pod set (decision 0018).
+    #[serde(default)]
+    pub light: f64,
+    /// Mean pod-set temperature factor over the days before the flower opened, while
+    /// its pollen developed (decision 0018).
+    #[serde(default = "one")]
+    pub pre_anthesis: f64,
     /// Lowest daily FTSW while open.
     pub min_ftsw: f64,
 }
@@ -209,6 +233,10 @@ pub struct Pod {
     pub id: OrganId,
     /// Seeds created.
     pub seeds: bool,
+    /// Mean pod-set temperature factor while its flower was open: the share of ovules
+    /// that can still set after heat (decision 0018).
+    #[serde(default = "one")]
+    pub fertility: f64,
 }
 
 /// One root axis (a sequence of segments) or one lateral cohort.
@@ -239,6 +267,9 @@ pub struct DayStats {
     pub t_sum: f64,
     /// Lowest air temperature.
     pub t_min: f64,
+    /// Highest air temperature.
+    #[serde(default = "lowest")]
+    pub t_max: f64,
     /// Lowest FTSW.
     pub ftsw_min: f64,
     /// Plant thermal time (air) gained, for axis phyllochrons.
@@ -249,12 +280,21 @@ pub struct DayStats {
     pub gross_lost: f64,
 }
 
+fn lowest() -> f64 {
+    f64::MIN
+}
+
+fn one() -> f64 {
+    1.0
+}
+
 impl Default for DayStats {
     fn default() -> Self {
         Self {
             hours: 0,
             t_sum: 0.0,
             t_min: f64::MAX,
+            t_max: f64::MIN,
             ftsw_min: 1.0,
             thermal: 0.0,
             gross_potential: 0.0,
@@ -350,6 +390,10 @@ pub struct Plant {
     pub racemes: Vec<Raceme>,
     /// Open flowers.
     pub flowers: Vec<Flower>,
+    /// Daily pod-set temperature factors of the last days, newest last, for heat
+    /// during pollen development (decision 0018).
+    #[serde(default)]
+    pub recent_heat: Vec<f64>,
     /// Pods.
     pub pods: Vec<Pod>,
     /// Root axes.
@@ -540,6 +584,7 @@ impl Plant {
             buds: Vec::new(),
             racemes: Vec::new(),
             flowers: Vec::new(),
+            recent_heat: Vec::new(),
             pods: Vec::new(),
             root_axes: Vec::new(),
             root_types_started: vec![false; n_roots],
@@ -710,6 +755,9 @@ impl Plant {
                 } else {
                     e0
                 };
+                let m = &mut self.meta[i];
+                m.par_today.0 += a.mean().0 * 3600.0 * 1e-6;
+                m.par_hours += 1;
                 self.today.gross_potential += gross * area;
                 self.today.gross_lost += (1.0 - fb) * gross * area;
                 self.income[i] = UmolPerM2S(a_net).carbon_per_hour(ps_units::M2(area));
@@ -791,6 +839,7 @@ impl Plant {
         d.hours += 1;
         d.t_sum += wx.t_air.0;
         d.t_min = d.t_min.min(wx.t_air.0);
+        d.t_max = d.t_max.max(wx.t_air.0);
         d.ftsw_min = d.ftsw_min.min(self.ftsw);
         if emerged {
             d.thermal += self.params.temperature.cardinal.hourly(wx.t_air).0;
@@ -863,28 +912,54 @@ impl Plant {
         }
     }
 
-    fn rebuild_light(&mut self, sun_path: &[Option<V3>; 24]) {
-        if self.sky.is_empty() {
-            self.sky = ps_light::sky_sectors().to_vec();
-        }
-        let hp = &self.params;
-        let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
+    /// The leaflet discs the light model sees: center, area and normal of every leaflet
+    /// of every living leaf, in organ order (§3.5). Used to export ray tracer fixtures.
+    #[must_use]
+    pub fn light_points(&self) -> Vec<ps_light::LeafPoint> {
+        self.leaflets().0
+    }
+
+    /// Leaflet points and, for each, the index of the leaf it belongs to.
+    fn leaflets(&self) -> (Vec<ps_light::LeafPoint>, Vec<usize>) {
         let mut points = Vec::new();
         let mut owner = Vec::new();
-        for &id in &leaves {
+        for id in self.arena.alive_of(OrganKind::Leaf) {
             let i = id.index();
-            let node = self.positions[i].0;
             let pts = geometry::leaf_points(
                 &self.arena,
                 &self.meta,
                 id,
-                node,
-                hp.petiole,
+                self.positions[i].0,
+                self.params.petiole,
                 ps_units::M2(self.meta[i].potential_area),
             );
             owner.extend(std::iter::repeat_n(i, pts.len()));
             points.extend(pts);
         }
+        (points, owner)
+    }
+
+    fn rebuild_light(&mut self, sun_path: &[Option<V3>; 24]) {
+        // Absorbed PAR, for low-light acclimation of new organs: a running mean that
+        // gives yesterday a weight of 1/3, so one dull day does not set a leaf's
+        // thickness (decision 0018).
+        for id in self.arena.alive_of(OrganKind::Leaf).collect::<Vec<_>>() {
+            let m = &mut self.meta[id.index()];
+            if m.par_hours >= 24 {
+                let y = m.par_today.0;
+                m.dli = Some(MolPerM2Day(
+                    m.dli.map_or(y, |old| old.0 + (y - old.0) / DLI_MEMORY_DAYS),
+                ));
+            }
+            m.par_today = MolPerM2Day(0.0);
+            m.par_hours = 0;
+        }
+        if self.sky.is_empty() {
+            self.sky = ps_light::sky_sectors().to_vec();
+        }
+        let hp = &self.params;
+        let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
+        let (points, owner) = self.leaflets();
         let extra: Vec<V3> = self
             .arena
             .alive_of(OrganKind::Internode)

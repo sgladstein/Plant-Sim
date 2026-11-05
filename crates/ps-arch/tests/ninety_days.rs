@@ -163,7 +163,9 @@ fn counts_hold_across_world_seeds() {
                 .then(|| format!("seed {seed}: branches {}", last.branches)),
         );
         bad.extend(
-            (!(10..=20).contains(&last.pods)).then(|| format!("seed {seed}: pods {}", last.pods)),
+            // The §8.2 range (data/validation/targets.ron, pods_at_maturity); WP12's
+            // carbon- and light-limited pod set spreads lone plants over 8 to 17.
+            (!(6..=20).contains(&last.pods)).then(|| format!("seed {seed}: pods {}", last.pods)),
         );
     }
     assert!(bad.is_empty(), "{bad:?}");
@@ -213,4 +215,25 @@ fn roots_stay_in_the_pot() {
     // wall may poke past it).
     let seen = plant.roots.total().0;
     assert!(seen > 0.95 * total, "{seen} of {total} m in soil cells");
+}
+
+/// Writes the leaflets of a 60-day plant for the light ray tracer fixture
+/// (`validation/fixtures/light_raytrace.py --leaves`, decision 0008). Run with
+/// `PS_LEAVES_OUT=path cargo test -p ps-arch --test ninety_days -- --ignored`.
+#[test]
+#[ignore = "writes a fixture file; run by hand"]
+fn export_leaves_for_ray_tracer() {
+    use std::fmt::Write as _;
+    let (plant, _) = run(60, 7);
+    let mut out = String::from("id,x,y,z,area_m2,nx,ny,nz\n");
+    for (i, p) in plant.light_points().iter().enumerate() {
+        writeln!(
+            out,
+            "{i},{:.6},{:.6},{:.6},{:.8},{:.6},{:.6},{:.6}",
+            p.center[0], p.center[1], p.center[2], p.area.0, p.normal[0], p.normal[1], p.normal[2]
+        )
+        .unwrap();
+    }
+    let path = std::env::var("PS_LEAVES_OUT").unwrap_or_else(|_| "plant_leaves.csv".into());
+    std::fs::write(&path, out).unwrap();
 }

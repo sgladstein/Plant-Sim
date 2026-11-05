@@ -128,6 +128,9 @@ pub struct Scenario {
     /// Share of radiation reaching each soil and its plants (shade cloth); 1 if absent.
     #[serde(default)]
     pub radiation_fraction: BTreeMap<u32, f64>,
+    /// Share of rain reaching each soil (a rain shelter sets 0); 1 if absent.
+    #[serde(default)]
+    pub rain_fraction: BTreeMap<u32, f64>,
     /// Automatic watering per soil; none if absent.
     #[serde(default)]
     pub irrigation: BTreeMap<u32, Irrigation>,
@@ -199,6 +202,11 @@ impl Scenario {
         for (id, f) in &self.radiation_fraction {
             if !known(id) || !(0.0..=1.0).contains(f) {
                 return bad(format!("radiation fraction {f} for soil {id}"));
+            }
+        }
+        for (id, f) in &self.rain_fraction {
+            if !known(id) || !(0.0..=1.0).contains(f) {
+                return bad(format!("rain fraction {f} for soil {id}"));
             }
         }
         for (id, irr) in &self.irrigation {

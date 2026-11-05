@@ -7,10 +7,12 @@ use ps_graph::{OrganId, OrganKind, SpecificSize};
 use ps_physio::Stage;
 use ps_physio::allocation;
 use ps_rng::Purpose;
-use ps_units::{DegreeDays, GramsC, GramsDM, Hours, M2PerG};
+use ps_units::{DegreeDays, GramsC, GramsDM, Hours, M2PerG, MPerG};
 
 use crate::geometry::{add, from_azimuth, unit};
-use crate::{ArchError, Bud, BudFate, Flower, Plant, Pod, Raceme, Role, ShootAxis, Spawn, curve};
+use crate::{
+    ArchError, Bud, BudFate, Flower, Plant, Pod, Raceme, Role, ShadeSignal, ShootAxis, Spawn, curve,
+};
 
 /// Elevation of a new petiole above the horizontal (~; decision 0013).
 const PETIOLE_ELEVATION: f64 = 0.5;
@@ -22,6 +24,9 @@ const PEDUNCLE_SPECIFIC_LENGTH: f64 = 1.0;
 const FLOWER_MASS: f64 = 0.01;
 /// Flower expansion duration, °C·day (~).
 const FLOWER_EXPANSION: f64 = 30.0;
+/// Days of pollen development before a flower opens over which heat counts (decision
+/// 0018).
+const PRE_ANTHESIS_DAYS: usize = 7;
 
 impl Plant {
     /// Starts the hypocotyl's expansion (germination, §3.10).
@@ -81,9 +86,13 @@ impl Plant {
         } else {
             hp.internode_profile[2]
         };
-        let shade = self.shade_rfr(parent);
-        let length = hp.internode_length.0 * factor * hp.shade_factor(shade, hp.shade_internode);
-        let potential = GramsDM(length / hp.stem_specific_length.0);
+        // Shade lengthens an internode by making it thinner: the specific length rises
+        // with the length, so the potential mass stays and a carbon-starved internode
+        // is still longer per gram (decision 0018).
+        let elongation = hp.shade_factor(self.shade_signal(parent), hp.shade_internode);
+        let length = hp.internode_length.0 * factor * elongation;
+        let specific = MPerG(hp.stem_specific_length.0 * elongation);
+        let potential = GramsDM(length / specific.0);
         let mut s = Spawn::new(
             OrganKind::Internode,
             Role::Stem,
@@ -91,7 +100,7 @@ impl Plant {
             curve(hp.internode_expansion, potential)?,
         );
         s.order = order;
-        s.specific = SpecificSize::Length(hp.stem_specific_length);
+        s.specific = SpecificSize::Length(specific);
         s.direction = direction;
         s.azimuth = azimuth;
         self.spawn(&s, now)
@@ -114,7 +123,7 @@ impl Plant {
         } else {
             hp.leaf_area.0 * factor
         };
-        let shade = self.shade_rfr(node);
+        let shade = self.shade_signal(node);
         let sla = hp.sla.0 * hp.shade_factor(shade, hp.shade_sla);
         let mut s = Spawn::new(
             OrganKind::Leaf,
@@ -157,32 +166,37 @@ impl Plant {
         Ok(())
     }
 
-    /// Red:far-red at a new node: that of the newest living leaf on the axis below it
-    /// (1.2 in the open).
-    fn shade_rfr(&self, node: OrganId) -> f64 {
+    /// The shade signal at a new node: the red:far-red and yesterday's absorbed PAR
+    /// of the newest living leaf on the axis below it that has seen a whole day (open
+    /// sky if there is none).
+    fn shade_signal(&self, node: OrganId) -> ShadeSignal {
         let a = &self.arena;
         let mut cur = Some(node);
         while let Some(id) = cur {
-            let leaf = a.children[id.index()]
-                .iter()
-                .rev()
-                .find(|c| a.alive[c.index()] && a.kind[c.index()] == OrganKind::Leaf);
+            let leaf = a.children[id.index()].iter().rev().find(|c| {
+                a.alive[c.index()]
+                    && a.kind[c.index()] == OrganKind::Leaf
+                    && self.meta[c.index()].dli.is_some()
+            });
             if let Some(l) = leaf {
-                return a.light[l.index()].rfr;
+                return ShadeSignal {
+                    rfr: a.light[l.index()].rfr,
+                    dli: self.meta[l.index()].dli,
+                };
             }
             cur = a.parent[id.index()];
         }
-        1.2
+        ShadeSignal::OPEN
     }
 
-    /// Reserve concentration of an organ relative to the bud reference, capped at 1.
-    fn carbon_factor(&self, id: OrganId) -> f64 {
+    /// Reserve concentration of an organ relative to `reference`, capped at 1.
+    fn carbon_factor(&self, id: OrganId, reference: f64) -> f64 {
         let i = id.index();
         let w = self.arena.structural(id).0;
         if w <= 0.0 || !self.arena.alive[i] {
             return 0.0;
         }
-        (self.arena.reserve[i].0 / w / self.params.bud_reserve_reference).clamp(0.0, 1.0)
+        (self.arena.reserve[i].0 / w / reference.max(1e-12)).clamp(0.0, 1.0)
     }
 
     /// Daily step 2: bud fate (§3.4). A dormant bud on the lower main stem activates
@@ -212,7 +226,7 @@ impl Plant {
                 0.0
             };
             let node = self.arena.parent[bud.id.index()].unwrap_or(bud.id);
-            let carbon = self.carbon_factor(node);
+            let carbon = self.carbon_factor(node, self.params.bud_reserve_reference);
             let dominance = if main.terminated {
                 1.0
             } else {
@@ -362,15 +376,25 @@ impl Plant {
     /// flowering period; each flower sets a pod or aborts when it closes; pods make
     /// their seeds after the seed-fill delay.
     pub(crate) fn flowering(&mut self, now: Hours) -> Result<(), ArchError> {
+        // Pollen and ovule damage follow the day's peak, not its mean, and act both
+        // while the pollen develops and while the flower is open (decision 0018).
+        let peak_t = if self.today.hours > 0 {
+            self.today.t_max
+        } else {
+            20.0
+        };
+        let heat_today = self.params.pod_set_temperature(peak_t);
+        self.recent_heat.push(heat_today);
+        if self.recent_heat.len() > PRE_ANTHESIS_DAYS {
+            self.recent_heat.remove(0);
+        }
         if self.phenology.stage < Stage::Flowering {
             return Ok(());
         }
         let hp = self.params.clone();
-        let mean_t = if self.today.hours > 0 {
-            self.today.t_sum / f64::from(self.today.hours)
-        } else {
-            20.0
-        };
+        #[allow(clippy::cast_precision_loss)] // at most PRE_ANTHESIS_DAYS entries
+        let pre_anthesis =
+            self.recent_heat.iter().sum::<f64>() / self.recent_heat.len().max(1) as f64;
         // Open flowers.
         for r in 0..self.racemes.len() {
             let rc = self.racemes[r].clone();
@@ -399,6 +423,8 @@ impl Plant {
                     days: 0,
                     temperature: 0.0,
                     carbon: 0.0,
+                    light: 0.0,
+                    pre_anthesis,
                     min_ftsw: 1.0,
                 });
             }
@@ -411,17 +437,23 @@ impl Plant {
                 continue;
             }
             f.days += 1;
-            f.temperature += hp.pod_set_temperature(mean_t);
+            f.temperature += heat_today;
             let node = self.arena.parent[f.raceme.index()].unwrap_or(f.raceme);
-            f.carbon += self.carbon_factor(node);
+            f.carbon += self.carbon_factor(node, hp.pod_set_reserve_reference);
+            // Shade raises flower and young-pod abscission (decision 0018).
+            f.light += hp.shade_factor(self.shade_signal(node), hp.shade_pod_set);
             f.min_ftsw = f.min_ftsw.min(self.today.ftsw_min);
             if f.days < hp.flower_days {
                 open.push(f);
                 continue;
             }
             let days = f64::from(f.days);
+            // Heat damages pollen as it develops and the flower while it is open; the
+            // flower is as fertile as its worse stage, so an ordinary warm day is not
+            // counted twice (decision 0018).
+            let heat = f.pre_anthesis.min(f.temperature / days);
             let drought = (f.min_ftsw / hp.drought_abortion_ftsw.max(1e-9)).clamp(0.0, 1.0);
-            let p = hp.pod_set_base * (f.carbon / days) * (f.temperature / days) * drought;
+            let p = hp.pod_set_base * (f.carbon / days) * heat * (f.light / days) * drought;
             let set = self.stream(f.id, now, Purpose::PodSet).bernoulli(p);
             self.shed_organ(f.id, now)?;
             if set && self.arena.alive[f.raceme.index()] {
@@ -435,7 +467,11 @@ impl Plant {
                 s.direction = from_azimuth(az, -1.2);
                 s.azimuth = az;
                 let id = self.spawn(&s, now)?;
-                self.pods.push(Pod { id, seeds: false });
+                self.pods.push(Pod {
+                    id,
+                    seeds: false,
+                    fertility: heat,
+                });
             }
         }
         self.flowers = open;
@@ -443,7 +479,7 @@ impl Plant {
     }
 
     /// Pods make their seeds once past the seed-fill delay: each ovule sets with the
-    /// species probability, at least one per pod.
+    /// species probability times the pod's fertility, at least one per pod.
     fn make_seeds(&mut self, now: Hours) -> Result<(), ArchError> {
         let hp = self.params.clone();
         for k in 0..self.pods.len() {
@@ -458,7 +494,7 @@ impl Plant {
             self.pods[k].seeds = true;
             let mut rng = self.stream(pod.id, now, Purpose::SeedNumber);
             let n = (0..hp.seeds_per_pod)
-                .filter(|_| rng.bernoulli(hp.ovule_set))
+                .filter(|_| rng.bernoulli(hp.ovule_set * pod.fertility))
                 .count()
                 .max(1);
             for _ in 0..n {
@@ -532,6 +568,26 @@ impl Plant {
         }
         if mature {
             self.leaves_dropped = true;
+        }
+        // A killing frost also kills the growing points: apices stop, and buds and
+        // flowers die, so the plant does not regrow (§7 M0 exit; decision 0018).
+        if frost {
+            for ax in &mut self.axes {
+                ax.terminated = true;
+            }
+            let points: Vec<OrganId> = self
+                .arena
+                .alive_ids()
+                .filter(|id| {
+                    matches!(
+                        self.arena.kind[id.index()],
+                        OrganKind::Bud | OrganKind::Flower
+                    )
+                })
+                .collect();
+            for id in points {
+                self.shed_organ(id, now)?;
+            }
         }
         // Cotyledons drop when spent or two weeks after emergence.
         if let Some(e) = self.emerged_day {

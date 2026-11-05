@@ -179,8 +179,8 @@ fn stages_advance_in_order() {
     assert_eq!(ph.advance(&th, ev), None, "not germinated");
     ev.germinated = true;
     assert_eq!(ph.advance(&th, ev), Some(Stage::Germinated));
-    ph.accumulate(D(69.0));
-    assert_eq!(ph.advance(&th, ev), None, "69 of 70 Cd since germination");
+    ph.accumulate(D(79.0));
+    assert_eq!(ph.advance(&th, ev), None, "79 of 80 Cd since germination");
     ph.accumulate(D(1.0));
     assert_eq!(ph.advance(&th, ev), Some(Stage::Emerged));
     // Flowering needs both the trifoliate and the thermal time.
@@ -196,11 +196,11 @@ fn stages_advance_in_order() {
     assert_eq!(
         ph.advance(&th, ev),
         None,
-        "maturity at 820 Cd since germination"
+        "maturity at 900 Cd since germination"
     );
     // The 30 Cd the seed waited before germinating do not count (decision 0011).
     assert!((ph.since_sowing.0 - ph.since_germination.0 - 30.0).abs() < 1e-12);
-    ph.accumulate(D(400.0));
+    ph.accumulate(D(420.0));
     assert_eq!(ph.advance(&th, ev), Some(Stage::Mature));
     assert_eq!(ph.advance(&th, ev), None);
 }
