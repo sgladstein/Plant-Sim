@@ -24,7 +24,7 @@ use ps_mesh::{
 
 use crate::camera::CameraRig;
 use crate::diorama::{self, ColoredMesh};
-use crate::garden::{Garden, PotSize, PotView, natural_color};
+use crate::garden::{Garden, ObstacleView, PotSize, PotView, SupportView, natural_color};
 use crate::lens::Lens;
 use crate::toon::{Style, Toon, toon, toon_background};
 
@@ -151,6 +151,9 @@ struct PotScene {
     size: PotSize,
     /// Whether this scene draws the container (see `PotView::container`).
     container: bool,
+    /// Supports and obstacles drawn with the container; a change respawns it.
+    supports: Vec<SupportView>,
+    obstacles: Vec<ObstacleView>,
     axes: BTreeMap<OrganId, AxisEntity>,
     instances: BTreeMap<OrganId, InstanceEntity>,
     overlay: Entity,
@@ -368,6 +371,7 @@ fn spawn_pot(
     assets: &SceneAssets,
     root: Entity,
     pot: &PotView,
+    ground: f32,
 ) -> PotScene {
     let entity = commands
         .spawn((
@@ -386,6 +390,8 @@ fn spawn_pot(
             haze,
             size,
             container: false,
+            supports: Vec::new(),
+            obstacles: Vec::new(),
             axes: BTreeMap::new(),
             instances: BTreeMap::new(),
             overlay,
@@ -415,6 +421,16 @@ fn spawn_pot(
             ChildOf(entity),
         ));
     }
+    for (cloth, material) in [(false, &assets.vertex_color), (true, &assets.haze)] {
+        if pot.obstacles.iter().any(|o| o.is_cloth() == cloth) {
+            commands.spawn((
+                Mesh3d(meshes.add(colored(&diorama::obstacles(&pot.obstacles, cloth, ground)))),
+                MeshMaterial3d(material.clone()),
+                Transform::default(),
+                ChildOf(entity),
+            ));
+        }
+    }
     commands.spawn((
         Mesh3d(meshes.add(to_bevy_mesh(&diorama::glass(size), None))),
         MeshMaterial3d(assets.glass.clone()),
@@ -443,6 +459,8 @@ fn spawn_pot(
         haze,
         size,
         container: true,
+        supports: pot.supports.clone(),
+        obstacles: pot.obstacles.clone(),
         axes: BTreeMap::new(),
         instances: BTreeMap::new(),
         overlay,
@@ -549,20 +567,23 @@ pub(crate) fn sync_scene(
     let lens = *lens;
     // Pots are static; respawn everything if their number or sizes change.
     let layout_changed = index.pots.len() != garden.pots.len()
-        || index
-            .pots
-            .iter()
-            .zip(&garden.pots)
-            .any(|(s, p)| s.size != p.size || s.container != p.container);
+        || index.pots.iter().zip(&garden.pots).any(|(s, p)| {
+            s.size != p.size
+                || s.container != p.container
+                || (p.container && (s.supports != p.supports || s.obstacles != p.obstacles))
+        });
     if layout_changed {
         for p in index.pots.drain(..) {
             commands.entity(p.entity).despawn();
         }
+        let layout = deck_layout(&garden.pots);
+        // The lawn below the soil surface, so walls and cloth posts stand on it.
+        let ground = layout.map_or(-1.0, |(top, _)| top.y - crate::dressing::BENCH_HEIGHT);
         for pot in &garden.pots {
-            let scene = spawn_pot(&mut commands, &mut meshes, &assets, root, pot);
+            let scene = spawn_pot(&mut commands, &mut meshes, &assets, root, pot, ground);
             index.pots.push(scene);
         }
-        if let Some((top, size)) = deck_layout(&garden.pots) {
+        if let Some((top, size)) = layout {
             if let Some(d) = &dressing {
                 let _ = meshes.insert(&d.bench, colored(&crate::dressing::bench(size)));
                 let _ = meshes.insert(&d.garden, colored(&garden_dressing(size)));
@@ -633,6 +654,10 @@ pub(crate) fn sync_scene(
         }
         for s in &pot.supports {
             grow(c + Vec3::new(s.base[0], s.base[1], s.height + 0.05));
+        }
+        for o in &pot.obstacles {
+            grow(c + Vec3::from(o.min));
+            grow(c + Vec3::from(o.max));
         }
 
         // Axes.

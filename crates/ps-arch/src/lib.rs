@@ -868,7 +868,6 @@ impl Plant {
                     wx.direct,
                     wx.diffuse,
                     sin_e,
-                    hp.g_function,
                     hp.absorptance,
                 );
                 let age = self.arena.thermal_age[i];
@@ -1084,12 +1083,6 @@ impl Plant {
         (self.light_points(), self.internode_tips())
     }
 
-    /// The G-function value of this plant's leaves.
-    #[must_use]
-    pub fn g_function(&self) -> f64 {
-        self.params.g_function
-    }
-
     fn internode_tips(&self) -> Vec<V3> {
         self.arena
             .alive_of(OrganKind::Internode)
@@ -1191,7 +1184,6 @@ impl Plant {
         if self.sky.is_empty() {
             self.sky = ps_light::sky_sectors().to_vec();
         }
-        let hp = &self.params;
         let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
         let (points, owner) = self.leaflets();
         let coeffs = if let Some(c) = shared {
@@ -1199,21 +1191,15 @@ impl Plant {
             c.to_vec()
         } else {
             let extra = self.internode_tips();
-            ps_light::rebuild_daily_with(
-                &points,
-                &extra,
-                &self.obstacles,
-                sun_path,
-                &self.sky,
-                hp.g_function,
-            )
-            .1
+            ps_light::rebuild_daily_with(&points, &extra, &self.obstacles, sun_path, &self.sky).1
         };
         let mut sums: Vec<(LightCoeffs, f64)> = vec![(zero_coeffs(), 0.0); self.arena.len()];
         for (c, &i) in coeffs.iter().zip(&owner) {
             let s = &mut sums[i];
             for h in 0..24 {
                 s.0.direct[h] += c.direct[h];
+                // Sunlit-weighted, so the leaf's mean absorbed beam is exact.
+                s.0.beam[h] += c.direct[h] * c.beam[h];
             }
             s.0.diffuse += c.diffuse;
             s.0.diffuse_absorbed += c.diffuse_absorbed;
@@ -1228,6 +1214,11 @@ impl Plant {
                 continue;
             }
             for h in 0..24 {
+                c.beam[h] = if c.direct[h] > 0.0 {
+                    c.beam[h] / c.direct[h]
+                } else {
+                    0.0
+                };
                 c.direct[h] /= n;
             }
             c.diffuse /= n;

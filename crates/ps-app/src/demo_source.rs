@@ -28,8 +28,6 @@ pub const DAYS: u32 = 90;
 pub const LATITUDE: f64 = 45.0;
 /// Leaf PAR absorptance ("~").
 const ABSORPTANCE: f64 = 0.85;
-/// G-function value for the stand-in canopy (spherical leaf angles).
-const G: f64 = 0.5;
 /// Days between waterings in the stand-in soil water.
 const WATERING_DAYS: f64 = 5.0;
 /// Soil face grid for the soil water lens.
@@ -185,7 +183,6 @@ fn absorbed(c: &LightCoeffs, hour: usize, w: &HourWeather, light: f64) -> f64 {
         WPerM2(w.direct.0 * light),
         WPerM2(w.diffuse.0 * light),
         sin_e,
-        G,
         ABSORPTANCE,
     )
     .mean()
@@ -330,7 +327,7 @@ pub fn drive(
                 let (_, noon) = src.at(day * 24 + 12).clone();
                 let (ids, points) = leaf_points(&noon);
                 let (_, coeffs) =
-                    ps_light::rebuild_daily(&points, &[], &sun_path, &ps_light::sky_sectors(), G);
+                    ps_light::rebuild_daily(&points, &[], &sun_path, &ps_light::sky_sectors());
                 src.light_cache = Some((day, ids.into_iter().zip(coeffs).collect()));
             }
             if let (Some((_, coeffs)), Some(w)) = (&src.light_cache, weather) {
@@ -416,6 +413,7 @@ pub fn drive(
             soil_water,
             container: true,
             supports: Vec::new(),
+            obstacles: Vec::new(),
         });
     }
     garden.pots = pots;

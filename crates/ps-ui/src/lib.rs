@@ -13,9 +13,11 @@
 
 mod charts;
 mod inspector;
+mod tools;
 
 pub use charts::{Chart, Charts, Series, nearest, nice_max};
 pub use inspector::{Field, Inspector};
+pub use tools::{NewRun, ObstacleDraft, PlayerAction, SeedRow, Side, Tools, days_in};
 
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
@@ -113,6 +115,7 @@ impl Plugin for PlantUiPlugin {
             .init_resource::<Charts>()
             .init_resource::<Inspector>()
             .init_resource::<CaptureControl>()
+            .init_resource::<Tools>()
             .add_systems(EguiPrimaryContextPass, panels)
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -154,6 +157,7 @@ fn panels(
     mut selection: ResMut<Selection>,
     inspector: Res<Inspector>,
     mut capture: ResMut<CaptureControl>,
+    mut tools: ResMut<Tools>,
     mut themed: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -177,7 +181,14 @@ fn panels(
     );
     let top = egui::Panel::top("time")
         .show(&mut root, |ui| {
-            top_bar(ui, &mut time, &garden, &mut charts.open, &mut capture);
+            top_bar(
+                ui,
+                &mut time,
+                &garden,
+                &mut charts.open,
+                &mut capture,
+                &mut tools,
+            );
         })
         .response
         .rect
@@ -189,7 +200,11 @@ fn panels(
             egui::ScrollArea::vertical().show(ui, |ui| {
                 lens_panel(ui, &mut lens, &garden);
                 ui.separator();
-                inspector::section(ui, &inspector, &mut selection, &garden, *lens);
+                inspector::section(ui, &inspector, &mut selection, &garden, *lens, &mut tools);
+                ui.separator();
+                tools::section(ui, &mut tools, &selection, &garden);
+                ui.separator();
+                tools::seed_library(ui, &tools);
             });
         })
         .response
@@ -212,6 +227,9 @@ fn panels(
             }
         });
     });
+    if tools.new_run.open {
+        tools::new_run_window(ctx, &mut tools.new_run);
+    }
     let insets = [0.0, top, right, bottom.response.rect.height()];
     if rig
         .insets
@@ -257,6 +275,7 @@ fn top_bar(
     garden: &Garden,
     charts_open: &mut bool,
     capture: &mut CaptureControl,
+    tools: &mut Tools,
 ) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
@@ -307,6 +326,16 @@ fn top_bar(
             .clicked()
         {
             capture.export_csv = true;
+        }
+        if tools.enabled
+            && ui
+                .button("New run…")
+                .on_hover_text(
+                    "Start again with another scenario, weather, latitude or sowing date",
+                )
+                .clicked()
+        {
+            tools.new_run.open = true;
         }
         ui.separator();
         if time.busy {

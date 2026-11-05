@@ -1,0 +1,68 @@
+name: prerelease
+
+# Publishes a Windows build from a green render run as a GitHub pre-release, so the
+# app can be downloaded without signing in. Run by hand: give the render run's id and
+# a tag. The build is the run's plant-sim-windows artifact (static-dxc release build
+# plus data/), re-zipped; the release notes carry its SHA-256.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "id of the green render run whose plant-sim-windows artifact to publish"
+        required: true
+      tag:
+        description: "release tag, for example v0.1.0-pre.1"
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: plant-sim-windows
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: plant-sim-windows
+      - name: zip and hash
+        id: pack
+        run: |
+          zip -qr "plant-sim-windows-${TAG}.zip" plant-sim-windows
+          echo "asset=plant-sim-windows-${TAG}.zip" >> "$GITHUB_OUTPUT"
+          echo "zip=$(sha256sum "plant-sim-windows-${TAG}.zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "exe=$(sha256sum plant-sim-windows/target/release/plant-sim.exe | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq .head_sha)" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ inputs.tag }}
+          RUN_ID: ${{ inputs.run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: publish
+        run: |
+          cat > notes.md <<NOTES
+          Pre-release Windows build of main at ${SHA}, from render run ${RUN_URL}
+          (release build with static DXC, plus data/).
+
+          Unzip and run \`plant-sim-windows/target/release/plant-sim.exe\` from the
+          \`plant-sim-windows\` folder.
+
+          | File | SHA-256 |
+          |---|---|
+          | ${ASSET} | \`${ZIP_SHA}\` |
+          | plant-sim.exe | \`${EXE_SHA}\` |
+          NOTES
+          gh release create "${TAG}" "${ASSET}" --repo "${GITHUB_REPOSITORY}" \
+            --target "${SHA}" --prerelease --title "Plant-Sim ${TAG} (pre-release)" \
+            --notes-file notes.md
+        env:
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ steps.pack.outputs.sha }}
+          ASSET: ${{ steps.pack.outputs.asset }}
+          ZIP_SHA: ${{ steps.pack.outputs.zip }}
+          EXE_SHA: ${{ steps.pack.outputs.exe }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ inputs.run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

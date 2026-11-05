@@ -3,14 +3,13 @@
 // later pole-type phenology, and longer internodes; everything else is the bush bean's.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 5,
+  schema: 6,
   id: "pole_bean",
   name: "Pole bean archetype",
   growth_form: Vine,
   constants: (            // not heritable
     carbon_fraction: (value: 0.45, unit: "g C / g DM", source: "typical (design plan §6.1)"),
     construction_cost: (value: 1.25, unit: "g C / g C", source: "~ (design plan §3.8: 20% growth respiration)"),
-    g_function: (value: 0.5, unit: "-", source: "spherical leaf angles"),
     maintenance_rate_20c: (value: 0.218, unit: "g C / g N / day", source: "Ryan 1991, as the CLM base rate 2.525e-6 g C g-1 N s-1 at 20 C (decision 0011; the plan's 0.015 was a per-dry-mass value)"),
     maintenance_q10: (value: 2.0, unit: "-", source: "~ (design plan §3.8)"),
     medlyn_g0: (value: 0.01, unit: "mol/m2/s", source: "~ (design plan §11.4)"),

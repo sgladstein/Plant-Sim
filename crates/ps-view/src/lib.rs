@@ -31,7 +31,7 @@ pub mod toon;
 use bevy::prelude::*;
 
 pub use camera::CameraRig;
-pub use garden::{Garden, PotShape, PotSize, PotView, SoilFace, SupportView};
+pub use garden::{Garden, ObstacleView, PotShape, PotSize, PotView, SoilFace, SupportView};
 pub use lens::{Lens, LensInfo, Origin, Scale};
 pub use pick::{Picked, Selection};
 pub use ready::Ready;

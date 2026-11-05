@@ -110,11 +110,11 @@ struct Comparison {
     report: String,
 }
 
-fn compare(r: &Reference, g: f64) -> Comparison {
-    compare_with(r, g, false)
+fn compare(r: &Reference) -> Comparison {
+    compare_with(r, false)
 }
 
-fn compare_with(r: &Reference, g: f64, plot: bool) -> Comparison {
+fn compare_with(r: &Reference, plot: bool) -> Comparison {
     let n = r.leaves.len();
     let sky = sky_sectors();
     let mut sun_path = [None; 24];
@@ -122,9 +122,9 @@ fn compare_with(r: &Reference, g: f64, plot: bool) -> Comparison {
         sun_path[8 + h] = Some(*d);
     }
     let (_, c) = if plot {
-        rebuild_plot(&r.leaves, &[[0.0, 0.0, 0.0]], &sun_path, &sky, g)
+        rebuild_plot(&r.leaves, &[[0.0, 0.0, 0.0]], &sun_path, &sky)
     } else {
-        rebuild_daily(&r.leaves, &[[0.0, 0.0, 0.0]], &sun_path, &sky, g)
+        rebuild_daily(&r.leaves, &[[0.0, 0.0, 0.0]], &sun_path, &sky)
     };
     assert_eq!(c.len(), n);
 
@@ -184,7 +184,7 @@ fn compare_with(r: &Reference, g: f64, plot: bool) -> Comparison {
 
 #[test]
 fn single_plant_matches_ray_tracer() {
-    let c = compare(&reference(LEAVES, TRACE), 0.5);
+    let c = compare(&reference(LEAVES, TRACE));
     let Comparison {
         total_rel,
         within,
@@ -217,43 +217,34 @@ fn single_plant_matches_ray_tracer() {
 #[test]
 fn sim_plant_against_ray_tracer() {
     let r = reference(LEAVES_60, TRACE_60);
-    let species_g = compare(&r, 0.5);
-    let leaf_angle_g = compare(&r, 0.65);
-    println!(
-        "G = 0.5\n{}G = 0.65\n{}",
-        species_g.report, leaf_angle_g.report
-    );
+    let c = compare(&r);
+    println!("{}", c.report);
+    // Measured with each leaf's own projection (decision 0025): +3.8%, 63 of 74
+    // within 0.10, worst 0.258 (+9.9%, 49 of 74 and 0.32 with one G of 0.5).
     assert!(
-        (0.05..0.15).contains(&species_g.total_rel),
-        "G = 0.5 total {:+.4}",
-        species_g.total_rel
+        (0.0..0.06).contains(&c.total_rel),
+        "total {:+.4}",
+        c.total_rel
     );
-    assert!(
-        leaf_angle_g.total_rel.abs() < 0.03,
-        "G = 0.65 total {:+.4}",
-        leaf_angle_g.total_rel
-    );
-    assert!(leaf_angle_g.within * 100 >= 75 * leaf_angle_g.n);
-    assert!(leaf_angle_g.worst < 0.25);
+    assert!(c.within * 100 >= 82 * c.n, "{}/{}", c.within, c.n);
+    assert!(c.worst < 0.3, "worst {:.3}", c.worst);
 }
 
 /// WP21 (decision 0019): a plant on the plot light grid (3 cm cells) against the same
 /// ray tracer. Pins today's result.
 #[test]
 fn plot_grid_light_against_ray_tracer() {
-    let synthetic = compare_with(&reference(LEAVES, TRACE), 0.5, true);
-    let sim = compare_with(&reference(LEAVES_60, TRACE_60), 0.5, true);
+    let synthetic = compare_with(&reference(LEAVES, TRACE), true);
+    let sim = compare_with(&reference(LEAVES_60, TRACE_60), true);
     println!("synthetic\n{}sim 60-day\n{}", synthetic.report, sim.report);
     assert!(
         synthetic.total_rel.abs() < 0.03,
         "{:+.4}",
         synthetic.total_rel
     );
-    assert!(synthetic.within * 100 >= 85 * synthetic.n);
-    assert!(
-        (0.0..0.10).contains(&sim.total_rel),
-        "{:+.4}",
-        sim.total_rel
-    );
-    assert!(sim.within * 100 >= 65 * sim.n);
+    assert!(synthetic.within * 100 >= 90 * synthetic.n);
+    // −0.8% and 61 of 74 with each leaf's projection (decision 0025); +5.6% and 51 of
+    // 74 with one G of 0.5.
+    assert!(sim.total_rel.abs() < 0.03, "{:+.4}", sim.total_rel);
+    assert!(sim.within * 100 >= 80 * sim.n);
 }

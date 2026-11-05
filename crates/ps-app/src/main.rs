@@ -49,6 +49,7 @@ mod demo_source;
 mod display;
 mod inspect;
 mod sim_source;
+mod tools;
 
 use std::path::PathBuf;
 
@@ -287,7 +288,14 @@ fn main() -> Result<()> {
         stem,
     })
     .add_systems(Update, capture::capture_requests.after(ViewSet::Source));
-    if let Some(sim) = sim {
+    if let Some((sim, data, scenario)) = sim {
+        let mut ui_tools = ps_ui::Tools::default();
+        tools::init_new_run(&mut ui_tools.new_run, &data, &scenario, &options.scenario);
+        app.insert_resource(ui_tools)
+            .insert_resource(tools::RunSettings {
+                data,
+                speed: options.speed,
+            });
         if let Some(dir) = &options.timelapse {
             std::fs::create_dir_all(dir)?;
             let to = options.to_day.unwrap_or(f64::MAX / 48.0);
@@ -304,7 +312,12 @@ fn main() -> Result<()> {
         }
         app.insert_resource(sim).add_systems(
             Update,
-            (sim_source::drive, inspect::inspect)
+            (
+                tools::new_run,
+                tools::apply_tools,
+                sim_source::drive,
+                inspect::inspect,
+            )
                 .chain()
                 .in_set(ViewSet::Source),
         );
@@ -346,10 +359,14 @@ fn main() -> Result<()> {
 }
 
 /// Loads the scenario and starts the sim thread.
-fn start_sim(options: &Options, paused: bool) -> Result<sim_source::SimSource> {
+fn start_sim(
+    options: &Options,
+    paused: bool,
+) -> Result<(sim_source::SimSource, PathBuf, ps_world::Scenario)> {
     let data = sim_source::find_data_dir(options.data.as_deref())?;
     let (world, scenario) = sim_source::load_world(&data, &options.scenario)?;
-    sim_source::SimSource::start(world, &scenario, options.day, options.speed, paused)
+    let src = sim_source::SimSource::start(world, &scenario, options.day, options.speed, paused)?;
+    Ok((src, data, scenario))
 }
 
 /// Frames rendered after the pipelines are ready before the screenshot, so the camera

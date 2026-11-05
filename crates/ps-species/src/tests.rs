@@ -50,17 +50,17 @@ fn wrong_heritable_unit_is_named() {
 /// WP4 done-when 2: a missing source fails with a clear error.
 #[test]
 fn missing_source_is_a_clear_error() {
-    let bad = BEAN.replacen("source: \"spherical leaf angles\"", "source: \"\"", 1);
+    let bad = BEAN.replacen("source: \"typical (design plan §6.1)\"", "source: \"\"", 1);
     let e = Species::from_ron(&bad).unwrap_err();
     assert_eq!(
         e.to_string(),
-        "constants.g_function: missing source (use \"~\" for a guess to validate)"
+        "constants.carbon_fraction: missing source (use \"~\" for a guess to validate)"
     );
 }
 
 #[test]
 fn absent_source_field_is_a_parse_error() {
-    let bad = BEAN.replacen(", source: \"spherical leaf angles\"", "", 1);
+    let bad = BEAN.replacen(", source: \"typical (design plan §6.1)\"", "", 1);
     let e = Species::from_ron(&bad).unwrap_err();
     assert!(
         matches!(e, SpeciesError::Parse(ref m) if m.contains("source")),
@@ -70,10 +70,10 @@ fn absent_source_field_is_a_parse_error() {
 
 #[test]
 fn unknown_constant_is_rejected() {
-    let bad = BEAN.replacen("    g_function:", "    g_funtion:", 1);
+    let bad = BEAN.replacen("    maintenance_q10:", "    maintenance_q1O:", 1);
     let e = Species::from_ron(&bad).unwrap_err();
     assert!(
-        matches!(e, SpeciesError::Parse(ref m) if m.contains("g_funtion")),
+        matches!(e, SpeciesError::Parse(ref m) if m.contains("maintenance_q1O")),
         "{e}"
     );
 }
@@ -105,12 +105,12 @@ fn locus_must_name_a_heritable_trait() {
 
 #[test]
 fn schema_version_checked() {
-    let bad = BEAN.replacen("schema: 5,", "schema: 4,", 1);
+    let bad = BEAN.replacen("schema: 6,", "schema: 5,", 1);
     assert!(matches!(
         Species::from_ron(&bad),
         Err(SpeciesError::Schema {
-            found: 4,
-            expected: 5
+            found: 5,
+            expected: 6
         })
     ));
 }
