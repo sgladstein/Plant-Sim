@@ -81,7 +81,11 @@ impl CameraRig {
 pub struct OrbitCamera;
 
 #[allow(clippy::needless_pass_by_value)]
-pub(crate) fn spawn_camera(mut commands: Commands, rig: Res<CameraRig>) {
+pub(crate) fn spawn_camera(
+    mut commands: Commands,
+    rig: Res<CameraRig>,
+    sky: Res<crate::look::SkyImages>,
+) {
     commands.spawn((
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection {
@@ -92,6 +96,7 @@ pub(crate) fn spawn_camera(mut commands: Commands, rig: Res<CameraRig>) {
         }),
         Transform::from_translation(rig.eye()).looking_at(rig.target, Vec3::Y),
         Msaa::Sample4,
+        crate::look::camera_bundle(&sky),
         OrbitCamera,
     ));
 }

@@ -20,6 +20,7 @@ pub mod camera;
 pub mod diorama;
 pub mod garden;
 pub mod lens;
+pub mod look;
 pub mod scene;
 pub mod sky;
 
@@ -51,14 +52,22 @@ impl Plugin for PlantViewPlugin {
             .init_resource::<Lens>()
             .init_resource::<CameraRig>()
             .init_resource::<scene::SceneIndex>()
-            .insert_resource(ClearColor(Color::srgb(0.5, 0.7, 0.9)))
+            .insert_resource(ClearColor(Color::linear_rgb(
+                look::HORIZON[0],
+                look::HORIZON[1],
+                look::HORIZON[2],
+            )))
             .configure_sets(
                 Update,
                 (ViewSet::Source, ViewSet::Sync, ViewSet::Present).chain(),
             )
             .add_systems(
                 Startup,
-                (scene::setup_scene, camera::spawn_camera, sky::spawn_sun),
+                (
+                    scene::setup_scene,
+                    (look::setup_sky_images, camera::spawn_camera).chain(),
+                    sky::spawn_sun,
+                ),
             )
             .add_systems(Update, scene::sync_scene.in_set(ViewSet::Sync))
             .add_systems(
