@@ -7,12 +7,20 @@
 //! - Right panel: the lens list and the active lens's legend, which is always visible
 //!   while a lens is on, with its unit, explanation, encoded-or-emergent tag and model
 //!   card.
+//! - Under the lenses: the inspector for the clicked organ or plant (§5.3).
+//! - Bottom panel: the charts (§5.4), toggled from the top bar.
 //! - A custom theme so the panels match the diorama rather than a debug tool (§4).
+
+mod charts;
+mod inspector;
+
+pub use charts::{Chart, Charts, Series, nearest, nice_max};
+pub use inspector::{Field, Inspector};
 
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
-use ps_view::{CameraRig, Garden, Lens, LensInfo, Origin, Scale};
+use ps_view::{CameraRig, Garden, Lens, LensInfo, Origin, Scale, Selection};
 
 /// Speed multipliers in sim hours per real second (§2.2).
 pub const SPEEDS: [(&str, f64); 5] = [
@@ -89,6 +97,8 @@ impl Plugin for PlantUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EguiPlugin::default())
             .init_resource::<TimeControl>()
+            .init_resource::<Charts>()
+            .init_resource::<Inspector>()
             .add_systems(EguiPrimaryContextPass, panels)
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -119,13 +129,16 @@ fn theme(ctx: &egui::Context) {
     ctx.set_visuals(v);
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 fn panels(
     mut contexts: EguiContexts,
     mut time: ResMut<TimeControl>,
     mut lens: ResMut<Lens>,
     mut rig: ResMut<CameraRig>,
     garden: Res<Garden>,
+    mut charts: ResMut<Charts>,
+    mut selection: ResMut<Selection>,
+    inspector: Res<Inspector>,
     mut themed: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -141,18 +154,31 @@ fn panels(
             .max_rect(ctx.viewport_rect()),
     );
     let top = egui::Panel::top("time")
-        .show(&mut root, |ui| top_bar(ui, &mut time, &garden))
+        .show(&mut root, |ui| {
+            top_bar(ui, &mut time, &garden, &mut charts.open);
+        })
         .response
         .rect
         .height();
     let right = egui::Panel::right("lenses")
         .resizable(false)
         .exact_size(300.0)
-        .show(&mut root, |ui| lens_panel(ui, &mut lens, &garden))
+        .show(&mut root, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                lens_panel(ui, &mut lens, &garden);
+                ui.separator();
+                inspector::section(ui, &inspector, &mut selection, &garden, *lens);
+            });
+        })
         .response
         .rect
         .width();
     let bottom = egui::Panel::bottom("help").show(&mut root, |ui| {
+        if charts.open {
+            ui.add_space(4.0);
+            charts::panel(ui, &charts, &mut time);
+            ui.separator();
+        }
         ui.horizontal(|ui| {
             ui.weak("Drag to orbit · right-drag to pan · wheel to zoom · F to reframe");
             if !rig.auto_frame && ui.button("Reframe").clicked() {
@@ -172,7 +198,7 @@ fn panels(
     Ok(())
 }
 
-fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden) {
+fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden, charts_open: &mut bool) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         let day = (time.hour / 24.0).floor();
@@ -202,6 +228,8 @@ fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden) {
                 time.commands.push(TimeCommand::Step(hours));
             }
         }
+        ui.separator();
+        ui.toggle_value(charts_open, "Charts");
         ui.separator();
         if time.busy {
             ui.colored_label(egui::Color32::from_rgb(200, 210, 170), "Simulating…");

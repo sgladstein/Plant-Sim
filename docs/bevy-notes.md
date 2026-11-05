@@ -109,7 +109,19 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
   frames, each followed by a ~8 ms catch-up frame. The limiter now spins the last 2 ms
   instead of 1 ms; if bursts remain, check whether they line up with sim ticks (mesh
   rebuilds) before blaming pacing.
-- DX12 takes about 180 s to first render (Vulkan about 5 s), so DX12 is only a fallback.
+- DX12's slow cold start is FXC, the old shader compiler wgpu uses when DXC is missing.
+  The opt-in ps-app feature `static-dxc` links DXC statically (Bevy feature
+  `statically-linked-dxc`), so DX12 compiles shaders far faster; to be measured on the
+  1070. It is opt-in because it needs the Visual Studio "C++ ATL for latest build tools"
+  component (`atls.lib`); a default Build Tools 2022 install fails with
+  `LNK1104: cannot open file 'atls.lib'`. Install ATL with the Visual Studio Installer
+  (Modify > Individual components), then `cargo build -p ps-app --release --features
+  static-dxc`. The CI release artifact (`plant-sim-windows`) is built with it.
+- DX12 baseline without DXC (#40 build): cold start about 175 s on every launch (no
+  cache across launches). Once running, DX12 paced better than Vulkan in one run: mean
+  16.67, p99 17.16 ms, 4 frames ≥ 28 ms (Vulkan about 50), at an unexplained
+  3025×1702 window.
+- DX12 took about 180 s to first render (Vulkan about 5 s), so DX12 is only a fallback.
 - DX12 cold start was slow enough that the old fixed-frame `--screenshot` saved nothing
   or a black frame; it now waits for readiness.
 - Not done yet: wgpu's on-disk pipeline cache for Vulkan, to shorten cold starts.

@@ -24,6 +24,13 @@ ps-session.workspace = true
 bevy.workspace = true
 anyhow.workspace = true
 
+[features]
+# Links the DXC shader compiler statically (Windows). Without DXC, DX12 compiles shaders
+# with the old FXC compiler and the first frame took ~180 s on the owner's GTX 1070.
+# Opt-in: it needs the Visual Studio "C++ ATL" component (atls.lib), which a default
+# Build Tools install lacks. The CI release artifact enables it.
+static-dxc = ["bevy/statically-linked-dxc"]
+
 [dev-dependencies]
 ps-arch.workspace = true
 
