@@ -309,6 +309,9 @@ fn rebuild_threshold_is_two_percent() {
     let sig = |s: &Skeleton| AxisSignature::of(s, a, AxisStyle::STEM);
     assert!(!sig(&s2).needs_rebuild(&sig(&s1), 0.02));
     assert!(sig(&s3).needs_rebuild(&sig(&s1), 0.02));
+    // A floor above the change holds the rebuild; a floor of zero is the plain rule.
+    assert!(sig(&s3).needs_rebuild_beyond(&sig(&s1), 0.02, 0.0));
+    assert!(!sig(&s3).needs_rebuild_beyond(&sig(&s1), 0.02, 0.05));
 }
 
 #[test]
