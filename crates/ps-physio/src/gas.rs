@@ -95,6 +95,37 @@ pub struct LeafParams {
     pub jmax_t: PeakedArrhenius,
 }
 
+impl LeafParams {
+    /// Every field as bits, for telling identical parameter sets apart exactly.
+    #[must_use]
+    pub fn bit_key(&self) -> [u64; 14] {
+        let pa = |a: &PeakedArrhenius| {
+            [
+                a.activation.0.to_bits(),
+                a.deactivation.0.to_bits(),
+                a.entropy.0.to_bits(),
+            ]
+        };
+        let (v, j) = (pa(&self.vcmax_t), pa(&self.jmax_t));
+        [
+            self.vcmax25.0.to_bits(),
+            self.jmax25.0.to_bits(),
+            self.rd25.0.to_bits(),
+            self.rd_q10.to_bits(),
+            self.g1.0.to_bits(),
+            self.g0.0.to_bits(),
+            self.quantum_yield.to_bits(),
+            self.curvature.to_bits(),
+            v[0],
+            v[1],
+            v[2],
+            j[0],
+            j[1],
+            j[2],
+        ]
+    }
+}
+
 /// The environment of one leaf class for one hour.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LeafEnv {

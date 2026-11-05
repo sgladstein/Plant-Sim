@@ -725,24 +725,25 @@ impl SoilGrid {
             }
             asked.push(req);
         }
-        // Total request per cell, summed in a fixed order (plant, then cell).
-        cell_total.sort_by_key(|c| c.0);
-        let mut scale: Vec<(usize, f64)> = Vec::new();
+        // Total request per cell, summed in a fixed order (plant, then cell), on a
+        // dense scratch grid. Every request is positive, so a touched cell's total is
+        // positive and an untouched cell keeps factor 1.
+        let mut totals = vec![0.0_f64; self.water.len()];
+        let mut touched: Vec<usize> = Vec::new();
         for (i, r) in cell_total {
-            match scale.last_mut() {
-                Some(last) if last.0 == i => last.1 += r,
-                _ => scale.push((i, r)),
+            if totals[i] == 0.0 {
+                touched.push(i);
+                totals[i] = r;
+            } else {
+                totals[i] += r;
             }
         }
-        for s in &mut scale {
-            let a = avail(self.water[s.0]).0;
-            s.1 = if s.1 > a { a / s.1 } else { 1.0 };
+        let mut scale = vec![1.0_f64; self.water.len()];
+        for &i in &touched {
+            let a = avail(self.water[i]).0;
+            scale[i] = if totals[i] > a { a / totals[i] } else { 1.0 };
         }
-        let factor = |i: usize| {
-            scale
-                .binary_search_by_key(&i, |s| s.0)
-                .map_or(1.0, |k| scale[k].1)
-        };
+        let factor = |i: usize| scale[i];
         let mut out = Vec::with_capacity(plants.len());
         let mut uptake = KgWater(0.0);
         for (p, req) in plants.iter().zip(&asked) {

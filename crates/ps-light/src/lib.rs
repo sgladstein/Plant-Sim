@@ -166,8 +166,19 @@ impl LightGrid {
         g: f64,
     ) -> Option<(Self, Vec<Footprint>)> {
         let mut grid = Self::fit_geometry(leaves, extra, g)?;
+        let feet = grid.add_leaves_keeping(leaves);
+        Some((grid, feet))
+    }
+
+    /// [`LightGrid::add_leaves`] that returns each leaf's footprint and own depth, in
+    /// input order. The grid ends up identical to `add_leaves`'s.
+    pub fn add_leaves_keeping(&mut self, leaves: &[LeafPoint]) -> Vec<Footprint> {
+        use rayon::prelude::*;
+        let grid = self;
+        // Footprints in parallel (collect keeps leaf order); the additions below are
+        // sequential, in leaf order.
         let feet = leaves
-            .iter()
+            .par_iter()
             .map(|l| {
                 let cells = grid.footprint(l);
                 let depth = grid.own_depth(&cells);
@@ -181,7 +192,7 @@ impl LightGrid {
                 grid.depth[i] += d;
             }
         }
-        Some((grid, feet))
+        feet
     }
 
     /// Cell volume, m³.
@@ -586,7 +597,7 @@ pub fn coefficients(
 }
 
 /// [`coefficients`] with each leaf's footprint already computed on `grid`.
-fn coefficients_with(
+pub(crate) fn coefficients_with(
     grid: &LightGrid,
     leaves: &[LeafPoint],
     feet: &[Footprint],
