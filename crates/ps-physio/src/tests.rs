@@ -127,6 +127,91 @@ fn class_table_matches_direct_solves() {
     assert!(worst < 0.05, "worst interpolation error {worst}");
 }
 
+/// WP27: a coupled table's nodes are coupled solves (to the solver's tolerance, since
+/// each starts from its neighbor), and a dark table reads the same at PAR 0. Between
+/// nodes, the lookup's A is within 7% of a direct coupled solve (measured 6.9% at
+/// Ta 30 °C, 0.1 m/s, stress 0.4, PAR 333 and capacity 0.55; mostly under 2%) and its
+/// leaf temperature within 0.24 K: leaf temperature adds to the uncoupled table's 4.6%
+/// where it bends the light response.
+#[test]
+fn coupled_table_matches_coupled_solves() {
+    use crate::classes::Reference;
+    use crate::energy::{self, Air, LeafEnergyParams, Site};
+    let (s, t) = bean();
+    let p = LeafParams::from_species(&s, &t);
+    let ep = LeafEnergyParams {
+        width: ps_units::Meters(0.08),
+        nir_ratio: 0.235,
+        emissivity: 0.97,
+        abaxial_share: 0.875,
+    };
+    let mut most = 0;
+    let (mut worst_a, mut worst_t) = (0.0_f64, 0.0_f64);
+    for (ta, vpd, wind, stress) in [
+        (22.0, 1.2, 1.0, 1.0),
+        (35.0, 3.9, 0.3, 1.0),
+        (30.0, 2.5, 0.1, 0.4),
+        (8.0, 0.3, 2.0, 1.0),
+    ] {
+        let r = Reference {
+            air: Air {
+                t_air: Celsius(ta),
+                vpd: KPa(vpd),
+                patm: KPa(101.3),
+                cloud: 0.2,
+            },
+            ca: Ppm(420.0),
+            wind,
+        };
+        let (table, solves) = ClassTable::build_coupled(&p, &ep, &r, stress, false);
+        most = most.max(solves);
+        println!("Ta {ta} wind {wind} stress {stress}: {solves} solves");
+        let direct = |par: f64, cap: f64| {
+            let site = Site {
+                par: UmolPerM2S(par),
+                sky_view: 1.0,
+                wind,
+            };
+            energy::solve_coupled(&p, &ep, &r.air, &site, r.ca, cap, stress)
+        };
+        for (c, cap) in classes::CAPACITY_NODES.iter().enumerate() {
+            for k in 0..=classes::PAR_CLASSES {
+                let (g, h) = direct(classes::par_node(k), *cap);
+                let n = table.rates[c][k];
+                assert!(
+                    (n.t_leaf.0 - h.t_leaf.0).abs() < 0.02,
+                    "Ta {ta} node {c},{k}"
+                );
+                assert!(
+                    (n.a_net.0 - g.a_net.0).abs() < 0.01 * g.a_net.0.abs().max(1.0),
+                    "Ta {ta} node {c},{k}: {} vs {}",
+                    n.a_net.0,
+                    g.a_net.0
+                );
+            }
+        }
+        // Between nodes: A, E and leaf temperature against direct coupled solves.
+        for &par in &[50.0, 130.0, 333.0, 640.0, 1111.0, 1750.0] {
+            for &cap in &[1.0, 0.85, 0.55] {
+                let l = table.lookup(UmolPerM2S(par), cap);
+                let (g, h) = direct(par, cap);
+                worst_a = worst_a.max((l.a_net.0 / g.a_net.0 - 1.0).abs());
+                worst_t = worst_t.max((l.t_leaf.0 - h.t_leaf.0).abs());
+            }
+        }
+        let (dark, _) = ClassTable::build_coupled(&p, &ep, &r, stress, true);
+        for cap in [1.0, 0.8, 0.3] {
+            assert_eq!(
+                dark.lookup(UmolPerM2S(0.0), cap),
+                table.lookup(UmolPerM2S(0.0), cap)
+            );
+        }
+    }
+    println!("most gas solves per coupled table: {most}; worst A {worst_a:.4}, T {worst_t:.3} K");
+    assert!(worst_a < 0.08 && worst_t < 0.3);
+    assert!(most <= 68 * 4, "{most}");
+}
+
 // ---------------------------------------------------------------- thermal time
 
 #[test]

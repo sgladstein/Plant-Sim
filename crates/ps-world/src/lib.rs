@@ -30,7 +30,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.16.0";
+pub const MODEL_VERSION: &str = "0.17.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -1317,10 +1317,11 @@ impl World {
                 .iter_mut()
                 .map(|e| e.plant.update_water_status(soil))
                 .collect::<Result<Vec<()>, _>>()?;
-            // Plants with the same leaf parameters and stress bits share one class
-            // table (the hour's weather is the soil's): the table is a pure function of
-            // those, so sharing it gives the same bits as building one per plant.
-            let mut keys: Vec<([u64; 14], u64)> = Vec::new();
+            // Plants with the same leaf and leaf energy parameters and stress bits share
+            // one class table (the hour's weather, wind included, is the soil's): the
+            // table is a pure function of those, so sharing it gives the same bits as
+            // building one per plant.
+            let mut keys: Vec<ps_arch::TableKey> = Vec::new();
             let mut owners: Vec<usize> = Vec::new();
             let slot: Vec<usize> = members
                 .iter()
@@ -1334,8 +1335,11 @@ impl World {
                     })
                 })
                 .collect();
+            // Each table is a pure function of its owner's key and the hour, and
+            // collect keeps the owners' order, so building them in parallel gives the
+            // same tables.
             let tables: Vec<_> = owners
-                .iter()
+                .par_iter()
                 .map(|&m| members[m].plant.class_table(&ctx))
                 .collect();
             let (demand, areas): (Vec<KgWater>, Vec<f64>) = members

@@ -33,7 +33,11 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
   50 iterations). `A = min(Ac, Aj)`; the limitation is reported.
 - Below light compensation (`A ≤ 0` at `Ci = Ca`): `Ci = Ca`, `A = min(Ac, Aj)` there,
   `gs = g0`.
-- Water: `gs = 1.57 gc` (mol m⁻² s⁻¹ water vapor), `E = gs D / P`.
+- Water: `gs = 1.57 gc` (mol m⁻² s⁻¹ water vapor), `E = gs D / P`. Since WP27 the leaf
+  temperature `T` and the leaf-to-air deficit `D = es(T) − ea` come from the leaf energy
+  balance, solved together with gas exchange, and the leaf's water use is the energy
+  balance's `E`, with each face's boundary layer in series with its stomata
+  (docs/models/leaf-energy-balance.md, decision 0034).
 - Leaf capacity: `c = 1` until the leaf is fully expanded, then linear to the floor (0.4)
   at the end of its lifespan, which counts from full expansion (§3.8 leaf aging). Since
   WP24 it is multiplied by the leaf's nitrogen factor
@@ -49,9 +53,12 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
   (`feedback_loss`); above about 0.2 the plant lacks sinks, and WP12 adds sinks
   before changing the thresholds.
 - Light classes: each hour a table of 17 PAR nodes (0, then 16 log-spaced from 1 to
-  2000 µmol m⁻² s⁻¹) × 4 capacity nodes (1.0, 0.7, 0.4, 0.1; decision 0020) is solved (68 solves per
-  plant-hour). A leaf part reads it linearly in PAR between neighboring nodes and
-  linearly in capacity. Sunlit and shaded parts read the same table at their own PAR.
+  2000 µmol m⁻² s⁻¹) × 4 capacity nodes (1.0, 0.7, 0.4, 0.1; decision 0020) is solved,
+  each node coupled to the leaf energy balance for a horizontal leaf in the open at
+  0.5 m (about 1.7 gas-exchange solves per lit node; a dark hour solves the PAR-0 node
+  only). A leaf part reads it linearly in PAR between neighboring nodes and linearly in
+  capacity, then corrects its own temperature and transpiration for its own light, sky
+  view and wind. Sunlit and shaded parts read the same table at their own PAR.
 - Carbon: `g C per hour = A · area · 3600 · 12e-6`.
 
 ## Parameters
@@ -81,7 +88,7 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
 | Direction | Quantity | Unit | From / to |
 | --- | --- | --- | --- |
 | in | absorbed PAR, sunlit and shaded | µmol m⁻² s⁻¹ | ps-light `absorbed_par` |
-| in | air temperature (leaf temperature in M0), VPD, CO2, pressure | °C, kPa, ppm, kPa | ps-weather |
+| in | leaf temperature and leaf-to-air VPD (energy balance), CO2, pressure | °C, kPa, ppm, kPa | ps-physio::energy, ps-weather |
 | in | water stress factor | 1 | ps-soil |
 | out | net assimilation, conductance, transpiration, Ci, limitation | µmol m⁻² s⁻¹, mol m⁻² s⁻¹, mol m⁻² s⁻¹, ppm | leaf income (allocation), water uptake (soil) |
 
@@ -92,11 +99,14 @@ carbon (water-use efficiency) and how it shifts with humidity, the slower carbon
 old leaves.
 
 ## Known limits
-- Leaf temperature equals air temperature (no energy balance until M2).
-- No mesophyll conductance, no triose-phosphate limit, no boundary layer.
+- Leaf temperature comes from the energy balance at the table's reference leaf; a
+  leaf's own temperature corrects its transpiration, not its assimilation (WP27).
+- No mesophyll conductance, no triose-phosphate limit, no boundary layer for CO2 (the
+  boundary layer for water vapor is in the energy balance).
 - Water stress acts on the stomatal slope only, not on photosynthetic capacity.
 - The light-class table costs up to 4.6% in A between nodes since the nodes were spread
-  to 0.1 for nitrogen-poor leaves (decision 0020; it was 3.0% with nodes down to 0.4).
+  to 0.1 for nitrogen-poor leaves (decision 0020; it was 3.0% with nodes down to 0.4),
+  and up to 7% with leaf temperature coupled (WP27).
 - Bean temperature responses are "~" values in the Medlyn 2002 form, not bean
   measurements (WP12).
 
@@ -111,6 +121,7 @@ old leaves.
 - Unit tests in `ps_physio::tests`: `bean_at_reference_conditions` (supply equals demand
   to 1e-6), `darkness_gives_respiration_and_g0`, `full_stress_closes_stomata_to_g0`,
   `aging_scales_capacity`, `class_table_matches_direct_solves`,
+  `coupled_table_matches_coupled_solves`,
   `leaf_capacity_declines_after_expansion`.
 
 ## References

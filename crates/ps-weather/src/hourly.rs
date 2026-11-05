@@ -2,13 +2,14 @@
 
 use core::f64::consts::PI;
 
-use ps_units::{Celsius, Degrees, Hours, JPerM2, KPa, Millimeters, WPerM2};
+use ps_units::{Celsius, Degrees, Hours, JPerM2, KPa, MetersPerSecond, Millimeters, WPerM2};
 use serde::{Deserialize, Serialize};
 
 use crate::calendar::{DateHour, day_of_year};
 use crate::presets::DailyWeather;
 use crate::radiation::{
-    cloud_fraction_from_kt, erbs_diffuse_fraction, saturation_vapor_pressure_kpa,
+    cloud_fraction_from_kt, default_wind, erbs_diffuse_fraction, hourly_wind,
+    saturation_vapor_pressure_kpa,
 };
 use crate::solar::{
     SunPosition, daily_extraterrestrial_j_m2, day_light, extraterrestrial_horizontal_j_m2,
@@ -37,8 +38,13 @@ pub struct HourWeather {
     pub diffuse: WPerM2,
     /// Rain in the hour.
     pub rain: Millimeters,
-    /// Cloud fraction, 0 to 1 (display and sky rendering only).
+    /// Cloud fraction, 0 to 1: the sky's longwave emissivity for leaf temperature
+    /// (WP27), and sky rendering.
     pub cloud_fraction: f64,
+    /// Mean wind speed over the hour at 2 m (WP27). Older files without it read the
+    /// FAO-56 default, 2 m s⁻¹.
+    #[serde(default = "default_wind")]
+    pub wind: MetersPerSecond,
     /// Sun position at the hour's midpoint.
     pub sun: SunPosition,
 }
@@ -117,6 +123,8 @@ fn temperature_at(days: &[DailyWeather], sunrise: &[f64], i: usize, t: f64) -> f
 /// - Humidity: the day's vapor pressure is `rh_mean × e_s(T_mean)`; hourly RH and VPD
 ///   follow from the hourly temperature, with RH capped at 100%.
 /// - Rain: spread evenly over [`RAIN_HOURS`].
+/// - Wind: the day's mean spread over the hours by [`hourly_wind`] (DSSAT HWIND), calm
+///   at night and windiest at solar noon, keeping the daily mean.
 #[must_use]
 pub fn disaggregate(latitude: Degrees, days: &[DailyWeather]) -> Vec<HourWeather> {
     if days.is_empty() {
@@ -137,6 +145,14 @@ pub fn disaggregate(latitude: Degrees, days: &[DailyWeather]) -> Vec<HourWeather
     let mut out = Vec::with_capacity(days.len() * 24);
     for (i, d) in days.iter().enumerate() {
         let doy = day_of_year(d.year, d.month, d.day);
+        let dl = day_light(latitude, d.year, doy);
+        let (rise, dayl) = if dl.day_length_h >= 24.0 {
+            (0.0, 24.0)
+        } else if dl.day_length_h <= 0.0 {
+            (0.0, 0.0)
+        } else {
+            (dl.sunrise_h, dl.day_length_h)
+        };
         let h0_day = daily_extraterrestrial_j_m2(latitude, d.year, doy);
         let kt = if h0_day > 0.0 {
             d.global.0 / h0_day
@@ -178,6 +194,13 @@ pub fn disaggregate(latitude: Degrees, days: &[DailyWeather]) -> Vec<HourWeather
                     0.0
                 }),
                 cloud_fraction: cloud_fraction_from_kt(kt),
+                wind: MetersPerSecond(hourly_wind(
+                    d.wind.0,
+                    rise,
+                    dayl,
+                    f64::from(h),
+                    f64::from(h + 1),
+                )),
                 sun: sun_position(latitude, d.year, doy, mid),
             });
         }

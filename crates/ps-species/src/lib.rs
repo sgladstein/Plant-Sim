@@ -531,6 +531,7 @@ impl Species {
             check_param(&format!("variation.{}", spec.key), spec.unit, p)?;
         }
         self.validate_development()?;
+        self.validate_energy()?;
         self.validate_climbing()?;
         self.validate_variation()?;
         self.validate_grass()?;
@@ -571,6 +572,41 @@ impl Species {
                 return Err(SpeciesError::Value {
                     at: format!("constants.{key}"),
                     why: "must be 1 or more".into(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The leaf energy balance keys (WP27, decision 0034): a positive leaf width,
+    /// and absorptance, emissivity and the abaxial conductance share as fractions.
+    fn validate_energy(&self) -> Result<(), SpeciesError> {
+        let c = &self.constants;
+        if c.leaf_width.value.is_nan() || c.leaf_width.value <= 0.0 {
+            return Err(SpeciesError::Value {
+                at: "constants.leaf_width".into(),
+                why: "must be more than 0".into(),
+            });
+        }
+        for (key, v, low_open) in [
+            ("leaf_nir_absorptance", c.leaf_nir_absorptance.value, false),
+            ("leaf_emissivity", c.leaf_emissivity.value, true),
+            (
+                "abaxial_conductance_share",
+                c.abaxial_conductance_share.value,
+                false,
+            ),
+        ] {
+            let below = if low_open { v <= 0.0 } else { v < 0.0 };
+            // NaN fails too.
+            if v.is_nan() || below || v > 1.0 {
+                return Err(SpeciesError::Value {
+                    at: format!("constants.{key}"),
+                    why: if low_open {
+                        "must be in (0, 1]".into()
+                    } else {
+                        "must be in [0, 1]".into()
+                    },
                 });
             }
         }

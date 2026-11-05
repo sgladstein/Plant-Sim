@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use ps_world::{DayRow, WorldState};
 
 /// Columns of [`daily_csv`], in order.
-pub const DAILY_COLUMNS: [&str; 41] = [
+pub const DAILY_COLUMNS: [&str; 43] = [
     "day",
     "plant",
     "soil",
@@ -50,6 +50,8 @@ pub const DAILY_COLUMNS: [&str; 41] = [
     "n_status",
     "nodule_mass_g",
     "fixation_c_g",
+    "assimilation_gc",
+    "transpiration_kg",
 ];
 
 /// Columns of [`organs_csv`], in order.
@@ -100,7 +102,7 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
     // Writing to a String cannot fail.
     let _ = writeln!(
         out,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         row.day,
         row.plant,
         soil_id(state, row.plant),
@@ -142,6 +144,8 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
         r.n_status,
         r.nodule_mass,
         r.fixation_carbon,
+        r.assimilation,
+        r.transpiration,
     );
 }
 
@@ -259,6 +263,8 @@ pub fn daily_number(state: &WorldState, row: &DayRow, column: &str) -> Option<f6
         "n_status" => r.n_status,
         "nodule_mass_g" => r.nodule_mass,
         "fixation_c_g" => r.fixation_carbon,
+        "assimilation_gc" => r.assimilation,
+        "transpiration_kg" => r.transpiration,
         _ => return None,
     })
 }

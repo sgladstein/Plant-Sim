@@ -41,6 +41,20 @@ daily files must have consecutive dates from the start date.
 
 **Rain.** Daily total spread evenly over 15:00 to 18:00.
 
+**Cloud fraction.** `c = clamp((0.75 − K_t)/0.55, 0, 1)` from the day's clearness, the
+same for every hour of a daily or preset day. Hourly files take the `cloud` column when
+there is one, else the hour's clearness; night and twilight hours keep the last daylight
+hour's value (1 before the first). Read by the renderer and, since WP27, by the leaf
+energy balance for the sky's longwave.
+
+**Wind** (WP27, decision 0034). Wind at 2 m, m s⁻¹. Hourly files take an optional
+`wind_m_s` column (0 to 75). Daily files take an optional daily mean `wind_m_s`; presets
+use 2 m s⁻¹ (FAO-56's default when wind is missing). A daily mean `W` is spread over the
+day by DSSAT's HWIND: `W_max = W/(0.3 + 0.7 · DL/48)` for day length `DL`; `0.3 W_max`
+from sunset to sunrise; by day `W_max (0.3 + 0.35 (1 + sin(2π (t − t_rise)/DL + 1.5π)))`,
+peaking at solar noon, integrated over each hour, so the 24 hours average to `W`
+exactly. Polar day and night are handled as day length 24 and 0.
+
 **Presets.** Daily mean temperature `= T_annual + A cos(2π(doy − doy_warm)/365.25) + a_d`,
 with an AR(1) anomaly `a_d = ρ a_{d−1} + σ z`. Rain occurs with probability `p`, amount
 exponential with mean `μ`. Clearness is uniform in `[K_t,min, K_t,max]` on dry days.
@@ -63,6 +77,8 @@ Draws use ps-rng keyed by (world seed, weather entity, day × 24, Weather).
 | Heat wave: days 25 to 31, T_max, T_min | 35, 21 | C | ~ (Gross 1994 uses 32 °C days) |
 | Drought: +2 C, K_t 0.55 to 0.72, no rain, RH 45 | | | ~ |
 | Frost night: day 20, T_min | −3 | C | ~ (below the −1 °C leaf kill) |
+| Default wind (presets, files without wind) | 2 | m/s at 2 m | FAO-56 |
+| HWIND night share of W_max | 0.3 | - | DSSAT `HMET.for` |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -75,7 +91,8 @@ Draws use ps-rng keyed by (world seed, weather entity, day × 24, Weather).
 | out | global, direct, diffuse irradiance | W/m2 | light |
 | out | rain | mm | soil |
 | out | sun elevation and azimuth | deg | light, renderer |
-| out | cloud fraction | - | renderer only |
+| out | cloud fraction | - | renderer, leaf energy balance (sky longwave) |
+| out | wind at 2 m | m/s | leaf energy balance |
 
 ## Encoded or emergent
 All encoded. Nothing here responds to plants.
@@ -85,7 +102,8 @@ All encoded. Nothing here responds to plants.
 - No longitude or time zone (decision 0005).
 - Hourly clearness equals the day's, so a day is uniformly cloudy; no passing clouds.
 - Vapor pressure is constant within a day and jumps at midnight.
-- No wind in M0 (the column is accepted and ignored).
+- Wind has no direction, gusts or day-to-day weather in presets (a fixed 2 m s⁻¹ daily
+  mean); its daily course is DSSAT's fixed shape.
 
 ## Validation
 - `ps-weather/tests/solar_reference.rs::sun_position_matches_spa_within_half_a_degree`: 720 hourly
@@ -95,6 +113,8 @@ All encoded. Nothing here responds to plants.
 - `ps_weather::hourly::tests::preset_radiation_climatology`: preset means in plausible 45° N ranges.
 - `ps_weather::solar::tests::daily_extraterrestrial_reference_values`: FAO-56 eq. 21 within 2%.
 - `ps_weather::radiation::tests::tetens_reference`: FAO-56 Table 2.3.
+- `ps_weather::radiation::tests::hourly_wind_keeps_the_daily_mean`: 24 hourly means
+  average to the daily mean at several day lengths, polar cases included.
 - Fixture generator: `validation/fixtures/solar_pvlib.py` (pvlib 0.16.1).
 
 ## References

@@ -39,9 +39,10 @@ pub struct PlantLens {
     /// Carbon moved from each organ's parent into it during the hour (negative: an
     /// export to the parent), indexed by organ id: the flow arrows.
     pub phloem_import: Vec<GramsC>,
-    /// The temperature each organ grew at during the hour, indexed by organ id (air
-    /// for the shoot, the soil layer for roots and seed; leaves get their own
-    /// temperature with WP27).
+    /// Each organ's temperature during the hour, indexed by organ id: a leaf's own
+    /// from the energy balance (WP27; its gas exchange and frost read it, its
+    /// expansion reads air), air for the rest of the shoot, the soil layer for roots
+    /// and seed.
     pub organ_temperature: Vec<Celsius>,
     /// Nitrogen per structural dry mass after the hour, g N g⁻¹, indexed by organ id
     /// (0 for dead or massless organs).

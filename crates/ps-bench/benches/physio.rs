@@ -76,6 +76,30 @@ fn physio(c: &mut Criterion) {
             }
         });
     });
+    let ep = ps_physio::LeafEnergyParams {
+        width: ps_units::Meters(0.08),
+        nir_ratio: 0.235,
+        emissivity: 0.97,
+        abaxial_share: 0.875,
+    };
+    let reference = ps_physio::classes::Reference {
+        air: ps_physio::Air {
+            t_air: Celsius(25.0),
+            vpd: KPa(1.5),
+            patm: KPa(100.0),
+            cloud: 0.2,
+        },
+        ca: Ppm(420.0),
+        wind: 1.0,
+    };
+    c.bench_function("physio/coupled class table build, 24 h", |b| {
+        b.iter(|| {
+            for h in 0..24 {
+                // About half the hours are dark.
+                black_box(ClassTable::build_coupled(&p, &ep, &reference, 1.0, h < 12));
+            }
+        });
+    });
     let table = ClassTable::build(&p, &env, 1.0);
     c.bench_function("physio/lookups, 300 leaves x 2 parts x 24 h", |b| {
         b.iter(|| {

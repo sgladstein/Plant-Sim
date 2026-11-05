@@ -1,7 +1,7 @@
 // Bush bean archetype (Phaseolus vulgaris, determinate type I). Design plan §3.16, §6.1.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 10,
+  schema: 11,
   id: "bush_bean",
   name: "Bush bean archetype",
   growth_form: Herb,
@@ -42,7 +42,7 @@ Species(
     shade_internode_factor: (value: 2.0, unit: "-", source: "Lopes et al. 1987: height about doubled at 62% light with leaf number unchanged, so internodes about 2x (design plan §3.4 had ~1.5; decision 0018)"),
     shade_pod_set_factor: (value: 0.2, unit: "-", source: "~ shading raises flower and young-pod abscission in bean; pod number -35% under 45% less PAR (Cossu et al. 2021, Fig. 6B); calibrated in WP12 (decision 0018)"),
     shade_sla_factor: (value: 1.4, unit: "-", source: "~ Cossu et al. 2021: SLA up to +32% under 45% less PAR (design plan §3.4 had ~1.3; decision 0018)"),
-    leaf_frost_kill: (value: -2.2, unit: "C", source: "CROPGRO bean SPE (research review)"),
+    leaf_frost_kill: (value: -2.2, unit: "C", source: "CROPGRO bean SPE FREEZ1 (research review); read against the leaf's own temperature since WP27 (owner decision 2026-11-05, decision 0034), the growing points against air"),
     growth_t_min: (value: 5.0, unit: "C", source: "~ (design plan §3.11)"),
     growth_t_opt_low: (value: 25.0, unit: "C", source: "~ (design plan §3.11)"),
     growth_t_opt_high: (value: 30.0, unit: "C", source: "~ (design plan §3.11)"),
@@ -80,6 +80,10 @@ Species(
     apical_hold_nodes: (value: 1.5, unit: "-", source: "~ WP25 (decision 0024): the axillary buds of the top nodes (1.5 here) below a growing bean apex stay dormant until it is cut or stops; decapitation releases them within days (Cline 1991, review of apical dominance, bean as the classic system) [K, to verify]"),
     cotyledon_lifespan: (value: 14.0, unit: "day", source: "~ (design plan §3.10)"),
     leaf_absorptance: (value: 0.85, unit: "-", source: "typical green leaf PAR absorptance"),
+    leaf_width: (value: 0.08, unit: "m", source: "~ width of a full-grown bean leaflet across the wind (range 0.05 to 0.11; docs/research/wp27-leaf-energy-balance notes/boundary_layer_wind.md); one value for every leaflet (decision 0034)"),
+    leaf_nir_absorptance: (value: 0.20, unit: "-", source: "~ PROSPECT-D runs and Goudriaan's NIR scattering 0.8 (range 0.15 to 0.22; research notes/leaf_optics.md)"),
+    leaf_emissivity: (value: 0.97, unit: "-", source: "Chen 2015 review (bean 0.957, Fuchs and Tanner 1966); tealeaves default 0.97 (range 0.95 to 0.99; research notes/leaf_optics.md)"),
+    abaxial_conductance_share: (value: 0.875, unit: "-", source: "abaxial stomata about 7 times as many as adaxial in bean (Kanemasu and Tanner 1969, abstract; research notes/boundary_layer_wind.md)"),
     root_segment_length: (value: 2.0, unit: "cm", source: "model resolution (decision 0013)"),
     shoot_gravitropism: (value: 0.3, unit: "-", source: "~ (decision 0013)"),
     shade_senescence_days: (value: 5.0, unit: "day", source: "design plan §3.11"),
