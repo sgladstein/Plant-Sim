@@ -45,8 +45,9 @@ const T_SPAN_LOW: f64 = 20.0;
 const T_SPAN_HIGH: f64 = 25.0;
 /// Most gas-exchange evaluations per coupled solve.
 pub const MAX_EVALUATIONS: u32 = 8;
-/// Convergence of the coupled solve, K.
-pub const T_TOLERANCE: f64 = 0.01;
+/// Convergence of the coupled solve, K (0.01 until model 0.18; 0.05 halves the
+/// evaluations per class-table node for a node error of about 0.03 K).
+pub const T_TOLERANCE: f64 = 0.05;
 
 /// A species' leaf energy parameters.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
