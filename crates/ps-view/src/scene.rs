@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use ps_graph::{OrganId, OrganKind};
 use ps_mesh::{
     AxisKind, AxisSignature, AxisStyle, InstanceOptions, MeshData, Placement, TemplateKey, axes,
-    axis_mesh, build_template, instances, nodes_after_base,
+    axis_mesh, build_template_shaded, instances, nodes_after_base,
 };
 
 use crate::camera::CameraRig;
@@ -166,6 +166,7 @@ pub struct SceneIndex {
     lens: Option<Lens>,
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -174,7 +175,13 @@ pub(crate) fn setup_scene(
 ) {
     let templates = TemplateKey::all()
         .into_iter()
-        .map(|k| (k, meshes.add(to_bevy_mesh(&build_template(k), None))))
+        .map(|k| {
+            // Leaf veins and pale undersides as a grey vertex color that multiplies the
+            // organ's (or lens's) color.
+            let (m, shade) = build_template_shaded(k);
+            let grey: Vec<[f32; 4]> = shade.iter().map(|&g| [g, g, g, 1.0]).collect();
+            (k, meshes.add(to_bevy_mesh(&m, Some(&grey))))
+        })
         .collect();
     let vertex_color = materials.add(StandardMaterial {
         base_color: Color::WHITE,
@@ -236,18 +243,38 @@ pub(crate) fn setup_scene(
     // A low wooden deck under the pots, on gravel that fades into the horizon haze
     // (the fog), so there is no hard table edge against the sky.
     let floor = -PotSize::RHIZOBOX.soil_depth - 0.042;
-    let deck = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.40, 0.31, 0.24),
-        perceptual_roughness: 0.85,
-        reflectance: 0.2,
+    // Bench, lawn, pebbles and distant trees: vertex-colored, double-sided, rebuilt when
+    // the pot layout changes (crate::dressing).
+    let dressing_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 0.9,
+        reflectance: 0.15,
+        // No backface culling, and no normal flip on back faces: grass blades and
+        // leaves of the lawn keep their up-facing normals from either side.
+        double_sided: false,
+        cull_mode: None,
         ..default()
     });
+    let bench_mesh = meshes.add(colored(&crate::dressing::bench(Vec2::new(0.95, 0.42))));
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(deck),
-        Transform::from_xyz(0.0, floor - 0.015, 0.0).with_scale(Vec3::new(0.95, 0.03, 0.42)),
+        Mesh3d(bench_mesh.clone()),
+        MeshMaterial3d(dressing_material.clone()),
+        Transform::from_xyz(0.0, floor, 0.0),
         Floor::Deck,
     ));
+    let garden_mesh = meshes.add(colored(&ColoredMesh::default()));
+    commands.spawn((
+        Mesh3d(garden_mesh.clone()),
+        MeshMaterial3d(dressing_material),
+        Transform::from_xyz(0.0, floor - crate::dressing::BENCH_HEIGHT, 0.0),
+        Floor::Dressing,
+        // 20k grass blades in the shadow map cost time and speckle the lawn.
+        bevy::light::NotShadowCaster,
+    ));
+    commands.insert_resource(DressingMeshes {
+        bench: bench_mesh,
+        garden: garden_mesh,
+    });
     let g = crate::look::GROUND;
     let ground = materials.add(StandardMaterial {
         base_color: Color::linear_rgb(g[0], g[1], g[2]),
@@ -256,9 +283,9 @@ pub(crate) fn setup_scene(
         ..default()
     });
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(80.0, 80.0))),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(240.0, 240.0))),
         MeshMaterial3d(ground),
-        Transform::from_xyz(0.0, floor - 0.03, 0.0),
+        Transform::from_xyz(0.0, floor - crate::dressing::BENCH_HEIGHT, 0.0),
         Floor::Ground,
     ));
     index.root = Some(root);
@@ -269,6 +296,39 @@ pub(crate) fn setup_scene(
 pub(crate) enum Floor {
     Deck,
     Ground,
+    Dressing,
+}
+
+/// The bench and garden meshes, replaced when the pot layout changes.
+#[derive(Resource)]
+pub(crate) struct DressingMeshes {
+    bench: Handle<Mesh>,
+    garden: Handle<Mesh>,
+}
+
+/// The lawn, pebbles and trees around a bench of `size` (x, z).
+fn garden_dressing(size: Vec2) -> ColoredMesh {
+    let half = size * 0.5;
+    // Scale the lawn and tree ring with the layout: a 3 m trellis row is framed from
+    // about 16 m, so a fixed 13 m ring would stand around the camera.
+    let extent = half.max_element();
+    let lawn_radius = (2.5 * extent).max(4.5);
+    let ring = (6.0 * extent + 10.0).max(13.0);
+    let mut m = crate::dressing::lawn(half, lawn_radius);
+    for part in [
+        crate::dressing::pebbles(half),
+        crate::dressing::treeline(ring),
+    ] {
+        let base = m.mesh.vertex_count() as u32;
+        m.mesh.positions.extend_from_slice(&part.mesh.positions);
+        m.mesh.normals.extend_from_slice(&part.mesh.normals);
+        m.mesh.uvs.extend_from_slice(&part.mesh.uvs);
+        m.mesh
+            .indices
+            .extend(part.mesh.indices.iter().map(|i| i + base));
+        m.colors.extend_from_slice(&part.colors);
+    }
+    m
 }
 
 /// Deck center x, z (Bevy frame), size x, z and top height y for a set of pots.
@@ -307,7 +367,6 @@ fn spawn_pot(
         ))
         .id();
     let size = pot.size;
-    let overlay_mesh = meshes.add(colored(&ColoredMesh::default()));
     if !pot.container {
         // A plant sharing a plot's bed: the first plant's view draws the bed.
         let haze = commands.spawn((Transform::default(), ChildOf(entity))).id();
@@ -320,10 +379,12 @@ fn spawn_pot(
             axes: BTreeMap::new(),
             instances: BTreeMap::new(),
             overlay,
-            overlay_mesh,
+            // Never shown: only the container's view draws the soil overlay.
+            overlay_mesh: Handle::default(),
             overlay_state: None,
         };
     }
+    let overlay_mesh = meshes.add(colored(&ColoredMesh::default()));
     commands.spawn((
         Mesh3d(meshes.add(colored(&diorama::soil(size)))),
         MeshMaterial3d(assets.soil.clone()),
@@ -450,6 +511,7 @@ pub(crate) fn sync_scene(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rig: ResMut<CameraRig>,
     mut floors: Query<(&Floor, &mut Transform)>,
+    dressing: Option<Res<DressingMeshes>>,
 ) {
     let Some(root) = index.root else {
         return;
@@ -471,13 +533,16 @@ pub(crate) fn sync_scene(
             index.pots.push(scene);
         }
         if let Some((top, size)) = deck_layout(&garden.pots) {
+            if let Some(d) = &dressing {
+                let _ = meshes.insert(&d.bench, colored(&crate::dressing::bench(size)));
+                let _ = meshes.insert(&d.garden, colored(&garden_dressing(size)));
+            }
             for (floor, mut t) in &mut floors {
+                let ground = top.y - crate::dressing::BENCH_HEIGHT;
                 match floor {
-                    Floor::Deck => {
-                        t.translation = Vec3::new(top.x, top.y - 0.015, top.z);
-                        t.scale = Vec3::new(size.x, 0.03, size.y);
-                    }
-                    Floor::Ground => t.translation.y = top.y - 0.03,
+                    Floor::Deck => t.translation = top,
+                    Floor::Ground => t.translation.y = ground,
+                    Floor::Dressing => t.translation = Vec3::new(top.x, ground, top.z),
                 }
             }
         }

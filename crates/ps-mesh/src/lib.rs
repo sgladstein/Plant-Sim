@@ -41,7 +41,7 @@ pub use axes::{
 pub use instances::{Instance, InstanceOptions, droop_level, instances, leaf_form};
 pub use mesh::MeshData;
 pub use skeleton::{Coil, MAX_COPIES, Placement, Skeleton};
-pub use templates::{DROOP_LEVELS, Template, TemplateKey, build_template};
+pub use templates::{DROOP_LEVELS, Template, TemplateKey, build_template, build_template_shaded};
 pub use tube::{TubeNode, tube};
 
 #[cfg(test)]

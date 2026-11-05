@@ -12,6 +12,8 @@
 //! | Seed | semi-axes 0.5, 1, 1, centered | `(length, radius, radius)` |
 //! | Flower | length about 1 | `length` |
 //! | Bud | unit sphere | `radius` |
+//! | `GrassBlade` | arc length 1 along x, base width 1 | `(length, width, length)` |
+//! | `WheatEar` | length 1 along x, peak radius 1 | `(length, radius, radius)` |
 //!
 //! Leaf blades are two-sided: the back is a copy of the front with flipped normals and
 //! winding, so back-face culling shows the right side with the right lighting. Wilting
@@ -44,11 +46,15 @@ pub enum Template {
     Seed,
     /// Bud.
     Bud,
+    /// A grass blade: a long strap arching over toward its tip.
+    GrassBlade,
+    /// A wheat ear: two rows of plump spikelets with short awns.
+    WheatEar,
 }
 
 impl Template {
     /// All templates, in a fixed order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::Cotyledon,
         Self::Unifoliate,
         Self::Trifoliate,
@@ -56,12 +62,14 @@ impl Template {
         Self::Pod,
         Self::Seed,
         Self::Bud,
+        Self::GrassBlade,
+        Self::WheatEar,
     ];
 
     /// True for templates that have droop variants.
     #[must_use]
     pub fn droops(self) -> bool {
-        matches!(self, Self::Unifoliate | Self::Trifoliate)
+        matches!(self, Self::Unifoliate | Self::Trifoliate | Self::GrassBlade)
     }
 }
 
@@ -112,7 +120,119 @@ pub fn build_template(key: TemplateKey) -> MeshData {
             ellipsoid(&mut m, Vec3::ZERO, Vec3::ONE, 6, 8);
             m
         }
+        Template::GrassBlade => grass_blade(droop),
+        Template::WheatEar => wheat_ear(),
     }
+}
+
+/// How far a turgid grass blade's centerline turns down from base to tip, rad (the sim's
+/// `grass::BLADE_DROOP`).
+pub const BLADE_ARCH: f32 = 0.6;
+
+/// Blade area over length × base width for [`grass_blade`]'s `1 − u³` outline (the sim's
+/// `grass::BLADE_SHAPE`).
+pub const BLADE_SHAPE: f32 = 0.75;
+
+/// A two-sided grass blade of arc length 1 and base width 1 along x, its centerline turning
+/// down by [`BLADE_ARCH`] (more as it wilts), folded slightly along the midrib. Scale it
+/// by `(length, width, length)`.
+fn grass_blade(droop: f32) -> MeshData {
+    const NU: u32 = 16;
+    const NV: u32 = 4;
+    let arch = BLADE_ARCH + 1.2 * droop;
+    // Centerline points and directions by arc length.
+    let mut center = Vec::with_capacity(NU as usize + 1);
+    let mut p = Vec3::ZERO;
+    for i in 0..=NU {
+        let u = i as f32 / NU as f32;
+        let angle = -arch * u;
+        center.push((p, Vec3::new(angle.cos(), 0.0, angle.sin())));
+        let mid = -arch * (u + 0.5 / NU as f32);
+        p += Vec3::new(mid.cos(), 0.0, mid.sin()) / NU as f32;
+    }
+    let mut mesh = MeshData::new();
+    let points: Vec<Vec3> = (0..=NU)
+        .flat_map(|i| {
+            let (c, d) = center[i as usize];
+            let u = i as f32 / NU as f32;
+            let half = 0.5 * (1.0 - u * u * u);
+            let up = Vec3::Y.cross(d) * -1.0;
+            (0..=NV).map(move |j| {
+                let v = 2.0 * j as f32 / NV as f32 - 1.0;
+                // The margins stand a little above the midrib.
+                c + Vec3::Y * (v * half) + up * (0.12 * half * v.abs())
+            })
+        })
+        .collect();
+    let at = |i: u32, j: u32| points[(i * (NV + 1) + j) as usize];
+    let front = mesh.positions.len() as u32;
+    for i in 0..=NU {
+        for j in 0..=NV {
+            let du = at((i + 1).min(NU), j) - at(i.saturating_sub(1), j);
+            let dv = at(i, (j + 1).min(NV)) - at(i, j.saturating_sub(1));
+            let n = du.cross(dv).normalize_or(Vec3::Z);
+            let uv = Vec2::new(j as f32 / NV as f32, i as f32 / NU as f32);
+            mesh.push_vertex(at(i, j), n, uv);
+        }
+    }
+    let back = mesh.positions.len() as u32;
+    for k in front as usize..back as usize {
+        let (q, n, uv) = (mesh.positions[k], mesh.normals[k], mesh.uvs[k]);
+        mesh.push_vertex(Vec3::from(q), -Vec3::from(n), Vec2::from(uv));
+    }
+    for i in 0..NU {
+        for j in 0..NV {
+            let idx = |ii: u32, jj: u32| ii * (NV + 1) + jj;
+            let (a, b, c, d) = (idx(i, j), idx(i + 1, j), idx(i, j + 1), idx(i + 1, j + 1));
+            mesh.push_triangle(front + a, front + b, front + c);
+            mesh.push_triangle(front + b, front + d, front + c);
+            mesh.push_triangle(back + a, back + c, back + b);
+            mesh.push_triangle(back + b, back + c, back + d);
+        }
+    }
+    mesh
+}
+
+/// A wheat ear of length 1 along x and peak radius 1: spikelets alternating on two sides
+/// of the rachis, tapering at both ends, with short awns from the upper spikelets.
+fn wheat_ear() -> MeshData {
+    const SPIKELETS: u32 = 16;
+    let mut m = MeshData::new();
+    // The rachis.
+    let rachis = [
+        TubeNode {
+            position: Vec3::ZERO,
+            radius: 0.25,
+        },
+        TubeNode {
+            position: Vec3::X,
+            radius: 0.12,
+        },
+    ];
+    tube(&rachis, 6, true, Vec3::X, &mut m);
+    for k in 0..SPIKELETS {
+        let u = (k as f32 + 0.5) / SPIKELETS as f32;
+        // Fullest a third of the way up, smaller at the base and tip.
+        let size = (PI * u.powf(0.8)).sin().max(0.25);
+        let side = if k % 2 == 0 { 1.0 } else { -1.0 };
+        let c = Vec3::new(u * 0.95, side * 0.45 * size, 0.0);
+        ellipsoid(&mut m, c, Vec3::new(0.09, 0.55, 0.75) * size, 5, 7);
+        if u > 0.3 {
+            let tip = c + Vec3::new(0.22, side * 0.35, 0.0) * (0.6 + u);
+            let awn = [
+                TubeNode {
+                    position: c + Vec3::X * 0.05,
+                    radius: 0.05,
+                },
+                TubeNode {
+                    position: tip,
+                    radius: 0.01,
+                },
+            ];
+            tube(&awn, 3, false, Vec3::X, &mut m);
+        }
+    }
+    m
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -133,6 +253,15 @@ struct Leaflet {
     bend: f32,
     /// Cupping across the blade (z rise at the margin as a fraction of half-width).
     cup: f32,
+    /// Fold along the midrib: the halves rise in a shallow V (fraction of half-width).
+    fold: f32,
+    /// Margin waviness (z amplitude at the margin as a fraction of half-width).
+    wave: f32,
+    /// Asymmetry: the +y half is wider by this fraction, the −y half narrower
+    /// (lateral bean leaflets are lopsided, the outer half wider).
+    asym: f32,
+    /// Narrowing of the last 30% into a drawn-out tip (acuminate), 0 to 1.
+    acumen: f32,
 }
 
 /// Where a leaflet sits: its base point, yaw about z, pitch (positive = up).
@@ -143,23 +272,49 @@ struct Pose {
     pitch: f32,
 }
 
-const LEAFLET_U: u32 = 10;
-const LEAFLET_V: u32 = 4;
+const LEAFLET_U: u32 = 18;
+const LEAFLET_V: u32 = 6;
 
-/// Appends a two-sided leaflet and returns its one-sided area.
-fn leaflet(mesh: &mut MeshData, shape: Leaflet, pose: Pose) -> f32 {
+/// Brightness multiplier for a blade vertex at (u along, v across in −1..1): a pale
+/// midrib, faint pinnate veins, slightly darker margins, a lighter base. Front side; the
+/// underside is paler overall (abaxial surfaces of bean leaves are lighter).
+fn blade_shade(u: f32, v: f32, underside: bool) -> f32 {
+    let midrib = (1.0 - (v.abs() / 0.12)).max(0.0);
+    // Secondary veins run from the midrib toward the tip at about 45°.
+    let phase = (u * 6.0 - v.abs() * 1.1).rem_euclid(1.0);
+    let vein =
+        (1.0 - (phase - 0.5).abs() * 6.0).max(0.0) * (1.0 - v.abs()) * f32::from(u8::from(u < 0.9));
+    let margin = v.abs().powi(3);
+    let base = (1.0 - u * 4.0).max(0.0);
+    let s = 1.0 + 0.32 * midrib + 0.08 * vein - 0.16 * margin + 0.08 * base;
+    if underside { 1.18 * s } else { s }
+}
+
+/// Appends a two-sided leaflet and returns its one-sided area. `shade` gets one
+/// brightness multiplier per vertex (padded with 1 for vertices added before).
+fn leaflet(mesh: &mut MeshData, shade: &mut Vec<f32>, shape: Leaflet, pose: Pose) -> f32 {
     let peak_u = shape.a / (shape.a + shape.b);
     let peak = peak_u.powf(shape.a) * (1.0 - peak_u).powf(shape.b);
-    let half_width = |u: f32| 0.5 * shape.width * u.powf(shape.a) * (1.0 - u).powf(shape.b) / peak;
+    let half_width = |u: f32, v: f32| {
+        let tip = ((u - 0.7) / 0.3).max(0.0);
+        let side = 1.0 + shape.asym * v.signum();
+        0.5 * shape.width * u.powf(shape.a) * (1.0 - u).powf(shape.b) / peak
+            * (1.0 - shape.acumen * 0.55 * tip * tip)
+            * side
+    };
     let rotation = Quat::from_rotation_z(pose.yaw) * Quat::from_rotation_y(-pose.pitch);
     let nu = LEAFLET_U;
     let nv = 2 * LEAFLET_V;
     let local = |i: u32, j: u32| {
         let u = i as f32 / nu as f32;
         let v = 2.0 * j as f32 / nv as f32 - 1.0;
-        let w = half_width(u);
+        let w = half_width(u, v);
         let x = u * shape.length;
-        let z = -shape.bend * shape.length * u * u + shape.cup * w * v * v;
+        let envelope = 4.0 * u * (1.0 - u);
+        let z = -shape.bend * shape.length * u * u
+            + shape.cup * w * v * v
+            + shape.fold * w * v.abs()
+            + shape.wave * w * v * v * envelope * (u * 5.0 * PI + 0.7 * v.signum()).sin();
         Vec3::new(x, v * w, z)
     };
     let mut points = Vec::with_capacity(((nu + 1) * (nv + 1)) as usize);
@@ -179,6 +334,7 @@ fn leaflet(mesh: &mut MeshData, shape: Leaflet, pose: Pose) -> f32 {
             normals.push(rotation * n);
         }
     }
+    shade.resize(mesh.positions.len(), 1.0);
     let front = mesh.positions.len() as u32;
     for (k, p) in points.iter().enumerate() {
         let i = k as u32 / (nv + 1);
@@ -186,6 +342,7 @@ fn leaflet(mesh: &mut MeshData, shape: Leaflet, pose: Pose) -> f32 {
         let uv = Vec2::new(j as f32 / nv as f32, i as f32 / nu as f32);
         let n = normals[k];
         mesh.push_vertex(pose.base + rotation * *p, n, uv);
+        shade.push(blade_shade(uv.y, 2.0 * uv.x - 1.0, false));
     }
     let back = mesh.positions.len() as u32;
     for k in 0..points.len() {
@@ -193,6 +350,7 @@ fn leaflet(mesh: &mut MeshData, shape: Leaflet, pose: Pose) -> f32 {
         let n = -Vec3::from(mesh.normals[(front as usize) + k]);
         let uv = Vec2::from(mesh.uvs[(front as usize) + k]);
         mesh.push_vertex(p, n, uv);
+        shade.push(blade_shade(uv.y, 2.0 * uv.x - 1.0, true));
     }
     let mut area = 0.0;
     for i in 0..nu {
@@ -215,16 +373,44 @@ fn leaflet(mesh: &mut MeshData, shape: Leaflet, pose: Pose) -> f32 {
 
 /// Builds a leaf at droop 0..=1 and normalizes its flat blade area to 1 m².
 fn leaf(form: LeafForm, droop: f32) -> MeshData {
-    let (mut mesh, _) = leaf_raw(form, droop, false);
-    let (_, flat_area) = leaf_raw(form, 0.0, true);
+    leaf_shaded(form, droop).0
+}
+
+fn leaf_shaded(form: LeafForm, droop: f32) -> (MeshData, Vec<f32>) {
+    let (mut mesh, mut shade, _) = leaf_raw(form, droop, false);
+    let (_, _, flat_area) = leaf_raw(form, 0.0, true);
     if flat_area > 0.0 {
         mesh.scale(1.0 / flat_area.sqrt());
     }
-    mesh
+    shade.resize(mesh.positions.len(), 1.0);
+    (mesh, shade)
 }
 
-fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, f32) {
+/// Like [`build_template`], plus one brightness multiplier per vertex (leaf veins,
+/// margins and pale undersides; 1 everywhere for other templates). A renderer uploads
+/// it as a grey vertex color, which multiplies the organ's color.
+#[must_use]
+pub fn build_template_shaded(key: TemplateKey) -> (MeshData, Vec<f32>) {
+    let droop = if key.template.droops() {
+        f32::from(key.droop.min(DROOP_LEVELS - 1)) / f32::from(DROOP_LEVELS - 1)
+    } else {
+        0.0
+    };
+    match key.template {
+        Template::Unifoliate => leaf_shaded(LeafForm::Unifoliate, droop),
+        Template::Trifoliate => leaf_shaded(LeafForm::Trifoliate, droop),
+        _ => {
+            let m = build_template(key);
+            let n = m.vertex_count();
+            (m, vec![1.0; n])
+        }
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, Vec<f32>, f32) {
     let mut mesh = MeshData::new();
+    let mut shade = Vec::new();
     let leaflet_length = 1.0;
     let petiole = match form {
         LeafForm::Unifoliate => 0.35,
@@ -234,6 +420,8 @@ fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, f32) {
     let pitch = if flat { 0.0 } else { 0.17 - 1.1 * droop };
     let bend = if flat { 0.0 } else { 0.08 + 0.25 * droop };
     let cup = if flat { 0.0 } else { 0.06 };
+    let fold = if flat { 0.0 } else { 0.14 };
+    let wave = if flat { 0.0 } else { 0.07 };
     let petiole_rise = if flat {
         0.0
     } else {
@@ -253,20 +441,25 @@ fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, f32) {
     if !flat {
         tube(&petiole_nodes, 4, false, Vec3::X, &mut mesh);
     }
-    let shape = |length: f32, ratio: f32, a: f32| Leaflet {
+    let shape = |length: f32, ratio: f32, a: f32, asym: f32| Leaflet {
         length,
         width: length / ratio,
         a,
-        b: 1.25,
+        b: 1.1,
         bend,
         cup,
+        fold,
+        wave,
+        asym,
+        acumen: 1.0,
     };
     let mut area = 0.0;
     match form {
         LeafForm::Unifoliate => {
             area += leaflet(
                 &mut mesh,
-                shape(leaflet_length, 1.35, 0.45),
+                &mut shade,
+                shape(leaflet_length, 1.35, 0.45, 0.0),
                 Pose {
                     base: petiole_end,
                     yaw: 0.0,
@@ -298,7 +491,8 @@ fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, f32) {
             }
             area += leaflet(
                 &mut mesh,
-                shape(leaflet_length, 1.4, 0.6),
+                &mut shade,
+                shape(leaflet_length, 1.4, 0.6, 0.0),
                 Pose {
                     base: rachis_end,
                     yaw: 0.0,
@@ -306,19 +500,42 @@ fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, f32) {
                 },
             );
             for side in [1.0_f32, -1.0] {
+                // Lateral leaflets sit on short petiolules; their outer half is wider.
+                let yaw = side * 1.15;
+                let stalk = 0.07 * leaflet_length;
+                let base = petiole_end + Quat::from_rotation_z(yaw) * Vec3::new(stalk, 0.0, 0.0);
+                if !flat {
+                    tube(
+                        &[
+                            TubeNode {
+                                position: petiole_end,
+                                radius: radius * 0.5,
+                            },
+                            TubeNode {
+                                position: base,
+                                radius: radius * 0.6,
+                            },
+                        ],
+                        4,
+                        false,
+                        Vec3::X,
+                        &mut mesh,
+                    );
+                }
                 area += leaflet(
                     &mut mesh,
-                    shape(0.85 * leaflet_length, 1.5, 0.6),
+                    &mut shade,
+                    shape(0.85 * leaflet_length, 1.45, 0.6, -side * 0.18),
                     Pose {
-                        base: petiole_end,
-                        yaw: side * 1.15,
+                        base,
+                        yaw,
                         pitch: pitch - 0.1,
                     },
                 );
             }
         }
     }
-    (mesh, area)
+    (mesh, shade, area)
 }
 
 /// Appends an ellipsoid with semi-axes `radii` (x is the pole axis).
@@ -425,9 +642,15 @@ fn flower() -> MeshData {
         b: 0.6,
         bend: -0.1,
         cup: 0.25,
+        fold: 0.0,
+        wave: 0.0,
+        asym: 0.0,
+        acumen: 0.0,
     };
+    let mut shade = Vec::new();
     leaflet(
         &mut m,
+        &mut shade,
         petal(0.65),
         Pose {
             base: Vec3::new(0.3, 0.0, 0.05),
@@ -438,6 +661,7 @@ fn flower() -> MeshData {
     for side in [1.0_f32, -1.0] {
         leaflet(
             &mut m,
+            &mut shade,
             petal(0.45),
             Pose {
                 base: Vec3::new(0.3, 0.0, 0.0),

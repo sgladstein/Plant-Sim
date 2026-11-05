@@ -32,7 +32,7 @@ pub const HORIZON: [f32; 3] = [0.66, 0.63, 0.55];
 /// Zenith, linear RGB.
 pub const ZENITH: [f32; 3] = [0.22, 0.40, 0.72];
 /// Ground seen far away, linear RGB.
-pub const GROUND: [f32; 3] = [0.15, 0.14, 0.11];
+pub const GROUND: [f32; 3] = [0.085, 0.15, 0.045];
 
 fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     let t = t.clamp(0.0, 1.0);
@@ -182,9 +182,10 @@ pub fn camera_bundle(sky: &SkyImages) -> impl Bundle {
         },
         DistanceFog {
             color: Color::linear_rgb(HORIZON[0], HORIZON[1], HORIZON[2]),
+            // Trees at 13 to 22 m stay visible as soft shapes; the ground's edge is gone.
             falloff: FogFalloff::Linear {
-                start: 3.0,
-                end: 14.0,
+                start: 2.0,
+                end: 60.0,
             },
             ..default()
         },

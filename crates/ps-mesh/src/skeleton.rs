@@ -184,6 +184,9 @@ pub struct Skeleton {
     pub origin: Vec3,
     /// Placements by organ id (alive and dead).
     pub organs: Vec<Placement>,
+    /// For a grass: blade length over width, so leaves draw as blades and pods as ears.
+    /// `None` for a broadleaf.
+    pub blade_aspect: Option<f32>,
 }
 
 impl Skeleton {
@@ -262,7 +265,11 @@ impl Skeleton {
                 }
             })
             .collect();
-        let mut s = Self { origin, organs };
+        let mut s = Self {
+            origin,
+            organs,
+            blade_aspect: None,
+        };
         s.relayout();
         s
     }
@@ -344,6 +351,7 @@ impl Skeleton {
         let mut s = Self {
             origin: a.origin.lerp(b.origin, t),
             organs,
+            blade_aspect: b.blade_aspect,
         };
         s.relayout();
         s
