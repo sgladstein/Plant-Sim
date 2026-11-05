@@ -575,6 +575,13 @@ fn grow_soil(
         };
         l.phloem_import = h.phloem_import;
         l.organ_temperature = h.temperature;
+        // Plant ids are their positions in the plant list (sowing appends, nothing
+        // removes plants); a later change to that must not drop lens rows silently.
+        debug_assert!(
+            (l.plant as usize) < out.len(),
+            "plant id {} is not a position in the plant list",
+            l.plant
+        );
         if let Some(slot) = out.get_mut(l.plant as usize) {
             *slot = l;
         }
