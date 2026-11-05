@@ -582,3 +582,30 @@ fn jitter_is_deterministic_and_bounded() {
     let mean: f32 = (0..1000).map(|i| crate::jitter(i, 0)).sum::<f32>() / 1000.0;
     assert!(mean.abs() < 0.1, "{mean}");
 }
+
+#[test]
+fn root_copies_keep_their_depth() {
+    // A shallow lateral cohort on a sloping parent: copies must not rise out of the soil.
+    let mut s = Skeleton::from_arena(&small_plant(0.1), [0.0; 3]);
+    let root = s
+        .organs
+        .iter()
+        .position(|p| p.kind == OrganKind::Root)
+        .unwrap();
+    s.organs[root].direction = Vec3::new(1.0, 0.0, -0.1).normalize();
+    s.organs[root].copies = 6;
+    s.relayout();
+    for ax in axes(&s, true).iter().filter(|a| a.kind == AxisKind::Root) {
+        let nodes = crate::axis_nodes(&s, ax, AxisStyle::ROOT);
+        for t in crate::copy_transforms(&s, ax) {
+            for n in &nodes {
+                let q = t.transform_point3(n.position);
+                assert!(
+                    (q.z - n.position.z).abs() < 1e-6,
+                    "{q:?} vs {:?}",
+                    n.position
+                );
+            }
+        }
+    }
+}

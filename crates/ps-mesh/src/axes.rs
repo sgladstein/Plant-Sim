@@ -296,19 +296,17 @@ pub fn axis_nodes(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> Vec<Tub
 pub const GOLDEN_ANGLE: f32 = 2.399_963;
 
 /// Rotations that place the copies of a cohort axis: copy `k` turns `k` golden angles
-/// about the parent organ's direction, through the axis base (identity for copy 0).
+/// about the vertical through the axis base (identity for copy 0).
+///
+/// About the vertical, not the parent's direction: a copy then keeps every point at the
+/// depth the sim gives the cohort. Turning about a sloping parent swung copies of
+/// shallow laterals up out of the soil.
 #[must_use]
 pub fn copy_transforms(skeleton: &Skeleton, axis: &Axis) -> Vec<glam::Affine3A> {
-    let first = skeleton.get(axis.key());
-    let pivot = first.map_or(Vec3::ZERO, |p| p.base);
-    let about = first
-        .and_then(|p| p.parent)
-        .and_then(|pid| skeleton.get(pid))
-        .map_or(Vec3::Z, |p| p.direction)
-        .normalize_or(Vec3::Z);
+    let pivot = skeleton.get(axis.key()).map_or(Vec3::ZERO, |p| p.base);
     (0..axis.copies.max(1))
         .map(|k| {
-            let r = glam::Quat::from_axis_angle(about, f32::from(k) * GOLDEN_ANGLE);
+            let r = glam::Quat::from_rotation_z(f32::from(k) * GOLDEN_ANGLE);
             glam::Affine3A::from_translation(pivot)
                 * glam::Affine3A::from_quat(r)
                 * glam::Affine3A::from_translation(-pivot)
