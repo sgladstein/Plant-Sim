@@ -41,7 +41,7 @@ for whatever you pick up.
 | # | Decision | Context | Recommendation |
 | --- | --- | --- | --- |
 | 1 | **Sign off M0** (headless core) | Every M0 gate passes (decision 0018, later rechecked); the M0 exit summary is §4 of this file and STATUS "M0 exit". | Sign off. |
-| 2 | **Sun-vs-shade clip sign-off** (WP20, M1's designed moment) | Clip in [docs/archive/screens/sun-vs-shade-day4-90.mp4](archive/screens/sun-vs-shade-day4-90.mp4) and contact sheet `sun-vs-shade-contact-sheet.jpg` (re-encoded, smaller). Predates the fuller-plants look, so re-render it on current main first. | Re-render with `--timelapse`, then ask. |
+| 2 | **Sun-vs-shade clip sign-off** (WP20, M1's designed moment) | Clip in [docs/archive/screens/sun-vs-shade-day4-90.mp4](archive/screens/sun-vs-shade-day4-90.mp4) and contact sheet `sun-vs-shade-contact-sheet.jpg` (re-encoded, smaller). That clip only shows the WP19 time-lapse; WP20's moments (cotyledon unfolding, phototropic lean, wilting and recovery, flowering cue) are not built yet. | Build WP20, re-render with `--timelapse --clean`, then ask. |
 | 3 | **Pole bean height** | Owner chose 1.5 m by day 60, 2 m by day 75 (decision 0023). On four-seed means (model 0.10.0) the sim gives 1.38 m at d60 and 1.86 m at d75, with a wide seed spread; part of it is vines missing their stake. Confirm the target stands. | Keep the target; fix the capture sweep, then tune on seed means. |
 | 4 | **Dense wheat speed** | `m2/wheat_stand` costs ~110 ms per sim-day, can't play live. (a) fewer light sample points per grass blade, or (b) one light sample per tiller. Both change results. | (a), 7 to 3 points per blade ([docs/perf/handoff.md](perf/handoff.md)). |
 | 5 | **Does the public pre-release stay?** | v0.1.0-pre.1 is a public GitHub pre-release of the Windows build (owner approved publishing it). | Owner's call; keep it unless they object. |
@@ -77,7 +77,8 @@ for whatever you pick up.
   WP13 passed its frame-time gate on the GTX 1070 (re-run on final main is
   advisable: numbers predate #78). Open: WP20 "the moments" (not started; its
   done-when is the owner's sun-vs-shade clip sign-off), and the experiment and
-  model-card panels of WP17.
+  model-card panels of WP17. WP25's viewer side (harvest and cut, garden tools, seed
+  library, new-run dialog) is done (#76).
 - **M2 (plot and sandbox, WP21 to WP27): WP21 to WP25 done**; WP26 (save/load UI,
   replay markers, more lenses, carbon flow arrows) and WP27 (leaf energy balance) open.
   Pole bean (twining), spring wheat, nitrogen with nodules, harvest/prune/obstacles,
@@ -177,7 +178,10 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan \
 Useful app flags: `--day D`, `--lens NAME`, `--screenshot FILE`, `--charts`,
 `--inspect POT[:ORGAN]`, `--timelapse DIR --day D --to-day D --timelapse-hours 6-19`,
 `--clean`, `--focus POT --orbit YAW,PITCH --zoom F`, `--bench-frames N --bench-out
-X.csv`, `--window WxH`. See [docs/handoff-viewer.md](handoff-viewer.md).
+X.csv`, `--window WxH`, `--scenario FILE`, `--data DIR`, `--paused`, `--speed H`,
+`--demo` (stand-in plants), `--fps-cap N`. In the app, "New run…" picks a scenario,
+weather preset or file, latitude and sowing date. See
+[docs/handoff-viewer.md](handoff-viewer.md).
 
 Practical notes:
 - In a cloud container the full `cargo test --workspace` takes 20+ minutes; run it in
@@ -202,8 +206,11 @@ Practical notes:
 - Every shipped Windows build must use `--features static-dxc`. DX12 cold start
   falls from ~176 s to 5 to 9 s. Building it locally needs the Visual Studio ATL
   component (atls.lib); the owner's PC doesn't have it, so use the CI artifact.
-- Default backend on Windows: Vulkan (Mailbox, falling back to Fifo); DX12 only
-  without Vulkan.
+- Backend: wgpu picks Vulkan on the owner's PC, about 2x faster than DX12 there;
+  `WGPU_BACKEND=dx12` is the fallback. Present mode defaults to mailbox (Bevy falls
+  back to immediate, then FIFO), capped at twice the monitor refresh; `--fps-cap N`
+  changes the cap, 0 turns it off. FIFO showed ~30 ms spikes every ~14 frames on the
+  1070.
 - To cut a release: dispatch `prerelease.yml` on main with `run_id` = the id of the
   latest green `render` run on main and `tag` = the next tag (v0.1.0-pre.2, ...).
   The GitHub MCP has no create-release tool; this workflow is the way.
@@ -249,15 +256,19 @@ How they coordinated: Implementation messaged Review on each PR and Viewer when 
 change affected the snapshot; Review sent fixes back to Implementation; Performance
 sent findings to Implementation; Research sent WP-keyed findings to Implementation and
 checks to Review. Only one thread edits STATUS for a given WP. Shared write-ups went to
-a project folder that no longer exists; from now on put them in the repo (for example
-`docs/reviews/`).
+a project folder that no longer exists; from now on put them in the repo: reviews in
+`docs/reviews/`, new research in `docs/research/<topic>/` (as PR #83 does). Leave
+`docs/archive/` frozen.
 
 ## 9. Next steps, in order
 
 **Implementation (sim):**
 1. Make sure #81 (multi-seed validation) and the lateral-root PR (decision 0028) merged; if the root fix moved validation, record it in decision 0028 and STATUS.
 2. Re-tune "~" parameters on the four-seed mean; pole_height_day60,
-   drought_shoot_mass and others sit at band edges since the leaf-angle fix.
+   drought_shoot_mass and others sit at band edges since the leaf-angle fix. Fold
+   research items 1 to 4 ([handoff/research.md](handoff/research.md): gm/Vcmax basis,
+   a 7/25/33/42 °C development trapezoid, construction cost per organ, Medlyn g1)
+   into the same model bump, since they move the same calibration.
 3. Vine capture sweep: capture sweeps a fixed 6 cm, so with sowing scatter about 1
    pole bean in 16 never finds its stake. Batch the other variation-review items into
    the same model bump ([handoff/implementation.md](handoff/implementation.md) step 2).
@@ -272,9 +283,12 @@ a project folder that no longer exists; from now on put them in the repo (for ex
    within a light cell, transport vs priority, wheat stand too short, pod set reading
    N, uptake scaling, issue #58).
 
-**Viewer:** WP13 sign-off on final main on the owner's GPU, re-render and sign off
-the WP20 clip, time #78 on the 1070 (per-leaf petiole meshes add many draws), then
-the look follow-ups (leaf pose by age needs a sim change; plate view as a screenshot
+**Viewer:** build WP20 (the moments), then re-render the sun-vs-shade clip for the
+owner's sign-off; re-run the WP13 frame timing on final main on the 1070 (#72 lawn and
+#78 per-leaf petiole meshes are untimed); show `Plant::individual` (seed factor,
+emergence, azimuth) in the inspector (decision 0027); the rest of WP17 (experiment
+panel, model-card panel, assimilation and transpiration charts once the sim writes
+them to the daily rows); then the look follow-ups (leaf pose by age needs a sim change; plate view as a screenshot
 mode; canopy shade). Details in [handoff-viewer.md](handoff-viewer.md).
 
 **Performance:** profile the light fit after decision 0025; plot back under 20 ms;

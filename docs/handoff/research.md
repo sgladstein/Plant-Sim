@@ -39,7 +39,7 @@ Every claim in the reports and notes carries a tag:
   - algorithmicbotany.org PDFs, rdrr.io package docs, core.ac.uk open PDFs, Oregon State extension PDFs, maxapress, k-state.edu.
   - The Consensus, SciSpace and PubMed MCP search tools, for abstracts.
 - **Blocked or flaky:**
-  - The GitHub API and directory listings, so file names had to be guessed. dssat-csm-data experiment files (*.BNX/*.BNT) were never listed.
+  - The GitHub API and directory listings, so file names had to be guessed. A later session did fetch dssat-csm-data experiment files by name (now in `source-files/dssat-drybean-experiments/`).
   - The CRAN tarball, jsdelivr, Project Gutenberg via curl.
   - PubMed Central and PubMed HTML pages (captcha), the HAL archive (bot block).
   - Consensus rate limits: the account had 2 searches left on 2026-11-05 and resets 2026-12-01.
@@ -55,7 +55,7 @@ Every claim in the reports and notes carries a tag:
 2. **Development temperatures.** `t_base` 8 and `t_opt` 28 are still a single peak. CROPGRO, APSIM and field fits support a trapezoid of 7/25/33/42 °C, with every thermal-time target restated on base 7. This changes the phenology tuning, so it needs a decision record and a version bump. Item 7.
 3. **Construction cost.** It is still a single 1.25 g C/g C. The recommendation is per organ: leaf 1.36, stem 1.31, root 1.24, seed 1.40 (CROPGRO composition). Item 9.
 4. **Medlyn g1.** Still 4.0. CLM5 uses about 5.8 for C3 crops ([K, to verify]; no bean measurement found). Item 10.
-5. **Plot density response is weak.** Measured −25% against −70% (STATUS). Targets:
+5. **Plot density response is weak.** About −43% against −70% at the handoff (STATUS has the current figure). Targets:
    - LAI and leaf N per ground area plateau at 20 plants/m² or more, while leaf N per leaf area is unchanged (Clavijo 2019).
    - Plant-mass Gini rises with density only when light competition is on.
    - Per plant, pods, branches and leaf area fall strongly with density, while seeds per pod and seed mass barely change.
@@ -88,7 +88,7 @@ Every claim in the reports and notes carries a tag:
   - Bean–weed Cousens I and A parameters. The critical period for weed control runs from about V1/16 days to R1/39 days, and uncontrolled weeds cost 31 to 94% of yield.
   - Intercrop land equivalent ratios beyond milpa (about 1.34): bean with grass.
 - **Validation data still missing:**
-  - An open per-organ weekly time series for bush or snap bean. The best lead is the DSSAT Drybean experiment files in DSSAT/dssat-csm-data, which need GitHub listing access.
+  - An open per-organ weekly time series for bush or snap bean. Some DSSAT Drybean experiments were fetched later and are in `source-files/dssat-drybean-experiments/` (see `notes/dssat_bean_timeseries.md`). A snap-bean or temperate bush-bean series is still missing.
   - Per-plant masses from a density trial.
   - Digitized figures from Clavijo 2019 and Pinzón-Sandoval 2024.
 - **M4 tree:** not researched yet. Round 1 has the Palubicki shadow-propagation and Borchert-Honda λ notes only.
