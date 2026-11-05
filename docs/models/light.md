@@ -34,12 +34,20 @@ Daily (§3.2 daily step 6), in crate `ps-light`:
   standard overcast sky (CIE, Moon and Spencer) has radiance `L(β) ∝ (1 + 2 sin β)/3`;
   a band's weight is `∫ L sin β cos β dβ` over the band, and its direction is the
   weight-averaged elevation (30.50° and 62.01°). Weights sum to 1.
+- **Diffuse absorbed by a random leaf.** Per unit leaf area of a randomly oriented
+  leaf, absorbed diffuse flux is `G ∫ L dΩ`, not the horizontal irradiance `∫ L sin β dΩ`.
+  Each sector gets an absorption weight `a_s = ∫_band L cos β dβ / 8 ÷ ∫_hemisphere L sin β
+  cos β dβ` (sum 12/7 for the overcast sky), and
+  `T_dif,abs = G Σ_s a_s · mean over origins of exp(−τ(p, d_s))`, which is
+  `(12/7) G = 0.857` in the open for G = 0.5. The rays use the same 16 directions as
+  `T_dif`.
 - **Red:far-red.** `R:FR = clamp(1.2 · exp(−0.5 · LAI_above), 0.2, 1.2)`, with
   `LAI_above = Σ (LAD_c − LAD_own,c) ℓ_c` straight up from the leaf center.
 
 Hourly (§3.2 hourly step 3), `absorbed_par`, per unit leaf area:
 
-- `I_dif,abs = T_dif · I_dif · f_PAR · q · α`
+- `I_dif,abs = T_dif,abs · I_dif · f_PAR · q · α` (same random-orientation convention as
+  the beam)
 - `I_beam,abs = G · I_dir / max(sin β, 0.05) · f_PAR · q · α` (horizontal direct
   irradiance converted to flux normal to the beam, times the mean projection `G`)
 - sunlit part (fraction `T_dir,h`): `I_dif,abs + I_beam,abs`; shaded part: `I_dif,abs`.
@@ -68,7 +76,7 @@ elevation; `α`: leaf PAR absorptance; `f_PAR`, `q` below.
 | in | leaf center, area, blade normal | m, m², 1 | organ graph (ps-graph) |
 | in | hourly sun direction | unit vector | ps-weather solar position |
 | in | direct and diffuse irradiance | W m⁻² | ps-weather hourly series |
-| out | 24 direct coefficients, diffuse coefficient, R:FR | 1 | `LightCoeffs` on each leaf |
+| out | 24 direct coefficients, diffuse coefficient (lenses), absorbed-diffuse coefficient, R:FR | 1 | `LightCoeffs` on each leaf |
 | out | absorbed PAR, sunlit and shaded | µmol m⁻² s⁻¹ | gas exchange (WP7) |
 
 ## Encoded or emergent
@@ -80,8 +88,18 @@ interception as it grows, and shade between neighboring plants.
 ## Known limits
 - Leaves are discs; real bean leaflets are ovate. Stems and pods do not cast shade yet.
 - Within a cell, the model does not know which leaf is on top: two leaflets that overlap
-  inside one cell layer shade each other partly instead of one shading the other fully.
-  That is where most per-leaf error against the ray tracer comes from.
+  inside one cell layer shade each other partly instead of one shading the other fully
+  (leaves in one cell combine as a Poisson product). That is where most per-leaf error
+  against the ray tracer comes from.
+- The one-blade extinction is exact for vertical rays only: a slanted ray gets
+  `(1 − G ΔL)^(1/sin β)` where one blade would give `1 − G ΔL / sin β`.
+- Both effects make the model too bright, not noisy: the seven largest per-leaf errors
+  are all positive and the plant total is +2.9%. If WP12 tuning needs a direction, the
+  model overestimates light inside the canopy.
+- The absorbed-diffuse weights are exact band integrals, but their rays use the
+  irradiance-weighted band elevations rather than the radiance-weighted ones.
+- The beam uses the mean projection G, not each leaf's own normal; heliotropism cannot
+  matter yet.
 - No scattering: light reflected or transmitted by leaves is ignored, so deep shade is a
   little too dark. Fine for M0; revisit if gas exchange in deep shade looks low.
 - Coefficients are computed once a day; leaf movement within the day is ignored.
@@ -97,9 +115,12 @@ interception as it grows, and shade between neighboring plants.
   leaflet, 57 leaflets with random spherical normals, 5 sun positions and the 16 sky
   directions). The per-leaf light index is the mean of the direct coefficients and the
   diffuse coefficient. Measured: plant total +2.9% (target 3%, met); 55 of 57 leaflets
-  within 0.10 absolute (target all 57, missed: worst 0.142); RMS 0.047. See decision 0008.
+  within 0.10 absolute (target all 57; owner accepted 95% for M0, worst 0.142); RMS
+  0.047; 48 of 57 within max(0.05, 10% relative), reported but not gated. The test also
+  prints each leaf's worst single sun direction. See decision 0008.
 - `isolated_leaf_is_fully_lit`, `leaf_under_another_is_shaded`, `grid_respects_limits`,
-  `sky_weights_sum_to_one`, `rfr_proxy`, `absorbed_par_splits_sunlit_and_shaded`,
+  `sky_weights_sum_to_one` (also checks the absorption weights sum to 12/7),
+  `ray_from_below_the_grid_enters_it`, `rfr_proxy`, `absorbed_par_splits_sunlit_and_shaded`,
   `fixture_sky_directions_match_sky_sectors`.
 
 ## References

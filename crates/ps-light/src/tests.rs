@@ -87,6 +87,8 @@ fn isolated_leaf_is_fully_lit() {
     assert!((c[0].direct[8] - 1.0).abs() < 1e-12);
     assert!(c[0].direct[0].abs() < 1e-15, "night");
     assert!((c[0].diffuse - 1.0).abs() < 1e-12);
+    // A random leaf in the open under an overcast sky: (12/7) G of horizontal diffuse.
+    assert!((c[0].diffuse_absorbed - 12.0 / 7.0 * 0.5).abs() < 1e-4);
     assert!((c[0].rfr - 1.2).abs() < 1e-12);
 }
 
@@ -167,8 +169,26 @@ fn sky_weights_sum_to_one() {
         let norm = x.direction.iter().map(|v| v * v).sum::<f64>();
         assert!((norm - 1.0).abs() < 1e-12 && x.direction[2] > 0.0);
     }
+    // Radiance times solid angle over horizontal irradiance: ∫(1+2 sin β) cos β dβ = 2
+    // over ∫(1+2 sin β) sin β cos β dβ = 7/6, so 12/7 (midpoint rule to 1e-5).
+    let abs_sum: f64 = s.iter().map(|x| x.absorb_weight).sum();
+    assert!((abs_sum - 12.0 / 7.0).abs() < 1e-5, "{abs_sum}");
     // The upper band carries more of the horizontal irradiance under an overcast sky.
     assert!(s[8].weight > s[0].weight);
+}
+
+#[test]
+fn ray_from_below_the_grid_enters_it() {
+    // A leaf layer at mid-height; a ray from below the grid must still cross it.
+    let (g, _) = uniform_canopy(4, 2, 0.04, 2.0);
+    let inside = g.path_lad([0.08, 0.08, 0.0], [0.0, 0.0, 1.0], &[]);
+    let below = g.path_lad([0.08, 0.08, -0.05], [0.0, 0.0, 1.0], &[]);
+    assert!(
+        (inside - below).abs() < 1e-6 && below > 1.9,
+        "{inside} vs {below}"
+    );
+    // A ray that misses the box crosses nothing.
+    assert!(g.path_lad([1.0, 1.0, -0.05], [0.0, 0.0, 1.0], &[]).abs() < 1e-15);
 }
 
 #[test]
@@ -182,13 +202,14 @@ fn rfr_proxy() {
 fn absorbed_par_splits_sunlit_and_shaded() {
     let mut c = LightCoeffs {
         diffuse: 0.8,
+        diffuse_absorbed: 0.7,
         ..LightCoeffs::default()
     };
     c.direct[12] = 0.6;
     let a = absorbed_par(&c, 12, WPerM2(500.0), WPerM2(100.0), 1.0, 0.5, 0.85);
     let k = PAR_FRACTION * UMOL_PER_J_PAR * 0.85;
-    assert!((a.shaded.0 - 0.8 * 100.0 * k).abs() < 1e-9);
-    assert!((a.sunlit.0 - (0.8 * 100.0 + 0.5 * 500.0) * k).abs() < 1e-9);
+    assert!((a.shaded.0 - 0.7 * 100.0 * k).abs() < 1e-9);
+    assert!((a.sunlit.0 - (0.7 * 100.0 + 0.5 * 500.0) * k).abs() < 1e-9);
     assert!((a.sunlit_fraction - 0.6).abs() < 1e-15);
     let night = absorbed_par(&c, 0, WPerM2(0.0), WPerM2(0.0), -0.3, 0.5, 0.85);
     assert!(night.mean().0.abs() < 1e-15);

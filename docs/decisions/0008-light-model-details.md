@@ -55,6 +55,22 @@ total and up to 0.22 off on single leaves.
   tighten the test bounds if the strict target then passes, and otherwise bring it back
   to the owner (a close-neighbor correction is the candidate fix).
 
+## Addendum after the WP6 review (2026-11-05)
+- **Diffuse absorption convention (equation change).** The beam used G times the
+  beam-normal flux (a randomly oriented leaf), but the diffuse part used the horizontal
+  diffuse irradiance (a horizontal leaf), so diffuse PAR was 17% high. `LightCoeffs`
+  gains `diffuse_absorbed = G Σ a_s T_s` with absorption weights from radiance times
+  solid angle (sum 12/7), and `absorbed_par` uses it. `diffuse` (sum-to-1 weights) stays
+  for lenses. No golden hashes exist yet, so nothing to regenerate.
+- **Rays from outside the grid.** A ring origin of a tilted blade can lie outside the
+  box; such rays are now advanced to where they enter it instead of counting as fully
+  lit. Padding the box's z extent by the leaf radius was tried first; it shifts the grid
+  phase and moved the plant total from +2.92% to +3.05%. So the 3% total is met with
+  about 0.1% margin and depends on grid alignment at that level; WP12's re-measure on a
+  sim plant decides it.
+- Diagnostics: the test prints each leaf's worst single sun direction and the count
+  within max(0.05, 10% relative) (48 of 57), without gating on either.
+
 ## Consequences
 - Model minor version: first light model, no golden hashes yet.
 - `LightGrid` stores G and an optical depth grid; `coefficients` reads G from the grid.
