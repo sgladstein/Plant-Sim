@@ -202,6 +202,7 @@ impl SimSource {
             SessionOptions {
                 speed,
                 paused: true,
+                lens: true,
                 ..SessionOptions::default()
             },
         )?;
@@ -684,7 +685,7 @@ fn show(
                 match src.lens_values.get(&p.id) {
                     Some((k, v)) if *k == key => v.clone(),
                     _ => {
-                        let v = organ_values(
+                        let mut v = organ_values(
                             p,
                             tick,
                             &day_weather,
@@ -692,6 +693,11 @@ fn show(
                             info.radiation_fraction,
                             high_speed,
                         );
+                        let recorded = snap
+                            .lens
+                            .as_deref()
+                            .and_then(|l| l.plants.iter().find(|x| x.plant == p.id));
+                        v.extend(recorded_values(p, recorded));
                         src.lens_values.insert(p.id, (key, v.clone()));
                         v
                     }
@@ -743,6 +749,37 @@ fn season(month: u32) -> &'static str {
         9..=11 => "autumn",
         _ => "winter",
     }
+}
+
+/// The WP26 lens values of one plant from the session's lens data, by organ: the
+/// plant's relative light on every living organ, and each organ's temperature,
+/// nitrogen concentration and phloem import (mg C per hour). Organs the data does not
+/// cover are NaN.
+fn recorded_values(p: &PlantEntry, lens: Option<&ps_session::PlantLens>) -> LensValues {
+    let a = &p.plant.arena;
+    let n = a.len();
+    let nan = || vec![f32::NAN; n];
+    let (mut share, mut temp, mut nitrogen, mut flow) = (nan(), nan(), nan(), nan());
+    if let Some(l) = lens {
+        for i in (0..n).filter(|&i| a.alive[i]) {
+            share[i] = l.relative_light as f32;
+            if let Some(t) = l.organ_temperature.get(i) {
+                temp[i] = t.0 as f32;
+            }
+            if let Some(&c) = l.organ_n.get(i).filter(|c| **c > 0.0) {
+                nitrogen[i] = c as f32;
+            }
+            if let Some(f) = l.phloem_import.get(i) {
+                flow[i] = (f.0 * 1000.0) as f32;
+            }
+        }
+    }
+    BTreeMap::from([
+        (Lens::Competition, share),
+        (Lens::Temperature, temp),
+        (Lens::Nitrogen, nitrogen),
+        (Lens::CarbonFlow, flow),
+    ])
 }
 
 /// Lens values for one plant, by organ.

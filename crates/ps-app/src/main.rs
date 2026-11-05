@@ -25,7 +25,7 @@
 //! `scenarios/two_pot_sun_shade.ron`); `--data` overrides the search for `data/`.
 //!
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
-//! soil-water, plant-water, roots, carbon, phenology, shade. `--charts` opens the
+//! soil-water, plant-water, roots, carbon, phenology, shade, competition, temperature, nitrogen, carbon-flow. `--charts` opens the
 //! charts panel. `--inspect POT[:ORGAN]` selects a plant or an organ for the inspector.
 //! `--experiment CARD` starts the experiment card `CARD` (an id under
 //! `data/experiments`) instead of `--scenario`; its notebook goes under `--captures`.
@@ -144,6 +144,10 @@ fn parse_lens(name: &str) -> Result<Lens> {
         "carbon" => Lens::Carbon,
         "phenology" => Lens::Phenology,
         "shade" => Lens::ShadeSignal,
+        "competition" => Lens::Competition,
+        "temperature" => Lens::Temperature,
+        "nitrogen" => Lens::Nitrogen,
+        "carbon-flow" => Lens::CarbonFlow,
         other => bail!("unknown lens {other:?}"),
     })
 }

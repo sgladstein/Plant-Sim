@@ -16,6 +16,7 @@
     clippy::cast_sign_loss
 )]
 
+pub mod arrows;
 pub mod camera;
 pub mod diorama;
 pub mod dressing;
@@ -85,6 +86,9 @@ impl Plugin for PlantViewPlugin {
                     .chain()
                     .in_set(ViewSet::Sync),
             )
+            .init_gizmo_group::<arrows::FlowGizmos>()
+            .add_systems(Startup, arrows::configure)
+            .add_systems(Update, arrows::flow_arrows.in_set(ViewSet::Present))
             .add_systems(
                 Update,
                 (
