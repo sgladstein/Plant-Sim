@@ -14,6 +14,7 @@
 //! - Left panel: the model card (§5.7) opened from a lens legend or an inspector value.
 //! - A custom theme so the panels match the diorama rather than a debug tool (§4).
 
+mod breeding;
 mod charts;
 mod experiment;
 mod inspector;
@@ -21,6 +22,7 @@ mod model_cards;
 mod saves;
 mod tools;
 
+pub use breeding::{BenchResults, Breeding, Coat, LibraryRow, MAX_POTS, Request, ResultRow, Trait};
 pub use charts::{Chart, Charts, Series, nearest, nice_max};
 pub use experiment::{CardRow, Experiment, ExperimentSetup, Running, Variable, held_same};
 pub use inspector::{Field, Inspector};
@@ -130,7 +132,10 @@ impl Plugin for PlantUiPlugin {
             .init_resource::<ModelCards>()
             .init_resource::<Experiment>()
             .init_resource::<SaveLoad>()
-            .add_systems(EguiPrimaryContextPass, panels)
+            .add_systems(
+                EguiPrimaryContextPass,
+                (panels, breeding::window_system).chain(),
+            )
             .add_systems(PreUpdate, block_camera_under_panels);
     }
 }
@@ -481,6 +486,13 @@ fn run_buttons(
         .clicked()
     {
         experiment.open = true;
+    }
+    if ui
+        .button("Breeding…")
+        .on_hover_text("Grow saved seeds side by side, cross them and keep the best")
+        .clicked()
+    {
+        tools.breeding = true;
     }
     if ui
         .button("Save")
