@@ -84,12 +84,17 @@ impl Orientation {
 pub struct LightCoeffs {
     /// Probability the leaf is sunlit at each of the 24 hourly sun positions.
     pub direct: [f64; 24],
+    /// The leaf's projection toward the sun at each hour, `|n · s|` for blade normal
+    /// `n`, averaged over its sunlit leaflets: the beam it absorbs per unit leaf area
+    /// as a share of the beam's flux normal to the sun (decision 0025).
+    #[serde(default)]
+    pub beam: [f64; 24],
     /// Diffuse-sky transmittance to the leaf: the share of horizontal diffuse
     /// irradiance that would reach a horizontal surface at the leaf (1 in the open).
     pub diffuse: f64,
-    /// Diffuse irradiance absorbed per unit leaf area of a randomly oriented leaf, as a
-    /// share of horizontal diffuse irradiance before absorptance (`12/7 · G` in the open
-    /// under an overcast sky).
+    /// Diffuse irradiance absorbed per unit leaf area, from the leaf's own projection
+    /// toward each sky sector, as a share of horizontal diffuse irradiance before
+    /// absorptance (about 1 for a horizontal leaf in the open, decision 0025).
     pub diffuse_absorbed: f64,
     /// Sunlit fraction for the current hour.
     pub sunlit_fraction: f64,
@@ -101,6 +106,7 @@ impl Default for LightCoeffs {
     fn default() -> Self {
         Self {
             direct: [0.0; 24],
+            beam: [0.0; 24],
             diffuse: 0.0,
             diffuse_absorbed: 0.0,
             sunlit_fraction: 0.0,

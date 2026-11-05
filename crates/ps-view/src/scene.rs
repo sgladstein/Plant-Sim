@@ -24,7 +24,7 @@ use ps_mesh::{
 
 use crate::camera::CameraRig;
 use crate::diorama::{self, ColoredMesh};
-use crate::garden::{Garden, PotSize, PotView, natural_color};
+use crate::garden::{Garden, ObstacleView, PotSize, PotView, SupportView, natural_color};
 use crate::lens::Lens;
 use crate::toon::{Style, Toon, toon, toon_background};
 
@@ -151,6 +151,9 @@ struct PotScene {
     size: PotSize,
     /// Whether this scene draws the container (see `PotView::container`).
     container: bool,
+    /// Supports and obstacles drawn with the container; a change respawns it.
+    supports: Vec<SupportView>,
+    obstacles: Vec<ObstacleView>,
     axes: BTreeMap<OrganId, AxisEntity>,
     instances: BTreeMap<OrganId, InstanceEntity>,
     overlay: Entity,
@@ -166,14 +169,22 @@ pub struct SceneIndex {
     lens: Option<Lens>,
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub(crate) fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut toons: ResMut<Assets<Toon>>,
     mut index: ResMut<SceneIndex>,
+    backdrop: Res<crate::look::Backdrop>,
 ) {
+    let plate = *backdrop == crate::look::Backdrop::Plate;
+    // The plate hides the bench and garden; the pots stand on the paper.
+    let dressing_visibility = if plate {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    };
     let templates = TemplateKey::all()
         .into_iter()
         .map(|k| {
@@ -263,6 +274,7 @@ pub(crate) fn setup_scene(
         MeshMaterial3d(dressing_material.clone()),
         Transform::from_xyz(0.0, floor, 0.0),
         Floor::Deck,
+        dressing_visibility,
     ));
     let garden_mesh = meshes.add(colored(&ColoredMesh::default()));
     let background_material = toons.add(toon_background(StandardMaterial {
@@ -278,6 +290,7 @@ pub(crate) fn setup_scene(
         MeshMaterial3d(background_material),
         Transform::from_xyz(0.0, floor - crate::dressing::BENCH_HEIGHT, 0.0),
         Floor::Dressing,
+        dressing_visibility,
         // 20k grass blades in the shadow map cost time and speckle the lawn.
         bevy::light::NotShadowCaster,
     ));
@@ -285,7 +298,11 @@ pub(crate) fn setup_scene(
         bench: bench_mesh,
         garden: garden_mesh,
     });
-    let g = crate::look::GROUND;
+    let g = if plate {
+        crate::look::PAPER
+    } else {
+        crate::look::GROUND
+    };
     let ground = toons.add(toon_background(StandardMaterial {
         base_color: Color::linear_rgb(g[0], g[1], g[2]),
         perceptual_roughness: 1.0,
@@ -295,7 +312,7 @@ pub(crate) fn setup_scene(
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(240.0, 240.0))),
         MeshMaterial3d(ground),
-        Transform::from_xyz(0.0, floor - crate::dressing::BENCH_HEIGHT, 0.0),
+        Transform::from_xyz(0.0, floor - backdrop.ground_drop(), 0.0),
         Floor::Ground,
     ));
     index.root = Some(root);
@@ -368,6 +385,7 @@ fn spawn_pot(
     assets: &SceneAssets,
     root: Entity,
     pot: &PotView,
+    ground: f32,
 ) -> PotScene {
     let entity = commands
         .spawn((
@@ -386,6 +404,8 @@ fn spawn_pot(
             haze,
             size,
             container: false,
+            supports: Vec::new(),
+            obstacles: Vec::new(),
             axes: BTreeMap::new(),
             instances: BTreeMap::new(),
             overlay,
@@ -415,6 +435,21 @@ fn spawn_pot(
             ChildOf(entity),
         ));
     }
+    // Boards take the toon vertex-color material; shade cloth stays translucent haze.
+    for cloth in [false, true] {
+        if pot.obstacles.iter().any(|o| o.is_cloth() == cloth) {
+            let mut e = commands.spawn((
+                Mesh3d(meshes.add(colored(&diorama::obstacles(&pot.obstacles, cloth, ground)))),
+                Transform::default(),
+                ChildOf(entity),
+            ));
+            if cloth {
+                e.insert(MeshMaterial3d(assets.haze.clone()));
+            } else {
+                e.insert(MeshMaterial3d(assets.vertex_color.clone()));
+            }
+        }
+    }
     commands.spawn((
         Mesh3d(meshes.add(to_bevy_mesh(&diorama::glass(size), None))),
         MeshMaterial3d(assets.glass.clone()),
@@ -443,6 +478,8 @@ fn spawn_pot(
         haze,
         size,
         container: true,
+        supports: pot.supports.clone(),
+        obstacles: pot.obstacles.clone(),
         axes: BTreeMap::new(),
         instances: BTreeMap::new(),
         overlay,
@@ -454,20 +491,35 @@ fn spawn_pot(
 /// Illustrated style: leaves deep in the canopy are darker and cooler, sunlit outer
 /// leaves lighter and warmer, from each leaf's own absorbed light in the sim (true value
 /// layering, where games fake it with a shell gradient).
-fn canopy_shade(pot: &PotView, i: usize, p: &Placement, rgb: [f32; 3]) -> [f32; 3] {
-    if p.kind != OrganKind::Leaf {
+fn canopy_shade(pot: &PotView, i: usize, p: &Placement, brightest: f32, rgb: [f32; 3]) -> [f32; 3] {
+    // Below a little light (dusk, night) every leaf is equally dim; leave the sun's
+    // own falloff to the shader instead of darkening the whole plant twice.
+    if p.kind != OrganKind::Leaf || brightest < 20.0 {
         return rgb;
     }
     let Some(par) = pot.organ_value(Lens::Light, i).filter(|v| v.is_finite()) else {
         return rgb;
     };
-    let t = (par / 1200.0).clamp(0.0, 1.0).sqrt();
-    let k = 0.55 + 0.5 * t;
+    // Relative to the plant's brightest leaf, so the shade pattern holds at any hour.
+    let t = (par / brightest).clamp(0.0, 1.0).sqrt();
+    let k = 0.55 + 0.45 * t;
     [
-        rgb[0] * k * (0.92 + 0.12 * t),
+        rgb[0] * k * (0.92 + 0.08 * t),
         rgb[1] * k,
-        rgb[2] * k * (1.12 - 0.15 * t),
+        rgb[2] * k * (1.12 - 0.12 * t),
     ]
+}
+
+/// The most PAR any live leaf of `pot` absorbs this hour.
+fn brightest_leaf(pot: &PotView) -> f32 {
+    pot.skeleton
+        .organs
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.kind == OrganKind::Leaf && p.alive)
+        .filter_map(|(i, _)| pot.organ_value(Lens::Light, i))
+        .filter(|v| v.is_finite())
+        .fold(0.0, f32::max)
 }
 
 /// The color of organ `i` of `pot` under `lens`, and whether it is a lens value.
@@ -542,6 +594,7 @@ pub(crate) fn sync_scene(
     mut floors: Query<(&Floor, &mut Transform)>,
     dressing: Option<Res<DressingMeshes>>,
     style: Res<Style>,
+    backdrop: Res<crate::look::Backdrop>,
 ) {
     let Some(root) = index.root else {
         return;
@@ -549,26 +602,29 @@ pub(crate) fn sync_scene(
     let lens = *lens;
     // Pots are static; respawn everything if their number or sizes change.
     let layout_changed = index.pots.len() != garden.pots.len()
-        || index
-            .pots
-            .iter()
-            .zip(&garden.pots)
-            .any(|(s, p)| s.size != p.size || s.container != p.container);
+        || index.pots.iter().zip(&garden.pots).any(|(s, p)| {
+            s.size != p.size
+                || s.container != p.container
+                || (p.container && (s.supports != p.supports || s.obstacles != p.obstacles))
+        });
     if layout_changed {
         for p in index.pots.drain(..) {
             commands.entity(p.entity).despawn();
         }
+        let layout = deck_layout(&garden.pots);
+        // The lawn below the soil surface, so walls and cloth posts stand on it.
+        let ground = layout.map_or(-1.0, |(top, _)| top.y - backdrop.ground_drop());
         for pot in &garden.pots {
-            let scene = spawn_pot(&mut commands, &mut meshes, &assets, root, pot);
+            let scene = spawn_pot(&mut commands, &mut meshes, &assets, root, pot, ground);
             index.pots.push(scene);
         }
-        if let Some((top, size)) = deck_layout(&garden.pots) {
+        if let Some((top, size)) = layout {
             if let Some(d) = &dressing {
                 let _ = meshes.insert(&d.bench, colored(&crate::dressing::bench(size)));
                 let _ = meshes.insert(&d.garden, colored(&garden_dressing(size)));
             }
             for (floor, mut t) in &mut floors {
-                let ground = top.y - crate::dressing::BENCH_HEIGHT;
+                let ground = top.y - backdrop.ground_drop();
                 match floor {
                     Floor::Deck => t.translation = top,
                     Floor::Ground => t.translation.y = ground,
@@ -633,6 +689,10 @@ pub(crate) fn sync_scene(
         }
         for s in &pot.supports {
             grow(c + Vec3::new(s.base[0], s.base[1], s.height + 0.05));
+        }
+        for o in &pot.obstacles {
+            grow(c + Vec3::from(o.min));
+            grow(c + Vec3::from(o.max));
         }
 
         // Axes.
@@ -710,6 +770,12 @@ pub(crate) fn sync_scene(
             ..InstanceOptions::default()
         };
         let list = instances(&pot.skeleton, options);
+        let shade_canopy = *style == Style::Illustrated && lens == Lens::Off;
+        let brightest = if shade_canopy {
+            brightest_leaf(pot)
+        } else {
+            0.0
+        };
         let mut alive = Vec::with_capacity(list.len());
         for inst in &list {
             alive.push(inst.organ);
@@ -717,8 +783,8 @@ pub(crate) fn sync_scene(
                 continue;
             };
             let (mut rgb, glow) = organ_color(pot, lens, inst.organ.index(), p);
-            if *style == Style::Illustrated && lens == Lens::Off {
-                rgb = canopy_shade(pot, inst.organ.index(), p, rgb);
+            if shade_canopy {
+                rgb = canopy_shade(pot, inst.organ.index(), p, brightest, rgb);
             }
             let (material, color) = assets.material(&mut materials, rgb, glow);
             let transform = Transform {

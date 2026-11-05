@@ -81,8 +81,6 @@ pub struct HerbParams {
     pub thresholds: Thresholds,
     /// Organ allometry.
     pub allometry: Allometry,
-    /// Leaf angle G-function.
-    pub g_function: f64,
     /// PAR absorptance of leaves.
     pub absorptance: f64,
     /// Photosynthetic capacity at the end of leaf life.
@@ -277,7 +275,6 @@ impl HerbParams {
                 pod_aspect: c.pod_aspect.value,
                 seed_aspect: c.seed_aspect.value,
             },
-            g_function: c.g_function.value,
             absorptance: c.leaf_absorptance.value,
             capacity_floor: c.leaf_capacity_floor.value,
             ftsw_conductance: c.ftsw_threshold.value,

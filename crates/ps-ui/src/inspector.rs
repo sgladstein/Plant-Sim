@@ -6,6 +6,7 @@
 //! (so a lens can be checked against the numbers), and names each field's model card on
 //! hover.
 
+use crate::tools::{PlayerAction, Tools};
 use bevy::prelude::Resource;
 use bevy_egui::egui;
 use ps_view::{Garden, Lens, Picked, Selection};
@@ -48,6 +49,8 @@ pub struct Inspector {
     pub fields: Vec<Field>,
     /// One generated sentence on why the organ is the way it is.
     pub why: String,
+    /// What the player can do to the selection (harvest, cut), shown as buttons.
+    pub actions: Vec<(String, PlayerAction)>,
 }
 
 /// The inspector section of the right panel.
@@ -57,6 +60,7 @@ pub(crate) fn section(
     selection: &mut Selection,
     garden: &Garden,
     lens: Lens,
+    tools: &mut Tools,
 ) {
     let Some(picked) = selection.picked else {
         ui.weak(
@@ -83,6 +87,15 @@ pub(crate) fn section(
     ui.strong(&inspector.title);
     if !inspector.why.is_empty() {
         ui.label(egui::RichText::new(&inspector.why).italics());
+    }
+    if !inspector.actions.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            for (label, action) in &inspector.actions {
+                if ui.button(label).clicked() {
+                    tools.queue.push(action.clone());
+                }
+            }
+        });
     }
     ui.add_space(4.0);
     egui::Grid::new("inspector")

@@ -27,7 +27,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.8.0";
+pub const MODEL_VERSION: &str = "0.9.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -1283,12 +1283,9 @@ impl World {
                 leaves.extend(l);
                 extra.extend(x);
             }
-            // One G per plot: the first plant's (one species per plot until WP23).
-            let g = plants[first].plant.g_function();
             // Every plant in a soil carries the soil's obstacles.
             let obstacles = &plants[first].plant.obstacles;
-            let (_, coeffs) =
-                ps_light::rebuild_plot_with(&leaves, &extra, obstacles, path, &sky, g);
+            let (_, coeffs) = ps_light::rebuild_plot_with(&leaves, &extra, obstacles, path, &sky);
             // Each plant's slice of the coefficients, then the rest of the daily step
             // for every member in parallel (each depends only on itself).
             let mut slices: Vec<Option<(usize, usize)>> = vec![None; plants.len()];

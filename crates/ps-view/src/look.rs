@@ -34,6 +34,43 @@ pub const ZENITH: [f32; 3] = [0.22, 0.40, 0.72];
 /// Ground seen far away, linear RGB.
 pub const GROUND: [f32; 3] = [0.085, 0.15, 0.045];
 
+/// Paper color of the botanical-plate backdrop, linear RGB.
+pub const PAPER: [f32; 3] = [0.80, 0.74, 0.60];
+
+/// What surrounds the specimen: the garden, or a seamless paper sweep like a botanical
+/// plate (no bench, lawn or trees; sky, ground and fog all one paper color). Set at
+/// startup.
+#[derive(Resource, Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum Backdrop {
+    /// Bench, lawn, hedges and sky.
+    #[default]
+    Garden,
+    /// A paper sweep.
+    Plate,
+}
+
+impl Backdrop {
+    /// Parses `garden` or `plate`.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "garden" => Some(Self::Garden),
+            "plate" | "paper" => Some(Self::Plate),
+            _ => None,
+        }
+    }
+
+    /// How far the ground sits below the soil surface, m: the bench height in the
+    /// garden, a hair in the plate (the pots stand on the paper).
+    #[must_use]
+    pub fn ground_drop(self) -> f32 {
+        match self {
+            Self::Garden => crate::dressing::BENCH_HEIGHT,
+            Self::Plate => 0.002,
+        }
+    }
+}
+
 fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     let t = t.clamp(0.0, 1.0);
     [
@@ -102,12 +139,12 @@ fn f16_bits(v: f32) -> u16 {
 
 /// Fills cube texel data (`Rgba16Float`) with the sky gradient.
 fn sky_texels(tint: [f32; 3]) -> Vec<u8> {
-    cube_texels(SKY_FACE, |d| sky_gradient(d, tint))
+    sky_texels_with(|d| sky_gradient(d, tint))
 }
 
-/// Fills `face`² cube texel data (`Rgba16Float`) from a radiance function of direction.
-fn cube_texels(face: u32, radiance: impl Fn(Vec3) -> [f32; 3]) -> Vec<u8> {
-    let n = face as usize;
+/// Fills cube texel data (`Rgba16Float`) from a direction → color function.
+fn sky_texels_with(color: impl Fn(Vec3) -> [f32; 3]) -> Vec<u8> {
+    let n = SKY_FACE as usize;
     let mut data = Vec::with_capacity(n * n * 6 * 8);
     for face in 0..6 {
         for y in 0..n {
@@ -117,7 +154,7 @@ fn cube_texels(face: u32, radiance: impl Fn(Vec3) -> [f32; 3]) -> Vec<u8> {
                     (x as f32 + 0.5) / n as f32,
                     (y as f32 + 0.5) / n as f32,
                 );
-                let c = radiance(d);
+                let c = color(d);
                 for ch in [c[0], c[1], c[2], 1.0] {
                     data.extend_from_slice(&f16_bits(ch).to_le_bytes());
                 }
@@ -130,7 +167,13 @@ fn cube_texels(face: u32, radiance: impl Fn(Vec3) -> [f32; 3]) -> Vec<u8> {
 /// A sky cubemap image with the gradient.
 #[must_use]
 pub fn sky_cubemap(tint: [f32; 3]) -> Image {
-    cube_image(SKY_FACE, sky_texels(tint))
+    cube_image(sky_texels(tint))
+}
+
+/// A cubemap of one flat color (the plate's paper).
+#[must_use]
+pub fn flat_cubemap(c: [f32; 3]) -> Image {
+    cube_image(sky_texels_with(|_| c))
 }
 
 /// The sky cubemap for a style: the smooth gradient, or the painted sky
@@ -163,10 +206,14 @@ pub fn styled_sky_cubemap(painted: bool, tint: [f32; 3]) -> Image {
             data.extend_from_slice(&f16_bits(ch).to_le_bytes());
         }
     }
-    cube_image(crate::painterly::SKY_FACE, data)
+    cube_image_sized(crate::painterly::SKY_FACE, data)
 }
 
-fn cube_image(face: u32, data: Vec<u8>) -> Image {
+fn cube_image(texels: Vec<u8>) -> Image {
+    cube_image_sized(SKY_FACE, texels)
+}
+
+fn cube_image_sized(face: u32, texels: Vec<u8>) -> Image {
     let mut image = Image::new(
         Extent3d {
             width: face,
@@ -174,7 +221,7 @@ fn cube_image(face: u32, data: Vec<u8>) -> Image {
             depth_or_array_layers: 6,
         },
         TextureDimension::D2,
-        data,
+        texels,
         TextureFormat::Rgba16Float,
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     );
@@ -203,12 +250,17 @@ pub struct SkyImages {
 pub(crate) fn setup_sky_images(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
+    backdrop: Res<Backdrop>,
     style: Res<crate::toon::Style>,
 ) {
     let tint = [1.0; 3];
     let painted = *style == crate::toon::Style::Painterly;
+    let sky = match *backdrop {
+        Backdrop::Garden => styled_sky_cubemap(painted, tint),
+        Backdrop::Plate => flat_cubemap(PAPER),
+    };
     commands.insert_resource(SkyImages {
-        backdrop: images.add(styled_sky_cubemap(painted, tint)),
+        backdrop: images.add(sky),
         fill: images.add(sky_cubemap(tint)),
         tint,
         painted,

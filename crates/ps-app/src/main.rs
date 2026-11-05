@@ -9,7 +9,7 @@
 //!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 //!           [--bench-frames N] [--bench-out FILE.csv]
 //!           [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated|painterly]
-//!           [--view YAW,PITCH]
+//!           [--backdrop garden|plate] [--view YAW,PITCH]
 //!           [--window WxH] [--fps-cap N]
 //! ```
 //!
@@ -50,6 +50,7 @@ mod demo_source;
 mod display;
 mod inspect;
 mod sim_source;
+mod tools;
 
 use std::path::PathBuf;
 
@@ -84,6 +85,7 @@ struct Options {
     bench_out: PathBuf,
     demo: bool,
     look: ps_view::toon::Style,
+    backdrop: ps_view::look::Backdrop,
     scenario: PathBuf,
     data: Option<PathBuf>,
     fps_cap: Option<f64>,
@@ -172,6 +174,7 @@ fn parse_args() -> Result<Options> {
         bench_out: PathBuf::from("frame-times.csv"),
         demo: false,
         look: ps_view::toon::Style::default(),
+        backdrop: ps_view::look::Backdrop::default(),
         scenario: PathBuf::from(sim_source::DEFAULT_SCENARIO),
         data: None,
         fps_cap: None,
@@ -219,6 +222,13 @@ fn parse_args() -> Result<Options> {
                     format!("--look takes natural, illustrated or painterly, got {v}")
                 })?;
             }
+            "--backdrop" => {
+                let v = value()?;
+                o.backdrop =
+                    anyhow::Context::with_context(ps_view::look::Backdrop::parse(&v), || {
+                        format!("--backdrop takes garden or plate, got {v}")
+                    })?;
+            }
             "--fps-cap" => {
                 o.fps_cap = Some(anyhow::Context::context(
                     value()?.parse::<f64>(),
@@ -244,7 +254,7 @@ fn parse_args() -> Result<Options> {
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated|painterly] [--view YAW,PITCH] [--window WxH] [--fps-cap N]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated|painterly] [--backdrop garden|plate] [--view YAW,PITCH] [--window WxH] [--fps-cap N]"
                 );
                 std::process::exit(0);
             }
@@ -280,6 +290,7 @@ fn main() -> Result<()> {
         },
         None => ps_view::CameraRig::default(),
     })
+    .insert_resource(options.backdrop)
     .insert_resource(ps_view::Selection {
         picked: options.inspect,
     })
@@ -312,7 +323,14 @@ fn main() -> Result<()> {
         stem,
     })
     .add_systems(Update, capture::capture_requests.after(ViewSet::Source));
-    if let Some(sim) = sim {
+    if let Some((sim, data, scenario)) = sim {
+        let mut ui_tools = ps_ui::Tools::default();
+        tools::init_new_run(&mut ui_tools.new_run, &data, &scenario, &options.scenario);
+        app.insert_resource(ui_tools)
+            .insert_resource(tools::RunSettings {
+                data,
+                speed: options.speed,
+            });
         if let Some(dir) = &options.timelapse {
             std::fs::create_dir_all(dir)?;
             let to = options.to_day.unwrap_or(f64::MAX / 48.0);
@@ -329,7 +347,12 @@ fn main() -> Result<()> {
         }
         app.insert_resource(sim).add_systems(
             Update,
-            (sim_source::drive, inspect::inspect)
+            (
+                tools::new_run,
+                tools::apply_tools,
+                sim_source::drive,
+                inspect::inspect,
+            )
                 .chain()
                 .in_set(ViewSet::Source),
         );
@@ -371,10 +394,14 @@ fn main() -> Result<()> {
 }
 
 /// Loads the scenario and starts the sim thread.
-fn start_sim(options: &Options, paused: bool) -> Result<sim_source::SimSource> {
+fn start_sim(
+    options: &Options,
+    paused: bool,
+) -> Result<(sim_source::SimSource, PathBuf, ps_world::Scenario)> {
     let data = sim_source::find_data_dir(options.data.as_deref())?;
     let (world, scenario) = sim_source::load_world(&data, &options.scenario)?;
-    sim_source::SimSource::start(world, &scenario, options.day, options.speed, paused)
+    let src = sim_source::SimSource::start(world, &scenario, options.day, options.speed, paused)?;
+    Ok((src, data, scenario))
 }
 
 /// Frames rendered after the pipelines are ready before the screenshot, so the camera

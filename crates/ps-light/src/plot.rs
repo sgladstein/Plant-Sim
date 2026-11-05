@@ -13,7 +13,10 @@
 use ps_graph::LightCoeffs;
 use ps_units::Meters;
 
-use crate::{LeafPoint, LightGrid, Obstacle, SkySector, as_f64, coefficients_with, leaf_radius};
+use crate::{
+    DayDirections, LeafPoint, LightGrid, Obstacle, SkySector, as_f64, coefficients_with,
+    leaf_radius,
+};
 
 /// Cell edge of a plot light grid, m (decision 0019).
 pub const PLOT_CELL_M: f64 = 0.03;
@@ -27,16 +30,25 @@ impl LightGrid {
     /// The light grid of a plot (decision 0019): a box around `leaves` and `extra`
     /// points with a 10 cm horizontal margin and 3 cm cells, or larger cells if a
     /// horizontal axis would need more than 96. The grid's bottom is at the ground
-    /// (`z = 0`) or below the lowest leaf. Returns `None` when there are no leaves.
+    /// (`z = 0`) or below the lowest leaf. The grid keeps optical depth toward
+    /// `directions`. Returns `None` when there are no leaves.
     #[must_use]
-    pub fn fit_plot(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
-        let mut grid = Self::fit_plot_geometry(leaves, extra, g)?;
+    pub fn fit_plot(
+        leaves: &[LeafPoint],
+        extra: &[[f64; 3]],
+        directions: &[[f64; 3]],
+    ) -> Option<Self> {
+        let mut grid = Self::fit_plot_geometry(leaves, extra, directions)?;
         grid.add_leaves(leaves);
         Some(grid)
     }
 
     /// The empty grid [`LightGrid::fit_plot`] places around `leaves` and `extra`.
-    fn fit_plot_geometry(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
+    fn fit_plot_geometry(
+        leaves: &[LeafPoint],
+        extra: &[[f64; 3]],
+        directions: &[[f64; 3]],
+    ) -> Option<Self> {
         if leaves.is_empty() {
             return None;
         }
@@ -74,7 +86,7 @@ impl LightGrid {
                 lo[a]
             };
         }
-        Some(Self::with_geometry(origin, Meters(cell), n, g))
+        Some(Self::with_geometry(origin, Meters(cell), n, directions))
     }
 }
 
@@ -87,9 +99,8 @@ pub fn rebuild_plot(
     extra_bounds: &[[f64; 3]],
     sun_path: &[Option<[f64; 3]>; 24],
     sky: &[SkySector],
-    g: f64,
 ) -> (Option<LightGrid>, Vec<LightCoeffs>) {
-    rebuild_plot_with(leaves, extra_bounds, &[], sun_path, sky, g)
+    rebuild_plot_with(leaves, extra_bounds, &[], sun_path, sky)
 }
 
 /// [`rebuild_plot`] with obstacles (see [`crate::rebuild_daily_with`]).
@@ -100,17 +111,15 @@ pub fn rebuild_plot_with(
     obstacles: &[Obstacle],
     sun_path: &[Option<[f64; 3]>; 24],
     sky: &[SkySector],
-    g: f64,
 ) -> (Option<LightGrid>, Vec<LightCoeffs>) {
-    let mut extra = extra_bounds.to_vec();
-    extra.extend(obstacles.iter().flat_map(Obstacle::corners));
-    let Some(mut grid) = LightGrid::fit_plot_geometry(leaves, &extra, g) else {
+    let dirs = DayDirections::new(sun_path, sky);
+    let Some(mut grid) = LightGrid::fit_plot_geometry(leaves, extra_bounds, &dirs.all) else {
         return (None, Vec::new());
     };
     // Footprints are computed once, for the grid and for the rays.
     let feet = grid.add_leaves_keeping(leaves);
-    grid.add_obstacles(obstacles);
-    let coeffs = coefficients_with(&grid, leaves, &feet, sun_path, sky);
+    grid.obstacles = obstacles.to_vec();
+    let coeffs = coefficients_with(&grid, &dirs, leaves, &feet, sky);
     (Some(grid), coeffs)
 }
 
