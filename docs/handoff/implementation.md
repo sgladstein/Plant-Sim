@@ -69,11 +69,11 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - #75: leaf-angle light (each leaf intercepts by its own |n·d|, obstacles intersected analytically; decision 0025).
 - #77: the plantecophys R check is its own workflow, which runs only when the photosynthesis fixture changes, weekly, or by hand. It installs R from apt and takes 30 s.
 - #80: plant-to-plant variation (decision 0027, from a separate thread).
-- #81: multi-seed validation. Merging once CI is green.
+- #81: multi-seed validation (decision 0026).
 
-**In flight: lateral root fix (decision 0028, model 0.11.0).**
+**In flight: lateral root fix, PR #87 (decision 0028, model 0.11.0).**
 - Lateral root cohorts now keep their tips in active soil. Before, 31% of them poked out of the pot wall or bottom.
-- The PR comes after #81 on branch `claude/project-thread-ur2udi`.
+- On branch `claude/project-thread-ur2udi`. Validation is unchanged by it: 65 of 87 on seed means.
 - The viewer half of that bug, drawn copies of a cohort turned upward out of the soil, belongs to the viewer workstream: `ps-mesh` `axes.rs` `copy_transforms` should turn copies about vertical and clamp them to the pot.
 
 **Validation at 0.10.0, seed means.** 65 of 87 pass, every M0 gate passes. The misses:
@@ -89,7 +89,7 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 
 ## 3. Next steps, in order
 
-1. **Merge #81, then the root-fix PR.** Check CI first. If the root fix moved validation, record it in decision 0028 and STATUS.
+1. **Merge #87 (root fix) if it is not merged yet.** Check CI first.
 2. **Vine capture sweep (variation review).** Capture sweeps a fixed 6 cm, so with sowing scatter some pole beans never find their support and lodge. Make the sweep grow with free tip length. Don't let sowing scatter move a seed sown within 5 cm of a support. Batch the other variation-review items into the same model bump (patch lattice keyed by (soil, ix, iy), leaf_scatter keyed by node and leaf index, per-internode length CV). They are listed in STATUS. Re-read pole_height_day60 on seed means afterwards.
 3. **WP26, sim side.**
    - Save/load already exists: `World::snapshot_ron` / `from_snapshot_ron`, `World::replay`, and ps-cli `replay`.

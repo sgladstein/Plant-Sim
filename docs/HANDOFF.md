@@ -56,7 +56,7 @@ for whatever you pick up.
 | Design plan v3 (complete, kept current with decisions) | [docs/design-plan.md](design-plan.md). §3 model, §3.2 step order, §7 backlog of 36 WPs with done-when, §8 validation, §10 architecture, §11 implementation guide. |
 | Progress, per WP, plus every open follow-up | [docs/STATUS.md](STATUS.md) (read first every session) |
 | Agent rules (non-negotiable sim rules, code style, pre-push checks) | [CLAUDE.md](../CLAUDE.md) |
-| Decision records 0001 to 0027 (0028 comes with the lateral-root PR) | [docs/decisions/](decisions/) |
+| Decision records 0001 to 0027 (0028 comes with #87) | [docs/decisions/](decisions/) |
 | Model cards, one per process | [docs/models/](models/) |
 | Bevy pin and idioms | [docs/bevy-notes.md](bevy-notes.md) |
 | CLI | [docs/cli.md](cli.md) |
@@ -68,7 +68,7 @@ for whatever you pick up.
 
 ## 4. State of the project (2026-11-05, main at the handoff merge)
 
-- **Model version 0.10.0** at handoff (`ps_world::MODEL_VERSION`); 0.11.0 once the lateral-root PR (decision 0028) merges. Species schema 7.
+- **Model version 0.10.0** at handoff (`ps_world::MODEL_VERSION`); 0.11.0 once #87 (lateral roots, decision 0028) merges. Species schema 7.
 - **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
   a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.
@@ -99,7 +99,7 @@ for whatever you pick up.
 
 | PR | What | State |
 | --- | --- | --- |
-| not yet opened | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; follows #81 on `claude/project-thread-ur2udi` |
+| #87 | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; follows #81 on `claude/project-thread-ur2udi` |
 | #86 | Viewer root-copy fix from the fuller-plants workstream (overlaps #84; land one) | Fuller plants; merging on green |
 | #84 | Viewer root-copy fix, viewer handoff (`docs/handoff-viewer.md`), STATUS M1 rows | Viewer; merging on green |
 | #82 | Performance handoff doc | Docs only; merge when green |
@@ -274,7 +274,7 @@ a project folder that no longer exists; from now on put them in the repo: review
 ## 9. Next steps, in order
 
 **Implementation (sim):**
-1. Make sure the lateral-root PR (decision 0028) merged; if it moved validation,
+1. Make sure #87 (lateral roots, decision 0028) merged; if it moved validation,
    record it in decision 0028 and STATUS.
 2. Vine capture sweep first: capture sweeps a fixed 6 cm, so with sowing scatter about
    1 pole bean in 16 never finds its stake, and the seed-mean pole height partly
