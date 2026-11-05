@@ -54,7 +54,7 @@ under each weather preset; slower development in cold springs; heat stalling gro
 ## Validation
 `ps_physio::tests::three_point_thermal_time`, `growth_temperature_trapezoid`,
 `stages_advance_in_order`. In the WP11 report (default scenario, WP12): flowering on day
-43 and maturity on day 83 (gated ranges 28 to 57 and 54 to 93); 370 °C·day above 10 °C
+44 and maturity on day 83 (gated ranges 28 to 57 and 54 to 93); 370 °C·day above 10 °C
 to flowering and 747 to maturity (Cavalcante 2020, 430 ± 15% and 700 to 950), 617 above
 4.4 °C to flowering (CROPTIME 2020, 547 to 763). The papers disagree among themselves:
 the sim's sums sit above Dapaah 1999 (base 7) and below Pinzón-Sandoval 2024 (base

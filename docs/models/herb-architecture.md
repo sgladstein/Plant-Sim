@@ -38,9 +38,10 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   `p = p₀ · mean(F_C) · H · mean(F_L) · min(1, FTSW_min / 0.5)`, where
   `F_C = min(1, C_node / 0.22)` (its own reserve reference, so pod number follows the
   carbon supply), `F_L = s(0.2)` the shade term above, and
-  `H = mean over the 7 days before opening of F_T(T_max) × mean over the open days of F_T(T_max)`:
+  `H = min(mean over the 7 days before opening of F_T(T_max), mean over the open days of F_T(T_max))`:
   heat counts while the pollen develops and while the flower is open, at the day's
-  peak. `F_T` is the CROPGRO response: 0 at or outside `[T_min, T_max]`, 1 on
+  peak, and the flower is as fertile as its worse stage (so an ordinary warm day is
+  not counted twice). `F_T` is the CROPGRO response: 0 at or outside `[T_min, T_max]`, 1 on
   `[T_o1, T_o2]`, `1 − x²` on the ramps.
 - **Seeds per pod:** `Binomial(n_ovules, p_ovule · H)`, at least 1: heat also lowers
   the share of ovules that set.
@@ -55,7 +56,8 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (provisional; see gas-exchange).
 - **Leaf death:** at thermal age `expanded + lifespan`, after 5 days below light index
   0.1, at frost, at starvation, or at maturity. A killing frost also stops every apex
-  and kills buds and flowers, so the plant does not regrow (§7 M0 exit).
+  and kills buds and flowers, so the plant does not regrow (§7 M0 exit). Pods, seeds,
+  stems and roots are spared: they stop growing only because the leaves are gone.
 
 ## Parameters
 All values, units and sources are in `data/species/bush_bean.ron`. The main ones:
@@ -111,7 +113,11 @@ shade, and where roots end up.
   water and heat, and only a little through filling. Leaves keep their capacity
   through seed fill (no nitrogen remobilization yet), one likely reason (M2).
 - Heat lowers seed set but not seed size: `heat_seed_size` and `heat_seed_mass` stay
-  short of the published -8 to -34% and -50 to -71% (Info).
+  short of the published -8 to -34% and -50 to -71% (Info). A 32 °C heat wave scores
+  F_T 0.6, against 0.8 to 0.93 on an ordinary 28 to 30 °C day, so the CROPGRO curve
+  separates a heat wave only weakly from summer; seeds fall 8 to 31% across four
+  weather years.
+- Drought raises root:shoot by 16 to 39%, but from a base 2 to 8 times too low.
 - No phototropism or hydrotropism yet; roots bend only by gravity and noise.
 - Laterals are lumped into cohorts and have no laterals of their own.
 - Leaves do not senesce from the base during seed fill (§3.11; M2 with nitrogen).

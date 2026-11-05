@@ -91,7 +91,7 @@ impl Plant {
         // is still longer per gram (decision 0018).
         let elongation = hp.shade_factor(self.shade_signal(parent), hp.shade_internode);
         let length = hp.internode_length.0 * factor * elongation;
-        let specific = MPerG(hp.stem_specific_length.0 * elongation * elongation);
+        let specific = MPerG(hp.stem_specific_length.0 * elongation);
         let potential = GramsDM(length / specific.0);
         let mut s = Spawn::new(
             OrganKind::Internode,
@@ -448,7 +448,10 @@ impl Plant {
                 continue;
             }
             let days = f64::from(f.days);
-            let heat = f.pre_anthesis * f.temperature / days;
+            // Heat damages pollen as it develops and the flower while it is open; the
+            // flower is as fertile as its worse stage, so an ordinary warm day is not
+            // counted twice (decision 0018).
+            let heat = f.pre_anthesis.min(f.temperature / days);
             let drought = (f.min_ftsw / hp.drought_abortion_ftsw.max(1e-9)).clamp(0.0, 1.0);
             let p = hp.pod_set_base * (f.carbon / days) * heat * (f.light / days) * drought;
             let set = self.stream(f.id, now, Purpose::PodSet).bernoulli(p);

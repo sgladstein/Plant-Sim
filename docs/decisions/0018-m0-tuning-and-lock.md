@@ -33,14 +33,17 @@ to Windows, as hashes have been identical across platforms since WP10. Changes:
   - The index scales internode length (max 2.0, from Lopes 1987), SLA (max 1.4, from
     Cossu 2021) and pod set (down to 0.2).
   - A shaded internode is also thinner: its specific length rises by the same factor,
-    so its potential mass stays the same. A carbon-short internode is then still
+    so its potential mass stays the same (the first draft squared the factor, which
+    halved the mass; the review caught it). A carbon-short internode is then still
     longer per gram, as etiolated stems are.
 - **Pod set:**
   - A separate reserve reference, `pod_set_reserve_reference` = 0.22 g C/g DM. Pod set
     is proportional to the node reserve below it.
   - `drought_abortion_ftsw` 0.3 → 0.5, the CROPGRO SWFAC level.
   - Temperature is read at the day's peak (Tmax), not the mean. It counts over the 7 days
-    of pollen development before the flower opens, as well as while it is open.
+    of pollen development before the flower opens, as well as while it is open. The
+    flower is as fertile as the worse of the two windows: `H = min(mean before,
+    mean open)`. A product of the two would count an ordinary warm day twice (review).
   - Heat lowers the share of ovules that set.
   - `pod_set_base` 0.45 → 0.42.
 - **Frost:** a killing frost stops every apex and kills buds and flowers, so the plant
@@ -66,29 +69,39 @@ robust pass.
   | --- | --- | --- | --- |
   | Flowering | 28 to 57 days | day 44 | 43 to 46 |
   | Maturity | 54 to 93 days | day 83 | 80 to 83 |
-  | Dry mass | 12 to 35 g | 24.7 g | 24.3 to 27.3 g |
-  | Pods | 6 to 20 | 11 | 11 to 14 |
-  | Height | 0.25 to 0.5 m | 0.39 m | |
-  | Peak leaf area | 0.07 to 0.35 m² | 0.22 m² | |
-  | Biomass logistic R² | 0.95 or more | 0.996 | |
-  | Shade: internodes | +20% or more | +37% | +37 to +40% |
+  | Dry mass | 12 to 35 g | 22.9 g | 22.9 to 26.1 g |
+  | Pods | 6 to 20 | 10 | 10 to 13 |
+  | Height | 0.25 to 0.5 m | 0.39 m | 0.39 to 0.41 m |
+  | Peak leaf area | 0.07 to 0.35 m² | 0.22 m² | 0.22 to 0.24 m² |
+  | Biomass logistic R² | 0.95 or more | 0.994 | 0.994 to 0.998 |
+  | Shade: internodes | +20% or more | +28% | +28 to +34% |
   | Shade: SLA | +10 to +40% | +20% | +19 to +20% |
-  | Shade: total mass | −30 to −50% | −46% | −40 to −47% |
-  | Drought: pods | −30% or more | −53% | −49 to −67% |
+  | Shade: total mass | −30 to −50% | −42% | −37 to −49% |
+  | Drought: pods | −30% or more | −55% | −53 to −64% |
   | Drought: seed size | down less than pods | yes | |
-  | Drought: root:shoot | up | +20% | +15 to +43% |
-  | Heat: seeds | down | −18% | −18 to −45% |
+  | Drought: root:shoot | up | +23% | +16 to +39% |
+  | Heat: seeds | down | −8% | −8 to −31% |
+
+- **Calibrated or predicted.** Phenology, `shade_internode_factor` and
+  `shade_sla_factor` were set from the same papers that gate them, so those checks show
+  consistency, not prediction. The other gates are emergent: shade total mass, drought
+  pods and root:shoot, heat seeds, the logistic shape, and the §8.2 size ranges.
+- Pods per plant fell from 16 (WP9, seed 7) to 10. The ps-arch 90-day bound was
+  loosened from 10..=20 to 6..=20 to match §8.2.
 
 - **Known limits at the M0 exit (Info, not gated):**
   - Root:shoot is 0.04 at seed fill, against 0.08 to 0.30. There is no secondary
-    thickening, and laterals are short and unbranched.
+    thickening, and laterals are short and unbranched. So drought's +23% root:shoot
+    passes on a base 2 to 8 times too low.
   - The reproductive phase is sink-limited in every scenario, so shade mass falls through
     pod number. Leaves keep their capacity through seed fill, since there is no nitrogen
     remobilization yet (M2).
-  - Heat cuts seed set but hardly seed size: seed mass −21% against −50 to −71%.
-  - Drought does not shrink seeds (+4% against −18%).
-  - Shade height is +34% against Lopes's +99%.
-  - Shade cuts roots by 14% against −30%.
+  - Heat cuts seed set but hardly seed size: seed mass −10% against −50 to −71%. The
+    CROPGRO curve puts a 32 °C heat wave (F_T 0.6) close to an ordinary 28 to 30 °C
+    day (0.8 to 0.93), so the heat response is weak and varies by weather year.
+  - Drought does not shrink seeds (+5% against −18%).
+  - Shade height is +33% against Lopes's +99%.
+  - Light per leaf: see the re-check below.
   - The thermal-time papers disagree among themselves. The sim passes Cavalcante 2020
     and CROPTIME 2020 and sits between Dapaah 1999 and Pinzón-Sandoval 2024, which are
     reported as misses.
@@ -99,17 +112,19 @@ robust pass.
 
   | G | Plant total | Leaflets within 0.10 | Worst |
   | --- | --- | --- | --- |
-  | 0.5 (species file) | +10.2% | 48 of 74 | 0.31 |
-  | 0.65 | −1.5% | 58 of 74 | 0.22 |
+  | 0.5 (species file) | +9.9% | 49 of 74 | 0.32 |
+  | 0.65 | −1.9% | 60 of 74 | 0.23 |
 
   The sim draws every blade tilted about 19° from horizontal. But G = 0.5 assumes
   spherical leaf angles, so the light model shades the plant too little, by about 10%.
   The M0 bounds stay as the owner accepted them, on the synthetic shoot. The new test
   `sim_plant_against_ray_tracer` pins the sim-plant numbers so they cannot drift
-  unnoticed. Fixing this is the owner's call, and it is a model change. One fix is a G
-  that follows the leaf angles the sim draws, varying with direction. The other is to
-  draw a spread of leaf angles that matches G = 0.5. Either fix needs the M0 tuning
-  re-run, since the calibration absorbed the 10%.
+  unnoticed. Fixing this is the owner's call, and it is a model change. The preferred
+  fix (WP21, review) is G per direction from the drawn leaf normals (area-weighted
+  |n·d|). The other is to draw a spread of leaf angles that matches G = 0.5. Either fix
+  needs the M0 tuning re-run, since the calibration absorbed the 10%. The per-leaf
+  error (a third of the leaflets off by more than 0.10 at G = 0.5, a fifth at 0.65) is
+  partly the grid's limit within a cell, and is a known limit at the M0 exit.
 - The validation run grows 33 plants for 90 days (about 20 s in release).
 - The heat and drought scenarios start on the control's flowering day. A change to the
   phenology thresholds needs those two days moved with it.

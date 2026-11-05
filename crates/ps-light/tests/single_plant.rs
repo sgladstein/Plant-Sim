@@ -204,7 +204,7 @@ fn single_plant_matches_ray_tracer() {
 /// G = 0.5 assumes spherical leaf angles, so with G = 0.5 the model is about 10% too
 /// bright on the plant total. G = 0.65, about this canopy's mean over the test
 /// directions, brings the total within 2%, but per-leaf errors stay above the target
-/// (about 78% of leaflets within 0.10). This test pins both results; it does not claim
+/// (about 80% of leaflets within 0.10). This test pins both results; it does not claim
 /// the target is met. The fix is the owner's call (decision 0018).
 #[test]
 fn sim_plant_against_ray_tracer() {
