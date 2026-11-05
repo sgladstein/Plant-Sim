@@ -48,7 +48,7 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 
 13. Demand `D = Σ d_i + growth(yesterday)`.
 14. The soil request is `max(0, D − pool + fixed(yesterday))`.
-15. Mining, if still short: each non-growing organ (not seeds or nodules) gives up to
+15. Mining, if still short: each non-growing organ (not seeds, seeds in pods or nodules) gives up to
     `rate · w · (N − c_final W)`, with `rate = 0.12 d⁻¹` during seed fill and
     `0.12 × 0.36` before, and leaf weight `w = clamp(2 (1 − L / L_max), 0.1, 1)` by light
     index (1 for other organs). All give the same share of their cap.
@@ -56,7 +56,7 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
     `f_k = W_k · a · f_T,fix · f_drought · min(1, need / capacity)`, with
     `a = 0.05 g N g⁻¹ d⁻¹`.
 17. Nodulation, with rhizobia in the soil, after emergence and before maturity: target
-    mass `need / (a · f_T,fix · f_drought)`. If above the clusters' potential mass,
+    mass `need / (a · f_T,fix · f_drought)`. Root-zone NO₃ is read over the reached cells (step 6). If above the clusters' potential mass,
     add `min(target − potential, step) · f_NO₃` of new clusters, with step `0.17 ·
     potential`, or 14 mg at first. `f_NO₃` is 1 at 5 ppm root-zone NO₃ or less, falling
     linearly to 0.1 at 30 ppm. Clusters are 2 mg each, at most 24 a day, on root
@@ -82,7 +82,7 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 | seed N final | 0.02 | g N/g DM | ~ |
 | nodule N | 0.048 | g N/g DM | CROPGRO-Drybean PRONOD |
 | leaf_n_area_base | 0.3 | g N/m2 | ~ Kattge 2009, Walker 2014 |
-| uptake_capacity | 6e-3 | g N/m/day | ~ 10 × CROPGRO RTNO3 (root length the sim does not draw) |
+| uptake_capacity | 1.5e-2 | g N/m/day | ~ 25 × CROPGRO RTNO3 (root length the sim does not draw; decision 0020 amendment) |
 | root_reach | 4 | cm | ~ (decision 0020) |
 | mobilization_rate, vegetative_mobilization | 0.12, 0.36 | 1/day, - | CROPGRO NMOBMX, NVSMOB |
 | leaf_drop_mobile | 0.1 | - | ~ |
@@ -125,7 +125,7 @@ Emergent:
   less capacity.
 
 ## Known limits
-- The root reach and the 10× uptake capacity stand for root length the sim does not
+- The root reach and the 25× uptake capacity stand for root length the sim does not
   draw. A fuller root system would replace them.
 - The soil water has no upward flow, so nitrate below the root zone reaches roots only
   through the reach.
@@ -145,13 +145,13 @@ Emergent:
 - Debug builds assert the soil N ledger every hour and each plant's N ledger every day
   at 1e-9 relative.
 - `ps-validate/tests/nitrogen_free.rs::nitrogen_free_sand_needs_nodules` (WP24
-  done-when): nodulated over unnodulated shoot mass above 3 at day 57 (about 7.9); the
+  done-when): nodulated over unnodulated shoot mass above 3 at day 57; the
   unnodulated plant took up and fixed nothing and holds at most its seed N.
 - `ps-arch/tests/ninety_days.rs::seed_fill_drops_leaves_from_the_bottom_up` (WP24
   done-when): leaves dropped during seed fill sit at nodes 2 to 5, survivors at 6 to 8.
 - Validation report: `nfree_nodulation_shoot_mass` (Info). Season Ndfa in garden soil
-  is 33% in the 30-bean plot and 53% at 35 plants per m² (research band 30 to 60%,
-  Palmero 2022).
+  is 18% in the 30-bean plot, 45% at 35 plants per m² and 55% in a garden pot (research
+  band 30 to 60%, Palmero 2022).
 
 ## References
 - DSSAT CSM CROPGRO-Drybean, BNGRO048.SPE, and CROPGRO NUPTAK, NFIX, MOBIL routines

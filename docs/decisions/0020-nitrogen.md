@@ -115,7 +115,7 @@ With garden soil instead:
 
 | Unfertilized pot, model 0.4.0 | Garden soil | Fertilized (300 ppm) |
 | --- | --- | --- |
-| Total dry mass at maturity | 19.6 g | 28.8 g |
+| Total dry mass at day 90 | 19.6 g | 28.8 g |
 | Mean seed mass | 0.170 g | 0.253 g |
 | N fixed / taken up | 295 / 134 mg | 0 / 866 mg |
 | Ndfa | 69% | 0% |
@@ -159,8 +159,9 @@ follow-up.
   seed fill: fewer, smaller seeds than a fed plant. Fertilizing is now a visible choice
   for the player.
 - Leaf aging still multiplies capacity. The plan meant leaf N to replace it at M2. In a
-  trial without aging, the fertilized pot lost about a fifth of its mass. Aging stays
-  until the sink-limited carbon budget (decision 0018) is revisited.
+  trial without aging, the fertilized pot lost about a fifth of its mass. That is the
+  sink feedback of decision 0018 at work, not evidence for aging. Aging stays until that
+  budget is revisited; a higher aging floor (0.4 to 0.7) is the first thing to try.
 - Pod set does not read N, so an N-limited plant sets as many pods as a fed one and
   fills them less (garden pot: 12 pods of 0.17 g seeds). Real beans shed pods instead.
   A pod set that reads N is a follow-up.
@@ -171,3 +172,57 @@ follow-up.
 - `Role::Nodule` organs exist for the viewer to draw. The daily CSV has 9 new columns
   (soil mineral N, plant N, uptake, fixed, mined, unmet, status, nodule mass, fixation
   carbon), and the organ CSV has `nitrogen_g`.
+
+## Amendment after review (model 0.5.0)
+The WP24 review (project files, reviews/wp24-review.md) approved with two fixes. Model
+0.4.0 → 0.5.0, golden hashes regenerated.
+
+- **Filled seeds are no longer mined.** `mine` skipped the sown seed and nodules but not
+  seeds in pods, so a filled seed gave its N back down to 0.02 g/g. It now skips them.
+- **The cause of the smaller shade internode response.** Bisected at non-limiting
+  uptake (capacity × 100), seed fix in:
+
+  | Variant | Shade internodes |
+  | --- | --- |
+  | As built | +24.0% |
+  | Capacity nodes back to 1.0, 0.8, 0.6, 0.4 | +23.8% |
+  | Maintenance back to leaves-only skip | +20.6% |
+  | No leaf N-per-area factor | +27.5% |
+  | Model 0.3.0 | +27.6% |
+
+  N supply explains about one point, and the class nodes nothing. The rest is the leaf
+  N-per-area factor. A shade leaf has 1.2× the SLA at the same N per mass, so it holds
+  less N per area and gets about 0.78 of the capacity. The shaded plant then has less
+  carbon to fill its longer, thinner internodes. Lower Na and Vcmax per area in shade leaves is real acclimation. But
+  real shade leaves also carry somewhat more N per mass, and the sim does not. A
+  light-dependent leaf N per mass is the follow-up if the margin matters.
+- **The non-limiting control is now non-limiting for shaded plants too.** At 6e-3 the
+  shaded plants' small roots still ran short of N at 300 ppm, and the seed fix pushed
+  shade total mass to −51%, outside the M0 gate. `uptake_capacity` is now 1.5e-2,
+  25× CROPGRO's RTNO3. The sim draws about a twentieth to a thirtieth of a field bean's
+  root length at 30 to 45 days (5.7 m at day 40). The reach and the capacity do not
+  double count: the reach decides which cells a root draws on, and the capacity how
+  fast it draws. The M0 scenarios' comments now call 300 ppm a non-limiting control
+  (about 4.2 g N in a 14 kg pot), and decision 0018 notes that the M0 gates run at
+  non-limiting N.
+- **Nodulation reads nitrate over the root reach**, the same cells uptake uses.
+- **Fertilize** is capped at 100 g N per m² per action.
+
+With these, 71 checks: 57 pass, 14 Info misses, every M0 check passes.
+
+- Shade internodes +24% and shade total mass −43% (it was −47%).
+- Density −45%. Most of that is topsoil N running out at 35 per m², not the field's
+  branching and leaf-size response. With light alone it is −25%, and with non-limiting N
+  −31%. At day 40 the density_35 plants are at N status 0.53 with 12 of the plot's 16 g
+  of mineral N still in the soil, below roots that reach 23 cm of 40. The response
+  note says so.
+- Garden-soil Ndfa is now 18% in the 30-bean plot (it was 33%), 45% at 35 per m² and 55%
+  in the garden pot, against the 30 to 60% band. Fixation costs 6%, 15% and 19% of the
+  plants' carbon. In N-free sand it costs 34% over the run (the review measured 40% at
+  day 50). That is high against the plan's 10 to 15%, but nothing else feeds that
+  plant.
+- Garden pot: 19.0 g at day 90 and mean seed 0.144 g (seeds in pods no longer pay N
+  back).
+- The 30-bean plot with the perf speedup (#53) runs at 23.2 ms per sim-day over 90
+  days on 4 cores.
+

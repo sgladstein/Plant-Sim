@@ -503,7 +503,10 @@ impl Plant {
             .filter_map(|id| {
                 let i = id.index();
                 let kind = self.arena.kind[i];
-                if matches!(kind, OrganKind::Nodule | OrganKind::Seed) {
+                if matches!(
+                    kind,
+                    OrganKind::Nodule | OrganKind::Seed | OrganKind::SeedInPod
+                ) {
                     return None;
                 }
                 let mobile =
@@ -624,7 +627,8 @@ impl Plant {
         } else {
             np.nodule_initial_mass.0
         };
-        let ppm = soil.root_zone_no3_ppm(&self.roots)?;
+        // The same cells the roots take up from (the reach; WP24 review).
+        let ppm = soil.root_zone_no3_ppm(&soil.reached_cells(&self.roots, np.root_reach))?;
         let add = (target - potential).min(step) * np.nitrate_factor(ppm);
         let per = np.nodule_mass.0.max(1e-9);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
