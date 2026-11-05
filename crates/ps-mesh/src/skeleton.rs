@@ -62,6 +62,53 @@ pub struct Placement {
     /// Leaf form from the sim's role: `Some(true)` for a simple (unifoliate) leaf,
     /// `Some(false)` for a trifoliate, `None` when unknown (see [`crate::leaf_form`]).
     pub simple_leaf: Option<bool>,
+    /// The emerging hypocotyl's hook (WP20), set by [`crate::pose`]: the top of the
+    /// internode arcs over so the cotyledons are pulled up through the soil backwards.
+    /// `None` for a straight organ.
+    pub hook: Option<Hook>,
+}
+
+/// The apical hook of an epigeal seedling's hypocotyl: its last [`Hook::ARC`] bends over
+/// by `amount × 180°` toward compass direction `toward`.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Hook {
+    /// 0 (straight) to 1 (bent right back down).
+    pub amount: f32,
+    /// Azimuth the hook bends toward, rad from east.
+    pub toward: f32,
+}
+
+impl Hook {
+    /// Arc length of the hooked part, m (at most 60% of the internode).
+    pub const ARC: f32 = 0.009;
+    /// Centerline points drawn along the arc.
+    pub const POINTS: usize = 6;
+
+    /// Points along the hooked internode `p` from where the hook starts (excluded) to
+    /// its tip (included), and the start point. Straight internodes give their tip.
+    #[must_use]
+    pub fn points(&self, p: &Placement) -> (Vec3, Vec<Vec3>) {
+        let d = p.direction;
+        let arc = Self::ARC.min(0.6 * p.length.max(0.0));
+        let start = p.base + d * (p.length.max(0.0) - arc);
+        let phi = core::f32::consts::PI * self.amount.clamp(0.0, 1.0);
+        let u = Vec3::new(self.toward.cos(), self.toward.sin(), 0.0);
+        // The bend's sideways axis, perpendicular to the organ.
+        let side = (u - d * u.dot(d)).normalize_or(Vec3::X);
+        let points = (1..=Self::POINTS)
+            .map(|k| {
+                let t = k as f32 / Self::POINTS as f32;
+                let s = arc * t;
+                if phi < 1e-4 {
+                    return start + d * s;
+                }
+                let r = arc / phi;
+                let a = phi * t;
+                start + d * (r * a.sin()) + side * (r * (1.0 - a.cos()))
+            })
+            .collect();
+        (start, points)
+    }
 }
 
 /// A stem coiled around a vertical support (the sim's `Twine`), in the skeleton frame.
@@ -160,6 +207,8 @@ impl Placement {
     pub fn tip(&self) -> Vec3 {
         if let Some(coil) = self.coil.filter(|_| self.kind == OrganKind::Internode) {
             coil.point(self.base, self.length)
+        } else if let Some(hook) = self.hook.filter(|_| self.kind == OrganKind::Internode) {
+            hook.points(self).1.last().copied().unwrap_or(self.base)
         } else if self.is_axis_organ() {
             self.base + self.direction * self.length
         } else {
@@ -310,6 +359,7 @@ impl Skeleton {
                 };
                 Placement {
                     coil: None,
+                    hook: None,
                     petiole: 0.0,
                     simple_leaf: None,
                     kind,
