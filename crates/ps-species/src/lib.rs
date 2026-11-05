@@ -18,6 +18,7 @@ use ps_rng::{Purpose, RngKey};
 use serde::{Deserialize, Serialize};
 
 pub use schema::{Constants, Phenology, SCHEMA, Spec};
+pub use traits::{TRAIT_KEYS, Traits};
 
 /// A numeric parameter with provenance.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -466,6 +467,8 @@ impl Phenotype {
         self.values.get(key).copied()
     }
 }
+
+mod traits;
 
 #[cfg(test)]
 mod tests;

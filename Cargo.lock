@@ -265,6 +265,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-physio"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "proptest",
+ "ps-graph",
+ "ps-species",
+ "ps-units",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "ps-rng"
 version = "0.1.0"
 dependencies = [

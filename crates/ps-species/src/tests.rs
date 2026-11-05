@@ -164,3 +164,13 @@ fn round_trip_through_ron() {
     let text = ron::ser::to_string_pretty(&s, ron::ser::PrettyConfig::default()).unwrap();
     assert_eq!(Species::from_ron(&text).unwrap(), s);
 }
+
+#[test]
+fn trait_view_covers_every_heritable_key() {
+    let keys: Vec<&str> = crate::schema::HERITABLE.iter().map(|s| s.key).collect();
+    assert_eq!(keys, crate::TRAIT_KEYS);
+    let s = bean();
+    let t = s.phenotype(&s.default_genotype()).traits().unwrap();
+    assert!((t.vcmax25 - 89.3).abs() < 1e-12);
+    assert!((t.flowers_per_raceme - 6.0).abs() < 1e-12);
+}

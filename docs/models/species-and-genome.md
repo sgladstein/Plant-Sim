@@ -34,7 +34,7 @@ outside its bounds.
 | --- | --- | --- | --- |
 | in | species file | - | data/species/*.ron |
 | in | world seed, plant entity | - | scenario, world |
-| out | genotype, phenotype | trait units | architecture, physiology |
+| out | genotype, phenotype, typed `Traits` view (`Phenotype::traits`) | trait units | architecture, physiology |
 
 ## Encoded or emergent
 Encoded: the mapping. Trade-offs between traits are not tabulated here; they arise from
