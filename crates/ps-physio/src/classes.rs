@@ -1,9 +1,10 @@
 //! Per-class gas exchange (§3.8 "per light class, not per leaf").
 //!
 //! Each hour each plant solves gas exchange on a small table: 17 absorbed-PAR nodes
-//! (zero, then 16 log-spaced from 1 to 2000 µmol m⁻² s⁻¹) × 4 capacity nodes (1.0, 0.8,
-//! 0.6, 0.4, for leaf aging). A leaf reads its rates by interpolation, linear in PAR
-//! between neighboring nodes and linear in capacity (decision 0009).
+//! (zero, then 16 log-spaced from 1 to 2000 µmol m⁻² s⁻¹) × 4 capacity nodes (1.0, 0.7,
+//! 0.4, 0.1, for leaf aging and leaf nitrogen; decision 0020). A leaf reads its rates by
+//! interpolation, linear in PAR between neighboring nodes and linear in capacity
+//! (decision 0009). Capacity below 0.1 reads the 0.1 node.
 //! Sunlit and shaded parts read the same table at their own PAR.
 
 use ps_units::{MolPerM2S, UmolPerM2S};
@@ -19,7 +20,7 @@ pub const PAR_MAX: f64 = 2000.0;
 /// Log-spaced steps between the lowest and highest nonzero class.
 const STEPS: f64 = 15.0;
 /// Capacity nodes, highest first.
-pub const CAPACITY_NODES: [f64; 4] = [1.0, 0.8, 0.6, 0.4];
+pub const CAPACITY_NODES: [f64; 4] = [1.0, 0.7, 0.4, 0.1];
 
 /// Rates per unit leaf area read from the table.
 #[derive(Copy, Clone, Debug, Default, PartialEq)]

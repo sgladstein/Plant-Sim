@@ -122,7 +122,9 @@ Hourly step, in order (in the code, steps 3, 5 and 6 run from the soil as it sta
 12. Growth: each organ computes potential growth for the hour from its expansion curve, takes what its reserve can pay after growth respiration, updates dimensions and structural mass, and carries unmet demand forward (§3.9).
 13. Ledger: water and carbon balance accumulators update; in debug builds a relative mismatch above 1e-9 panics.
 
-Daily step, in order:
+From M2 (WP24, decision 0020), nitrogen adds to the hourly steps: step 4 also mineralizes and nitrifies soil nitrogen and moves nitrate with the drained and laterally moved water; nodules fix nitrogen, paid from their reserve, just before step 8; and after step 12 growing organs are topped up with nitrogen from the plant's pool. An organ diluted to its final nitrogen concentration does not grow that hour.
+
+Daily step, in order (from M2, a step 0 runs first: each soil's joint nitrogen uptake, then each plant's nitrogen supply, mining, fixation target, nodulation, leaf drop and nitrogen status; decision 0020):
 
 1. Phenology: stage transitions from thermal time thresholds and stress (§3.11).
 2. Bud fate: each bud activates, stays dormant, or dies, from its light signal, its parent internode's reserve, and apical dominance.
@@ -180,7 +182,7 @@ Turbid-medium voxel model (Beer's law with a leaf-angle G-function, RATP and Sin
 - **Diffuse.** 16 sky sectors (two elevation bands × eight azimuths) with a standard overcast sky weighting; one ray per sector per leaf; the diffuse coefficient is the weighted mean transmittance.
 - **Sunlit and shaded fractions.** Each leaf is split by its direct transmittance; the two fractions feed different light classes in gas exchange.
 - **Red:far-red proxy.** 1.2 × exp(-0.5 × leaf area index above the leaf), clipped to \[0.2, 1.2\].
-- **Cost.** Leaves × 40 rays × \~50 cells per ray; a 300-leaf plant is about 600,000 cell visits per day, under a millisecond. At M2 the coefficients move from per-leaf rays to per-voxel transmittance (each voxel stores 24 direct and one diffuse transmittance; leaves read their voxel), which scales as voxels × directions regardless of plant count.
+- **Cost.** Leaves × 40 rays × \~50 cells per ray; a 300-leaf plant is about 600,000 cell visits per day, under a millisecond. At M2 the coefficients move from per-leaf rays to per-voxel transmittance (each voxel stores 24 direct and one diffuse transmittance; leaves read their voxel), which scales as voxels × directions regardless of plant count. (Decision 0019 measured per-voxel coefficients at WP21 and kept per-leaf rays on a shared plot grid; per-voxel light may return for trees at M4.)
 - **Multiple plants.** Pots use independent grids unless their boxes overlap, in which case they merge for that day. A plot uses one grid. Obstacles and trellises are opaque or partly transmitting cells.
 - **Validation.** Uniform canopy against Beer's law within 2%; single plant against an offline Monte Carlo ray tracer within 10% per leaf and 3% on the total.
 
@@ -519,7 +521,7 @@ M1 exit: the two-pot runs look right to the owner and the pot differences are th
 
 | WP | Work package | Size | Done when |
 | --- | --- | --- | --- |
-| 21 | Plot soil block (1 × 1 to 3 × 3 m, 5 cm cells), merged light grid, per-voxel light coefficients | M | 30 plants under 20 ms per sim-day |
+| 21 | Plot soil block (1 × 1 to 3 × 3 m, 5 cm cells), merged light grid, per-voxel light coefficients (measured and not used; decision 0019) | M | 30 plants under 20 ms per sim-day |
 | 22 | Vine module and pole bean: habit locus, indeterminate growth, tendril search and attachment, trellis objects | L | A pole bean fills a 2 m trellis by day 60; without a trellis it flops and yields less |
 | 23 | Grass module and a grass species file: tillering, intercalary growth, fibrous roots | L | Tiller count and height inside a literature range to be chosen in WP23 |
 | 24 | Nitrogen: soil mineral N, mineralization, leaching, uptake, leaf N drives Vcmax, remobilization, nodules for legumes, fertilize action | L | Nodulated beans grow in N-free soil and unnodulated ones do not; bottom-up senescence now emergent |

@@ -15,6 +15,7 @@
 //! Model card: docs/models/herb-architecture.md; decisions 0013.
 
 pub mod geometry;
+pub mod nitrogen;
 pub mod params;
 mod roots;
 mod shoot;
@@ -37,6 +38,7 @@ use ps_weather::HourWeather;
 use serde::{Deserialize, Serialize};
 
 pub use geometry::V3;
+pub use nitrogen::{NitrogenDay, NitrogenParams, PlantNitrogen};
 pub use params::{HerbParams, RootParams, ShadeSignal};
 
 /// kg of water per mol.
@@ -89,6 +91,8 @@ pub enum Role {
     SeedInPod,
     /// A root segment or a cohort of laterals.
     Root,
+    /// A cluster of root nodules (WP24).
+    Nodule,
 }
 
 /// Days over which the leaf light record averages (decision 0018).
@@ -121,6 +125,12 @@ pub struct Meta {
     /// `None` until the leaf has seen a whole day (decision 0018).
     #[serde(default)]
     pub dli: Option<MolPerM2Day>,
+    /// Nitrogen this nodule fixes per day at the current setting, g N (decision 0020).
+    #[serde(default)]
+    pub fixation: f64,
+    /// Whether nitrogen has been mined from this leaf.
+    #[serde(default)]
+    pub mined: bool,
 }
 
 impl Meta {
@@ -136,6 +146,8 @@ impl Meta {
             par_today: MolPerM2Day(0.0),
             par_hours: 0,
             dli: None,
+            fixation: 0.0,
+            mined: false,
         }
     }
 }
@@ -354,6 +366,30 @@ pub struct DayReport {
     pub height: f64,
     /// Water uptake shortfall today, kg.
     pub shortfall: f64,
+    /// Nitrogen in the plant (organs and pool), g N (WP24).
+    #[serde(default)]
+    pub nitrogen: f64,
+    /// Nitrogen taken up from the soil today, g N.
+    #[serde(default)]
+    pub n_uptake: f64,
+    /// Nitrogen fixed today, g N.
+    #[serde(default)]
+    pub n_fixed: f64,
+    /// Nitrogen mobilized from old organs today, g N.
+    #[serde(default)]
+    pub n_mined: f64,
+    /// Nitrogen demand not met today, g N.
+    #[serde(default)]
+    pub n_unmet: f64,
+    /// Nitrogen factor on expansion (1 = no deficit).
+    #[serde(default)]
+    pub n_status: f64,
+    /// Living nodule dry mass, g.
+    #[serde(default)]
+    pub nodule_mass: f64,
+    /// Carbon respired to fix nitrogen today, g C.
+    #[serde(default)]
+    pub fixation_carbon: f64,
 }
 
 /// One plant: its organ graph and the growth-form state around it. Serializes
@@ -372,6 +408,9 @@ pub struct Plant {
     pub meta: Vec<Meta>,
     /// Carbon ledger.
     pub ledger: CarbonLedger,
+    /// Nitrogen pool, ledger and status (WP24).
+    #[serde(default)]
+    pub nitrogen: PlantNitrogen,
     /// Phenology.
     pub phenology: Phenology,
     /// Collar position in the soil frame (x, y, z = −sowing depth).
@@ -575,6 +614,7 @@ impl Plant {
             arena,
             meta,
             ledger,
+            nitrogen: PlantNitrogen::default(),
             phenology: Phenology::default(),
             collar_position,
             depth: Meters(-collar_position[2]),
@@ -605,6 +645,7 @@ impl Plant {
             sky: ps_light::sky_sectors().to_vec(),
         };
         p.positions = geometry::layout(&p.arena, &p.meta, p.collar_position);
+        p.sow_nitrogen();
         Ok(p)
     }
 
@@ -643,6 +684,7 @@ impl Plant {
         m.multiplicity = s.multiplicity;
         m.potential_area = s.potential_area;
         self.meta.push(m);
+        self.feed_new_organ(id);
         Ok(id)
     }
 
@@ -763,16 +805,17 @@ impl Plant {
                 // Aging scales Vcmax, Jmax and Rd together (the table's capacity axis);
                 // leaf lifespan counts from full expansion.
                 let expanded = self.meta[i].expanded.unwrap_or(age);
+                let area = self.arena.size[i].area.0;
+                // Leaf nitrogen per area scales capacity too (decision 0020).
                 let cap = leaf_capacity(
                     age,
                     expanded,
                     expanded + hp.leaf_lifespan,
                     hp.capacity_floor,
-                );
+                ) * hp.nitrogen.leaf_capacity(self.arena.nitrogen[i].0 / area);
                 let sun = table.lookup(a.sunlit, cap);
                 let shade = table.lookup(a.shaded, cap);
                 let f = a.sunlit_fraction;
-                let area = self.arena.size[i].area.0;
                 let a_net = f * sun.a_net.0 + (1.0 - f) * shade.a_net.0;
                 let rd = f * sun.rd.0 + (1.0 - f) * shade.rd.0;
                 let e0 = f * sun.e.0 + (1.0 - f) * shade.e.0;
@@ -849,6 +892,9 @@ impl Plant {
                 _ => wx.t_air,
             })
             .collect();
+        // Nodules pay for the hour's fixation first (decision 0020).
+        self.fix_hour();
+        let respiring = self.phenology.stage != Stage::Mature;
         let rep = allocation::hourly(
             &mut self.arena,
             &self.params.allometry,
@@ -858,10 +904,14 @@ impl Plant {
                 temperature: &temps,
                 income: &self.income,
                 ftsw: self.ftsw,
-                stress: self.stress.1,
+                stress: self.stress.1 * self.nitrogen.status,
+                respiring,
+                n_floor: Some(&self.params.nitrogen.growth_floor),
             },
             &mut self.ledger,
         )?;
+        // Growing organs draw nitrogen for the hour's growth from the pool.
+        self.top_up_hour();
         // Plant thermal time: soil at seed depth until emergence, then air.
         let t_plant = if self.emerged() { wx.t_air } else { seed_t };
         let dt = self.params.temperature.cardinal.hourly(t_plant);
@@ -968,8 +1018,9 @@ impl Plant {
         coeffs: Option<&[LightCoeffs]>,
     ) -> DayReport {
         self.rebuild_light(sun_path, coeffs);
-        self.update_nitrogen();
+        self.mark_expanded();
         let rep = self.report();
+        self.close_nitrogen_day();
         self.today = DayStats::default();
         self.shortfall = KgWater(0.0);
         self.income.clear();
@@ -1080,26 +1131,11 @@ impl Plant {
         }
     }
 
-    fn update_nitrogen(&mut self) {
-        let [stem, root, fruit] = self.params.n_fraction;
-        // Dry, dormant tissue after maturity: no maintenance (decision 0013).
-        let alive = if self.phenology.stage == Stage::Mature {
-            0.0
-        } else {
-            1.0
-        };
+    /// Records the thermal age at which each organ finished expanding.
+    fn mark_expanded(&mut self) {
         let ids: Vec<OrganId> = self.arena.alive_ids().collect();
         for id in ids {
             let i = id.index();
-            let f = match self.arena.kind[i] {
-                OrganKind::Internode | OrganKind::Bud | OrganKind::Tendril => stem,
-                OrganKind::Root | OrganKind::Nodule => root,
-                OrganKind::Flower | OrganKind::Pod | OrganKind::SeedInPod => fruit,
-                // Leaves pay maintenance as dark respiration in gas exchange; seed
-                // tissues respire little (decision 0013).
-                OrganKind::Leaf | OrganKind::Seed | OrganKind::Cotyledon => 0.0,
-            };
-            self.arena.nitrogen[i] = GramsN(alive * f * self.arena.structural(id).0);
             let c = &self.arena.curve[i];
             if self.meta[i].expanded.is_none()
                 && c.potential.0 > 0.0
@@ -1144,6 +1180,7 @@ impl Plant {
     /// the collar or hypocotyl.
     pub fn prune(&mut self, id: OrganId, now: Hours) -> Result<(), ArchError> {
         self.check_prune(id)?;
+        let alive: Vec<bool> = self.arena.alive.clone();
         allocation::cut(
             &mut self.arena,
             &self.params.carbon,
@@ -1151,6 +1188,14 @@ impl Plant {
             now,
             &mut self.ledger,
         )?;
+        // Everything cut leaves with its nitrogen.
+        for (i, was) in alive.into_iter().enumerate() {
+            if was && !self.arena.alive[i] {
+                self.nitrogen.ledger.removed += self.arena.nitrogen[i];
+                self.arena.nitrogen[i] = GramsN(0.0);
+            }
+        }
+        self.assert_nitrogen();
         Ok(())
     }
 
@@ -1211,6 +1256,14 @@ impl Plant {
             seed_mass: mass(OrganKind::SeedInPod),
             height,
             shortfall: self.shortfall.0,
+            nitrogen: self.nitrogen_stock().0,
+            n_uptake: self.nitrogen.today.uptake.0,
+            n_fixed: self.nitrogen.today.fixed.0,
+            n_mined: self.nitrogen.today.mined.0,
+            n_unmet: self.nitrogen.today.unmet.0,
+            n_status: self.nitrogen.status,
+            nodule_mass: mass(OrganKind::Nodule),
+            fixation_carbon: self.nitrogen.today.fixation_carbon.0,
         }
     }
 }

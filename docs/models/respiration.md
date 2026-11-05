@@ -36,7 +36,11 @@ Encoded: the rates. Emergent: heat waves draining reserves, big plants needing m
 to break even, starving shaded branches.
 
 ## Known limits
-- Nitrogen per organ is set at initiation and not yet dynamic (M2).
+- Organ nitrogen is real state since WP24 (docs/models/nitrogen.md): mined organs
+  respire less. The sown seed and the cotyledons pay no maintenance, and nothing does
+  after maturity (decision 0020).
+- Nodules pay fixation respiration, 7.1 g C per g N fixed, booked as `fixation` in the
+  carbon ledger.
 - Leaf `Rd` scales with leaf capacity (aging), so old leaves respire less too.
 
 ## Validation

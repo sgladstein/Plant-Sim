@@ -24,8 +24,9 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 ## M2: plot and sandbox
 | WP | Issue | State |
 | --- | --- | --- |
-| 21 Plot soil and shared light | #49 | in review (decision 0019). Model 0.3.0. Plots of 1 to 3 m with 5 cm cells, one shared light grid per plot with per-leaf rays (per-voxel light measured and rejected), parallel plant stepping, 30-bean plot in the golden hashes. Speed not yet met: 28.8 ms per sim-day for 30 plants on 4 cores, target 20 ms |
-| 22 to 27 | | open |
+| 21 Plot soil and shared light | #49 | done (PR #50; decision 0019). Model 0.3.0. Plots of 1 to 3 m with 5 cm cells, one shared light grid per plot with per-leaf rays (per-voxel light measured and rejected), parallel plant stepping, 30-bean plot in the golden hashes. Speed not yet met (the perf thread has it): reviewer 20.9 ms per sim-day over 60 days on 4 cores, target 20 ms |
+| 24 Nitrogen | #52 | in review (decision 0020). Model 0.4.0, species schema 2. Soil humus, NH4 and NO3 per cell (mineralization, nitrification, leaching), joint daily uptake with a 4 cm root reach, organ N as state, hourly top-up from a plant pool, mining low-light leaves first, demand-driven fixation by nodule organs, fertilize action. Done-when: nodulated shoot 7.9x unnodulated in N-free sand at 45 days after emergence; leaves drop bottom-up in seed fill. single_pot and the response scenarios are fertilized (300 ppm NO3); garden soil is the default. Plot speed 24.6 ms per sim-day (main 19.4 on the same machine) |
+| 22, 23, 25 to 27 | | open |
 
 **M0 exit (§7):** the validation report passes every M0 gate, the 90-day run is deterministic (golden hashes, Linux = Windows, debug = release), frost kills the plant for good, and the known limits are in decision 0018 and the model cards. The owner signs off M0.
 
@@ -43,7 +44,7 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.rs` fills them from `ps_session::Snapshot`. Lateral root cohorts are drawn as up to 8 copies at golden-angle turns about the parent root. Pots are drawn round (`PotShape::Round`): a terracotta back half lined with soil, a curved glass front half, and a saucer; the soil-water slice wraps onto the glass. The rhizobox shape remains for the demo scene.
 
 ## Last validation report
-`cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11). At WP21 (model 0.3.0, world seed 7): 70 checks: 54 pass, 16 Info misses, 0 known misses. The M0 misses are listed in decision 0018. The new one is the M2 density check: leaf area per plant falls 25% from 5 to 34 plants per m², against about 70% (decision 0019; plants are sink-limited and crowns narrow, so shade costs little).
+`cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11). At WP24 (model 0.4.0, world seed 7): 71 checks: 57 pass, 14 Info misses, 0 known misses. The M0 misses are listed in decision 0018. Decision 0020 lists what changed: density now passes (-43% against -70%), as do heat pods and heat seeds per pod; drought shoot mass now misses (-64%); shade internodes +23% against a 20% gate.
 
 ## Open questions for the owner
 - WP7 (decision 0009): two readings of the plan's text to confirm. Priority is the share of an organ's own available reserve it may spend per hour (taken literally, §3.9 would cap every organ below its potential), and the water stress factor multiplies the stomatal slope.
@@ -52,6 +53,18 @@ The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.r
 - WP13 (Bevy smoke test on the GTX 1070) passed its frame-time gate on 2026-11-05 with stand-in plants: Vulkan 2.7 ms per frame, DX12 5.8 ms (budget 16 ms). Re-check on the real sim. The viewer thread has the follow-ups (default backend, slow cold-start screenshots, see-through side panel).
 
 ## Review follow-ups (fold into a later PR)
+- WP21 review (/mnt/project-files/reviews/wp21-review.md), still open after WP24:
+  - Density is still short (-43% against -70%). Branches and leaf size do not respond to density, and stand LAI is 5.5 at 34 per m² against a real plateau of 3 to 4. The lever is bud outgrowth and leaf potential area scaling with the R:FR shade signal. Read the density variables from interior plants, not edge plants (a plant filter on the target).
+  - Plot sides that are not multiples of 5 cm are rounded silently: reject them in `validate`, or document the rounding.
+  - The golden mismatch text should say the golden holds 30 days.
+  - Per-column soil surface radiation before WP26.
+  - light.md: the plot grid bottom is `min(0, lowest leaf)`. world-and-schedule: list the first plant's G as a plot parameter.
+  - Compute the light inputs and leaflet list once a day. Settle the G question in decision 0018.
+- WP24 (decision 0020), for later packages:
+  - Pod set should read nitrogen. N-short plants set as many pods as fed ones and fill smaller seeds.
+  - Leaf aging still multiplies capacity next to leaf N.
+  - The root reach and the 10x uptake capacity stand in for root length the sim does not draw.
+  - The soil water has no upward flow.
 - WP12 review (/mnt/project-files/reviews/wp12-review.md): an ignored test or weekly CI job that runs the M0 gates at world seeds 11, 23 and 31 (today only `seeds.sh`-style local runs check them).
 - Viewer (PR #38): at day 60 of the full-sun pot at least one root tip sits outside the soil grid on the +x side, through the pot wall. Roots need clamping or deflecting at the pot boundary (ps-arch root elongation).
 - WP4 review: cross-field validation in `Species::validate` (t_base < t_opt < t_max, emergence < flowering < maturity, growth temperature ordering, finite tropisms, `#rrggbb` colors); the discrete-trait rounding rule in the species model card; `specific_stem_length` likely 10–20 cm/g (WP12). (The typed `Traits` view landed with WP7.)
@@ -73,6 +86,7 @@ The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.r
 - WP16 (sim thread) runs in its own thread; the viewer thread does the viewer side.
 - WP12 (decision 0018): the heat and drought response scenarios start on the control's flowering day (day 43). Move them with any change to the phenology thresholds. The validation run is about 20 s in release. Regenerate the sim-plant light fixture with `PS_LEAVES_OUT=... cargo test -p ps-arch --test ninety_days -- --ignored`, then `python3 validation/fixtures/light_raytrace.py --leaves FILE`.
 - WP21 (decision 0019): `SoilSpec::Plot` in scenarios; the world steps a soil's plants in parallel (ordered collect), and a plot's daily light runs between `Plant::day_before_light` and `Plant::day_after_light`. Pots are byte-identical to 0.2.0. The viewer still draws a plot as a round pot (`ps-app/src/sim_source.rs` only got a compile fix).
-- Next: WP24 nitrogen, then the WP21 speed target if the perf follow-up has not met it (docs/design-plan.md §7). Research notes for them are in the project files (research/m2-m3-bean-science.md).
+- WP24 (decision 0020, docs/models/nitrogen.md): `nitrogen` map per soil in scenarios (default garden soil), `Fertilize` action, `Role::Nodule` organs, 9 new daily CSV columns and `nitrogen_g` in the organ CSV. Daily step 0 is `World::daily_nitrogen` (joint uptake per soil, then `Plant::nitrogen_day`); `Plant::nitrogen_alone` does the same for a plant driven without a world.
+- Next: the remaining M2 packages in plan order (docs/design-plan.md §7), and the WP21 speed target if the perf follow-up has not met it. Research notes are in the project files (research/m2-m3-bean-science.md).
 - Local checks: see CLAUDE.md "Session start".
 - `cargo nextest` runs in CI; locally `cargo test --workspace` is equivalent.

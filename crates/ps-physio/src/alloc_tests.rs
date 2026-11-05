@@ -81,6 +81,8 @@ fn run_hour(
             income,
             ftsw: 1.0,
             stress: 1.0,
+            respiring: true,
+            n_floor: None,
         },
         ledger,
     )
@@ -275,6 +277,8 @@ fn inputs_must_cover_every_organ() {
             income: &income,
             ftsw: 1.0,
             stress: 1.0,
+            respiring: true,
+            n_floor: None,
         },
         &mut ledger,
     );

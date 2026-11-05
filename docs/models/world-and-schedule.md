@@ -13,6 +13,11 @@ replayed exactly.
 ## Equations
 - Clock hour of tick `t`: `(start_hour + t) mod 24`; day: `(start_hour + t) div 24`.
 - Shade cloth: radiation seen by a soil and its plants `= fraction × radiation`.
+- Daily step 0 (decision 0020): for each soil, its plants' joint nitrogen uptake from
+  the same soil state, then each plant's nitrogen step, in plant order; then the
+  daily plant steps. Each soil's starting nitrogen comes from the scenario's
+  `nitrogen` map (default garden soil); the `Fertilize` action adds g N m⁻² of nitrate
+  or ammonium to its top layer.
 - Rain shelter: rain reaching a soil `= rain_fraction × rain` (scenario `rain_fraction`
   per soil, default 1; decision 0018). Irrigation and action water are not affected.
 - Plots (decision 0019): plants of one soil step in parallel and are collected in plant
@@ -61,8 +66,9 @@ a plot also compete for light through the shared grid.
   pots side by side (merging their grids is left for when a scenario needs it).
 - Competition on a plot is weak: from flowering on the plants are sink-limited, so
   shade costs little growth. Leaf area per plant falls 25% from 5 to 34 plants per m²,
-  against about 70% in the field (decision 0019). Nitrogen (WP24) should help.
-- No elevation, wind or soil nitrogen.
+  against about 70% in the field at model 0.3.0 (decision 0019). With nitrogen (model
+  0.4.0, decision 0020) it falls 43%.
+- No elevation or wind.
 - A plot's light uses the first plant's species G for every plant.
 - Snapshots are RON text, about 740 KB for one plant at day 90.
 - The scenario is part of the hash: a shorter run of the same scenario has different

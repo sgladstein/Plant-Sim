@@ -10,6 +10,8 @@ use ps_units::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::nitrogen::NitrogenParams;
+
 /// Thermal time per day at the optimum temperature, °C·day, for converting rates given
 /// per day at the optimum into rates per °C·day.
 #[must_use]
@@ -191,8 +193,8 @@ pub struct HerbParams {
     pub seed_fill: DegreeDays,
     /// Potential mass of one seed.
     pub seed_potential: GramsDM,
-    /// Nitrogen fractions: stems, roots, fruit.
-    pub n_fraction: [f64; 3],
+    /// Nitrogen (WP24, decision 0020).
+    pub nitrogen: NitrogenParams,
     /// Root segment and lateral cohort length.
     pub root_segment: Meters,
     /// Root types, in file order.
@@ -332,11 +334,7 @@ impl HerbParams {
             seed_fill_delay: DegreeDays(c.seed_fill_delay.value),
             seed_fill: DegreeDays(c.seed_fill.value),
             seed_potential: GramsDM(t.seed_mass),
-            n_fraction: [
-                c.stem_n_fraction.value,
-                c.root_n_fraction.value,
-                c.fruit_n_fraction.value,
-            ],
+            nitrogen: NitrogenParams::new(s, t),
             root_segment: Meters(c.root_segment_length.value * CM),
             roots,
             feedback_onset: c.reserve_feedback_onset.value,

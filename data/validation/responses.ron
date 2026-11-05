@@ -280,5 +280,17 @@ ValidationResponses(
       tag: Emergent,
       note: "Baseline m2/density_5. Leaf area per plant above 0.3 m2 at 5 plants/m2 and below 0.1 m2 at 35 (text). Info from WP21, when the plot scenarios were written; the M2 exit gate (decision 0019).",
     ),
+    Response(
+      id: "nfree_nodulation_shoot_mass",
+      scenario: "m2/nfree_nodulated",
+      baseline: "m2/nfree_unnodulated",
+      variable: "shoot_mass_g",
+      at: Day(57),
+      expect: RelChange(min: 2.0, max: 100.0),
+      sources: ["plan_wp24_nfree"],
+      gate: Info,
+      tag: Emergent,
+      note: "WP24 done-when: in nitrogen-free sand the nodulated shoot is more than 3 times the unnodulated one 45 days after emergence (day 12). The cargo test nitrogen_free_sand_needs_nodules enforces it, with unnodulated plant N at or below seed N (decision 0020).",
+    ),
   ],
 )
