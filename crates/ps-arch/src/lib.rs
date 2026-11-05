@@ -20,6 +20,7 @@ pub mod nitrogen;
 pub mod params;
 mod roots;
 mod shoot;
+pub mod thicken;
 pub mod vine;
 
 use ps_graph::{
@@ -192,6 +193,13 @@ pub struct Meta {
     /// The leaf's lowest temperature so far today, for frost (leaves; WP27).
     #[serde(default)]
     pub t_leaf_min: Option<Celsius>,
+    /// The most leaf area this internode has carried above it, m² (the pipe model's
+    /// `A_max`, R1a).
+    #[serde(default)]
+    pub supported_area: f64,
+    /// This internode's pipe-model target cross-section, m² (R1a).
+    #[serde(default)]
+    pub pipe_target: f64,
 }
 
 impl Meta {
@@ -212,6 +220,8 @@ impl Meta {
             twine: None,
             t_leaf: None,
             t_leaf_min: None,
+            supported_area: 0.0,
+            pipe_target: 0.0,
         }
     }
 }
@@ -485,6 +495,12 @@ pub struct DayReport {
     /// g C.
     #[serde(default)]
     pub assimilation: f64,
+    /// Diameter of the hypocotyl, the basal stem, m (R1a).
+    #[serde(default)]
+    pub hypocotyl_diameter: f64,
+    /// Diameter of the tap root 5 cm below its base, m (R1a; 0 while it is shorter).
+    #[serde(default)]
+    pub tap_root_diameter: f64,
     /// Water taken from the soil today, which the plant transpires, kg (the demand less
     /// the shortfall).
     #[serde(default)]
@@ -1257,6 +1273,8 @@ impl Plant {
         // Nodules pay for the hour's fixation first (decision 0020).
         self.fix_hour();
         let respiring = self.phenology.stage != Stage::Mature;
+        let stress = self.stress.1 * self.nitrogen.status;
+        let secondary = self.secondary_potential(&temps, ctx.tick, stress);
         let (flows, lens_temps) = match lens {
             Some(l) => (Some(&mut l.phloem_import), Some(&mut l.temperature)),
             None => (None, None),
@@ -1270,9 +1288,10 @@ impl Plant {
                 temperature: &temps,
                 income: &self.income,
                 ftsw: self.ftsw,
-                stress: self.stress.1 * self.nitrogen.status,
+                stress,
                 respiring,
                 n_floor: Some(&self.params.nitrogen.growth_floor),
+                secondary: &secondary,
             },
             &mut self.ledger,
             flows,
@@ -1362,6 +1381,8 @@ impl Plant {
                 self.flowering(now)?;
             }
             self.root_initiation(now, soil)?;
+            // Stem pipe-model targets from the leaf area carried (R1a).
+            self.pipe_targets();
         }
         // 4. Senescence and shedding.
         self.senescence(now)?;
@@ -1769,10 +1790,20 @@ impl Plant {
             nodule_mass: mass(OrganKind::Nodule),
             fixation_carbon: self.nitrogen.today.fixation_carbon.0,
             assimilation: self.today.assimilation,
+            hypocotyl_diameter: if a.alive[self.hypocotyl.index()] {
+                2.0 * a.size[self.hypocotyl.index()].radius.0
+            } else {
+                0.0
+            },
+            tap_root_diameter: self.tap_root_diameter(TAP_ROOT_DEPTH),
             transpiration: self.today.transpiration,
         }
     }
 }
+
+/// Where along the tap root its diameter is reported (shovelomics measure it a few cm
+/// below the hypocotyl; R1 spec §6).
+const TAP_ROOT_DEPTH: f64 = 0.05;
 
 fn zero_coeffs() -> LightCoeffs {
     LightCoeffs {

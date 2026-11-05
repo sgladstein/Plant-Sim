@@ -38,7 +38,9 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 9. Fixation, before allocation: nodule `k` pays `c = min(R_k, f_k · cost / 24)` from
    its reserve and adds `c / cost` to the pool.
 10. Growth gate: an organ with `N ≤ c_floor,kind · W` does not grow this hour (roots and
-    nodules have floor 0).
+    nodules have floor 0). Here and in every rule of this card `W` is the organ's
+    primary structure: secondary wood from thickening (decision 0036) needs no
+    nitrogen, so a thickening stem does not dilute its N or raise its demand.
 11. Expansion stress = water stress × N status (step 18).
 12. Top-up, after allocation: deficits `d_i = max(0, c_initial,i W_i − N_i)` of growing
     organs; each gets `d_i · min(1, pool / Σd)`. `growth += max(0, Σd − residual)`, with

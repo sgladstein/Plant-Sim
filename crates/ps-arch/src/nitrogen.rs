@@ -374,7 +374,7 @@ impl Plant {
             .filter(|id| self.growing(*id))
             .filter_map(|id| {
                 let i = id.index();
-                let d = np.initial_of(self.arena.kind[i]) * self.arena.structural(id).0
+                let d = np.initial_of(self.arena.kind[i]) * self.arena.primary(id).0
                     - self.arena.nitrogen[i].0;
                 (d > 0.0).then_some((i, d))
             })
@@ -510,7 +510,7 @@ impl Plant {
                     return None;
                 }
                 let mobile =
-                    self.arena.nitrogen[i].0 - np.floor_of(kind) * self.arena.structural(id).0;
+                    self.arena.nitrogen[i].0 - np.floor_of(kind) * self.arena.primary(id).0;
                 if mobile <= 0.0 {
                     return None;
                 }
@@ -700,7 +700,7 @@ impl Plant {
             if !matches!(kind, OrganKind::Leaf | OrganKind::Internode) {
                 continue;
             }
-            let w = self.arena.structural(id).0;
+            let w = self.arena.primary(id).0;
             have += (self.arena.nitrogen[i].0 - np.floor_of(kind) * w).max(0.0);
             full += (np.initial_of(kind) - np.floor_of(kind)) * w;
         }
@@ -718,7 +718,7 @@ impl Plant {
         for d in deaths {
             let i = d.id.index();
             let n = self.arena.nitrogen[i];
-            let keep = np.floor_of(self.arena.kind[i]) * self.arena.structural(d.id).0;
+            let keep = np.floor_of(self.arena.kind[i]) * self.arena.primary(d.id).0;
             let back = (n.0 - keep).max(0.0);
             self.nitrogen.pool.0 += back;
             self.nitrogen.ledger.litter.0 += n.0 - back;

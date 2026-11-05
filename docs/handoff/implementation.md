@@ -60,9 +60,9 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - M0 gates fail the build; everything else is Info.
 - Targets, sources and bands are documented in `docs/validation-data.md` and `data/validation/`.
 
-## 2. Current state (2026-11-05, WP27 PR)
+## 2. Current state (2026-11-05, R1a PR)
 
-**Model and data.** Model 0.17.0 (decision 0034: the leaf energy balance, WP27), species schema 11. Before it 0.16.0 (decision 0033: broad leaves at 5 light points) and schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
+**Model and data.** Model 0.18.0 (decision 0036: stem and root thickening, realism plan R1a), species schema 12. Before it 0.17.0 (decision 0034: the leaf energy balance, WP27, schema 11) and 0.16.0 (decision 0033: broad leaves at 5 light points) and schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
 
 **Merged today:**
 - #87: lateral roots stay in the soil (decision 0028, model 0.11.0).
@@ -70,9 +70,10 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - #98: grass blades sample light at 3 points per strip (decision 0030, model 0.13.0), the owner's option (a) for dense wheat speed: about -12 to -15% on wheat_stand.
 - #104: the re-tune (decision 0032, model 0.15.0): development trapezoid 7 / 25 / 33 / 42 °C with the calendar kept, Medlyn g1 5.79, per-organ construction cost keys (all 1.25 for now), pole internode_last_fraction 1.75.
 - #110: broad leaves at 5 light points (decision 0033, model 0.16.0), the performance thread's plot-speed option 1.
-- The WP27 PR (decision 0034, model 0.17.0): leaf energy balance, wind, leaf frost on leaf temperature.
+- #114: leaf energy balance (decision 0034, model 0.17.0), wind, leaf frost on leaf temperature.
+- The R1a PR (decision 0036, model 0.18.0): stem and root thickening, a sink at priority 0.4.
 
-**Validation at 0.17.0, seed means.** 67 of 87 pass, every M0 gate passes (68 at 0.15.0 and 0.16.0; harvest_index_tops slipped to 0.392 at 0.17.0). The misses:
+**Validation at 0.18.0, seed means.** 69 of 90 pass, every M0 gate passes (0.17.0: 67 of 87). R1a's basal_stem_diameter and tap_root_diameter pass, harvest_index_tops passes again (0.424); stem_share_peak (0.31, R1b adds storage) and drought_root_shoot_cited (+9%) miss. The misses:
 - **Thermal-time phenology.** The seven checks against two literature bases that disagree with each other.
 - **Wheat.** Five checks: the stand is too short and low-yielding, spaced plants tiller too little.
 - **Drought and heat seed size** (drought_seed_size, drought_seeds_per_pod, heat_seed_mass, heat_seed_size): seed number does not adjust to carbon after pod set, so seed size takes every shortfall. Needs a seed abortion rule.
@@ -82,7 +83,7 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 
 ## 3. Next steps, in order
 
-1. **Realism specs, in order (owner, 2026-11-05): R1 carbon sinks, R2 root system, R3 plant hydraulics** (`docs/research/realism-plan/`, r1-carbon-sinks.md, r2-root-system.md, r3-plant-hydraulics.md; PR #107). Each its own model version, decision record and PR; Code review before merging; the performance thread re-times after each merge.
+1. **Realism specs, in order (owner, 2026-11-05): R1 carbon sinks, R2 root system, R3 plant hydraulics.** R1a is done; R2a (root length, with the water-uptake fix of #116) goes next, then R1b and R1c, then the rest of R2 and R3 (`docs/research/realism-plan/`, r1-carbon-sinks.md, r2-root-system.md, r3-plant-hydraulics.md; PR #107). Each its own model version, decision record and PR; Code review before merging; the performance thread re-times after each merge.
 2. **Seed abortion after pod set** (decision 0032, not done). The root of the drought and heat seed-size misses.
 3. **Per-organ construction costs** (decision 0032): CROPGRO's leaf 1.39, stem 1.29, root 1.25, fruit 1.36 go in with the transport and priority revisit (decision 0009), since the leaf cost alone takes the shade-internode M0 gate to +17%.
 4. **WP26, sim side** (its own thread): session save, the replay done-when test, lens data for competition, nitrogen, temperature and carbon flow.

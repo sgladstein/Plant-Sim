@@ -16,7 +16,9 @@ cost a plant more carbon than cool ones.
 - Leaves: their maintenance is the day respiration `Rd` inside gas exchange, so they are
   not charged `Rm` too (decision 0009). At night a leaf's net income is `−Rd`.
 - Growth: of `G` g C spent on growth, `G / cost` becomes structure and
-  `G (1 − 1/cost)` is respired; with `cost = 1.25` that is 20% (§3.8).
+  `G (1 − 1/cost)` is respired; with `cost = 1.25` that is 20% (§3.8). Secondary
+  growth (thickening, decision 0036) pays the same cost. Wood holds no nitrogen, so it
+  adds nothing to `Rm`: a thickened stem's upkeep is its primary tissue's.
 
 ## Parameters
 | Name | Value | Unit | Source |

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::grass::GrassParams;
 use crate::nitrogen::NitrogenParams;
+use crate::thicken::ThickeningParams;
 use crate::vine::ClimbingParams;
 
 /// Thermal time per day at the optimum temperature, °C·day, for converting rates given
@@ -65,6 +66,10 @@ pub struct RootParams {
     pub specific_length: MPerG,
     /// Gravitropism weight.
     pub gravitropism: f64,
+    /// Secondary growth factor by distance from the root's base, `(m, factor)`
+    /// (R1a, decision 0036).
+    #[serde(default)]
+    pub secondary_factor: Vec<(f64, f64)>,
 }
 
 /// Non-heritable plant-to-plant variation (decision 0027), in model units.
@@ -261,6 +266,9 @@ pub struct HerbParams {
     pub root_segment: Meters,
     /// Root types, in file order.
     pub roots: Vec<RootParams>,
+    /// Stem and root secondary growth (R1a, decision 0036).
+    #[serde(default)]
+    pub thickening: ThickeningParams,
     /// Leaf reserve concentration where sink feedback on capacity starts, g C per g DM.
     pub feedback_onset: f64,
     /// Leaf reserve concentration where capacity reaches zero, g C per g DM.
@@ -308,6 +316,12 @@ impl HerbParams {
                     insertion: Radians(r.insertion_angle.value.to_radians()),
                     specific_length: MPerG(1.0 / (root_density * area).max(1e-12)),
                     gravitropism: r.gravitropism,
+                    secondary_factor: r
+                        .secondary_factor
+                        .points
+                        .iter()
+                        .map(|&(x, f)| (x * CM, f))
+                        .collect(),
                 }
             })
             .collect();
@@ -413,6 +427,7 @@ impl HerbParams {
             grass: s.grass.as_ref().map(GrassParams::new),
             root_segment: Meters(c.root_segment_length.value * CM),
             roots,
+            thickening: ThickeningParams::new(s),
             feedback_onset: c.reserve_feedback_onset.value,
             feedback_full: c.reserve_feedback_full.value,
             uptake_rate: M2PerHour(c.root_uptake_rate.value),

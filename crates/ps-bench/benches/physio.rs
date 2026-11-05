@@ -140,6 +140,7 @@ fn physio(c: &mut Criterion) {
                         stress: 1.0,
                         respiring: true,
                         n_floor: None,
+                        secondary: &[],
                     };
                     black_box(
                         allocation::hourly(&mut g, &allometry, &cp, &temp, &inp, &mut ledger)
