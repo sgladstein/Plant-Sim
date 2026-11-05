@@ -381,7 +381,6 @@ fn absorbed(p: &PlantEntry, i: usize, hour: usize, w: &HourWeather, fraction: f6
         WPerM2(w.direct.0 * fraction),
         WPerM2(w.diffuse.0 * fraction),
         sin_e,
-        p.plant.params.g_function,
         p.plant.params.absorptance,
     )
     .mean()

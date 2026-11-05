@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 5;
+pub const SCHEMA: u32 = 6;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -54,8 +54,6 @@ param_group!(
         carbon_fraction: "g C / g DM",
         /// Carbon used per carbon built into structure (1.25 = 20% growth respiration).
         construction_cost: "g C / g C",
-        /// Leaf angle G-function (0.5 = spherical).
-        g_function: "-",
         /// Maintenance respiration per nitrogen at 20 C.
         maintenance_rate_20c: "g C / g N / day",
         /// Q10 of maintenance respiration.
