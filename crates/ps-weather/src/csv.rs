@@ -11,7 +11,7 @@
 
 use ps_units::{Celsius, Degrees, JPerM2, KPa, Millimeters, WPerM2};
 
-use crate::calendar::{DateHour, day_of_year};
+use crate::calendar::{DateHour, civil_from_days, day_of_year, days_from_civil};
 use crate::hourly::{HourWeather, WeatherSeries};
 use crate::presets::DailyWeather;
 use crate::radiation::{
@@ -57,6 +57,24 @@ pub enum CsvError {
         expected: DateHour,
         /// The hour found.
         found: DateHour,
+    },
+    /// The file does not start exactly at the first hour (or day) the scenario needs.
+    #[error("weather file must start at {expected:?}, but its first usable row is {found:?}")]
+    StartMismatch {
+        /// 00:00 of the scenario's start date.
+        expected: DateHour,
+        /// The first row at or after it, if any.
+        found: Option<DateHour>,
+    },
+    /// A daily file skips or repeats a date.
+    #[error("line {line}: expected date {expected:?}, found {found:?}")]
+    DateGap {
+        /// 1-based line number.
+        line: usize,
+        /// The date that should come next.
+        expected: (i32, u32, u32),
+        /// The date found.
+        found: (i32, u32, u32),
     },
     /// A value is physically impossible.
     #[error("line {line}, column \"{column}\": value {value} out of range")]
@@ -180,8 +198,12 @@ fn parse_timestamp(line: usize, s: &str) -> Result<DateHour, CsvError> {
     DateHour::new(y, m, d, h).ok_or_else(bad)
 }
 
-/// Reads an hourly weather file. The first row must be 00:00 of the start date or
-/// earlier; rows must be consecutive hours.
+/// Hours whose extraterrestrial irradiance is below this are treated as all diffuse,
+/// because the clearness index is meaningless near sunrise and sunset.
+pub const TWILIGHT_H0_W_M2: f64 = 10.0;
+
+/// Reads an hourly weather file. The file must contain 00:00 of the start date (earlier
+/// rows are skipped), rows must be consecutive hours, and it must reach the start hour.
 ///
 /// # Errors
 /// Any [`CsvError`].
@@ -198,10 +220,10 @@ pub fn read_hourly(
     let c_r = t.col("rain_mm")?;
     let c_cloud = t.opt_col("cloud_fraction");
 
-    let day0 = DateHour::new(start.year, start.month, start.day, 0)
-        .ok_or(CsvError::Empty)?
-        .epoch_hours();
+    let day0_dh = DateHour::new(start.year, start.month, start.day, 0).ok_or(CsvError::Empty)?;
+    let day0 = day0_dh.epoch_hours();
     let mut hours = Vec::new();
+    let mut first_kept: Option<DateHour> = None;
     let mut expected: Option<DateHour> = None;
     for (line, f) in &t.rows {
         let line = *line;
@@ -219,6 +241,15 @@ pub fn read_hourly(
         if ts.epoch_hours() < day0 {
             continue;
         }
+        if first_kept.is_none() {
+            first_kept = Some(ts);
+            if ts != day0_dh {
+                return Err(CsvError::StartMismatch {
+                    expected: day0_dh,
+                    found: Some(ts),
+                });
+            }
+        }
         let ta = check(line, "t_air_c", num(line, "t_air_c", f[c_t])?, -60.0, 60.0)?;
         let rh = check(line, "rh_pct", num(line, "rh_pct", f[c_rh])?, 0.0, 100.0)?;
         let g = check(
@@ -233,7 +264,7 @@ pub fn read_hourly(
         let h = f64::from(ts.hour);
         let h0 = extraterrestrial_horizontal_j_m2(latitude, ts.year, doy, h, h + 1.0) / 3600.0;
         let kt = if h0 > 0.0 { (g / h0).min(1.0) } else { 0.0 };
-        let fd = if h0 > 0.0 {
+        let fd = if h0 >= TWILIGHT_H0_W_M2 {
             erbs_diffuse_fraction(kt)
         } else {
             1.0
@@ -261,6 +292,12 @@ pub fn read_hourly(
             sun: sun_position(latitude, ts.year, doy, h + 0.5),
         });
     }
+    if hours.len() <= start.hour as usize {
+        return Err(CsvError::StartMismatch {
+            expected: start,
+            found: first_kept,
+        });
+    }
     Ok(WeatherSeries {
         latitude,
         start,
@@ -286,11 +323,31 @@ pub fn read_daily(
     let c_g = t.col("radiation_mj_m2")?;
     let c_r = t.col("rain_mm")?;
     let mut days = Vec::new();
+    let first = days_from_civil(start.year, start.month, start.day);
+    let mut prev: Option<i64> = None;
     for (line, f) in &t.rows {
         let line = *line;
         let (year, month, day) = parse_date(line, "date", f[c_d])?;
-        if (year, month, day) < (start.year, start.month, start.day) {
+        let z = days_from_civil(year, month, day);
+        if let Some(p) = prev
+            && z != p + 1
+        {
+            return Err(CsvError::DateGap {
+                line,
+                expected: civil_from_days(p + 1),
+                found: (year, month, day),
+            });
+        }
+        prev = Some(z);
+        if z < first {
             continue;
+        }
+        if days.is_empty() && z != first {
+            return Err(CsvError::StartMismatch {
+                expected: DateHour::new(start.year, start.month, start.day, 0)
+                    .ok_or(CsvError::Empty)?,
+                found: DateHour::new(year, month, day, 0),
+            });
         }
         let lo = check(line, "t_min_c", num(line, "t_min_c", f[c_lo])?, -60.0, 60.0)?;
         let hi = check(line, "t_max_c", num(line, "t_max_c", f[c_hi])?, lo, 60.0)?;
@@ -319,12 +376,20 @@ pub fn read_daily(
             )?),
         });
     }
+    if days.is_empty() {
+        return Err(CsvError::StartMismatch {
+            expected: DateHour::new(start.year, start.month, start.day, 0)
+                .ok_or(CsvError::Empty)?,
+            found: None,
+        });
+    }
     Ok(WeatherSeries::from_daily(latitude, start, days))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::fmt::Write as _;
     use ps_units::Hours;
 
     const HOURLY: &str = "\
@@ -374,6 +439,79 @@ timestamp,t_air_c,rh_pct,radiation_w_m2,rain_mm,wind_m_s
         assert!((day2 - 24.0e6).abs() < 1e-3);
         let rain: f64 = s.hours.iter().map(|h| h.rain.0).sum();
         assert!((rain - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn hourly_must_start_at_midnight_of_start_date() {
+        let text = "timestamp,t_air_c,rh_pct,radiation_w_m2,rain_mm\n\
+                    2000-05-15T03,10,50,0,0\n2000-05-15T04,10,50,0,0\n";
+        let e = read_hourly(text, Degrees(45.0), DateHour::new(2000, 5, 15, 3).unwrap());
+        assert!(matches!(e, Err(CsvError::StartMismatch { .. })), "{e:?}");
+    }
+
+    #[test]
+    fn hourly_must_reach_start_hour() {
+        let text = "timestamp,t_air_c,rh_pct,radiation_w_m2,rain_mm\n\
+                    2000-05-15T00,10,50,0,0\n2000-05-15T01,10,50,0,0\n";
+        let e = read_hourly(text, Degrees(45.0), DateHour::new(2000, 5, 15, 6).unwrap());
+        assert!(matches!(e, Err(CsvError::StartMismatch { .. })), "{e:?}");
+    }
+
+    #[test]
+    fn twilight_hours_are_all_diffuse() {
+        // Find an hour with a tiny but positive extraterrestrial irradiance, and give it
+        // more measured global radiation than that (kt would clamp to 1).
+        let lat = Degrees(45.0);
+        let doy = day_of_year(2000, 5, 15);
+        let twilight = (0..24u32)
+            .find(|&h| {
+                let h0 = extraterrestrial_horizontal_j_m2(
+                    lat,
+                    2000,
+                    doy,
+                    f64::from(h),
+                    f64::from(h + 1),
+                ) / 3600.0;
+                h0 > 0.0 && h0 < TWILIGHT_H0_W_M2
+            })
+            .expect("a twilight hour exists at 45 N in May");
+        let mut text = String::from("timestamp,t_air_c,rh_pct,radiation_w_m2,rain_mm\n");
+        for h in 0..24 {
+            let g = if h == twilight { 20.0 } else { 0.0 };
+            writeln!(text, "2000-05-15T{h:02},10,50,{g},0").unwrap();
+        }
+        let s = read_hourly(&text, lat, DateHour::new(2000, 5, 15, 0).unwrap()).unwrap();
+        let w = s.hours[twilight as usize];
+        assert!(
+            w.direct.0.abs() < 1e-12 && (w.diffuse.0 - 20.0).abs() < 1e-12,
+            "{w:?}"
+        );
+    }
+
+    #[test]
+    fn daily_gap_is_an_error() {
+        let text = "date,t_min_c,t_max_c,rh_pct,radiation_mj_m2,rain_mm\n\
+                    2000-06-01,12,25,60,22.5,0\n2000-06-03,13,27,55,24.0,4\n";
+        let e = read_daily(text, Degrees(45.0), DateHour::new(2000, 6, 1, 0).unwrap());
+        assert!(
+            matches!(
+                e,
+                Err(CsvError::DateGap {
+                    line: 3,
+                    expected: (2000, 6, 2),
+                    ..
+                })
+            ),
+            "{e:?}"
+        );
+    }
+
+    #[test]
+    fn daily_must_contain_start_date() {
+        let text =
+            "date,t_min_c,t_max_c,rh_pct,radiation_mj_m2,rain_mm\n2000-06-02,12,25,60,22.5,0\n";
+        let e = read_daily(text, Degrees(45.0), DateHour::new(2000, 6, 1, 0).unwrap());
+        assert!(matches!(e, Err(CsvError::StartMismatch { .. })), "{e:?}");
     }
 
     #[test]

@@ -34,6 +34,11 @@ clearness index by Erbs et al. (1982); direct = global − diffuse.
 **Humidity.** Vapor pressure for the day `e_a = RH_mean · e_s(T_mean)` (Tetens, FAO-56
 eq. 11); hourly `RH = min(e_a, e_s(T))/e_s(T)`, `VPD = e_s(T) − e`.
 
+**Hourly files.** Global radiation is read as measured; the split uses the hourly
+clearness index `G / G₀`, except that hours with `G₀` below 10 W m⁻² (twilight) are
+treated as all diffuse. Files must start at 00:00 of the start date and have no gaps;
+daily files must have consecutive dates from the start date.
+
 **Rain.** Daily total spread evenly over 15:00 to 18:00.
 
 **Presets.** Daily mean temperature `= T_annual + A cos(2π(doy − doy_warm)/365.25) + a_d`,
