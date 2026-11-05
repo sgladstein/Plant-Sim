@@ -4925,13 +4925,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bevy",
+ "ps-arch",
  "ps-graph",
  "ps-light",
  "ps-mesh",
+ "ps-session",
  "ps-ui",
  "ps-units",
  "ps-view",
  "ps-weather",
+ "ps-world",
 ]
 
 [[package]]
