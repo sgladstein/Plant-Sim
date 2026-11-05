@@ -116,6 +116,8 @@ pub struct SimSource {
     day_start_hour: f64,
     /// Plant id and soil id of each pot on screen, in garden order.
     on_screen: Vec<(u32, u32)>,
+    /// The starting state, the frame for exporting the state on screen.
+    template: ps_world::WorldState,
 }
 
 impl SimSource {
@@ -132,6 +134,7 @@ impl SimSource {
         paused: bool,
     ) -> Result<Self> {
         let weather = world.weather().clone();
+        let template = world.state().clone();
         let fractions: BTreeMap<u32, f64> = world
             .state()
             .soils
@@ -174,6 +177,7 @@ impl SimSource {
             startup_tick,
             day_start_hour: -f64::from(scenario.start.hour),
             on_screen: Vec::new(),
+            template,
         })
     }
 
@@ -205,6 +209,18 @@ impl SimSource {
             .get(pot)
             .and_then(|(_, soil)| self.pots.get(soil))
             .map_or("", |i| i.label.as_str())
+    }
+
+    /// The starting world state.
+    #[must_use]
+    pub fn template(&self) -> &ps_world::WorldState {
+        &self.template
+    }
+
+    /// The last tick of the scenario.
+    #[must_use]
+    pub fn end_tick(&self) -> u64 {
+        self.snapshot.end_tick
     }
 
     /// The sim hour at which day 0 starts.
