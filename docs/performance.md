@@ -47,8 +47,16 @@ Whole sim through `World` (`benches/world.rs`, committed scenarios, 90 days):
 
 | Scenario | Per sim-day, 4 cores [1 thread] | Against budget |
 | --- | --- | --- |
-| single_pot | 1.90 ms [2.80] | M0 2 ms: met on 4 cores, not single-thread (light is about 2/3) |
-| two_pot_sun_shade | 3.41 ms [5.07] | M1 sim-week per second needs 24 ms of sim per wall second: fine |
+| single_pot | 1.67 ms [2.34] (2.17 [3.4] after WP12 tuning) | M0 §7 "under 2 ms per sim-day": met on 4 cores; single-thread still over |
+| two_pot_sun_shade | 2.94 ms (3.9 after WP12; single-thread not re-measured) | M1 sim-week per second needs 24 ms of sim per wall second: fine |
+
+The WP12 plant is bigger (more leaves, branches and root cohorts), which took
+single_pot from 1.90 to 2.17 ms. The M0 speed fix (bit-identical, same golden hashes)
+brought it to 1.67 ms: the ray traversal in `LightGrid::path_sum_b` unrolls its three
+axes, a ray locates its start cell once, `rebuild_daily` reuses each leaf's footprint
+from the grid fit, `ClassTable::build` computes the temperature terms once per table
+(`gas::TemperatureTerms`), and the maintenance Q10 cache keeps every temperature of the
+hour. Callgrind, single_pot on one thread: 2.88G to 2.32G instructions over 90 days.
 
 Full state hash at day 90: 0.25 ms (the daily hash is chained, so it no longer grows
 with run length). RON snapshot at day 90: 3.3 ms, 740 KB, on demand only.

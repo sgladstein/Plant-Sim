@@ -20,6 +20,7 @@ ps-mesh.workspace = true
 ps-view.workspace = true
 ps-ui.workspace = true
 ps-world.workspace = true
+ps-export.workspace = true
 ps-session.workspace = true
 bevy.workspace = true
 anyhow.workspace = true

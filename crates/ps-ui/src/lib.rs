@@ -90,6 +90,19 @@ impl TimeControl {
     }
 }
 
+/// Capture requests from the top bar, handled by the app, and its last status line.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Resource)]
+pub struct CaptureControl {
+    /// Save a screenshot this frame.
+    pub screenshot: bool,
+    /// Export the CSV tables this frame.
+    pub export_csv: bool,
+    /// What the last capture did, shown in the bottom bar.
+    pub status: String,
+    /// Clip mode: hide the panels and show only a caption (day, date, pot labels).
+    pub clean: bool,
+}
+
 /// The UI plugin. Add after `PlantViewPlugin`.
 pub struct PlantUiPlugin;
 
@@ -99,6 +112,7 @@ impl Plugin for PlantUiPlugin {
             .init_resource::<TimeControl>()
             .init_resource::<Charts>()
             .init_resource::<Inspector>()
+            .init_resource::<CaptureControl>()
             .add_systems(EguiPrimaryContextPass, panels)
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -139,12 +153,20 @@ fn panels(
     mut charts: ResMut<Charts>,
     mut selection: ResMut<Selection>,
     inspector: Res<Inspector>,
+    mut capture: ResMut<CaptureControl>,
     mut themed: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     if !*themed {
         theme(ctx);
         *themed = true;
+    }
+    if capture.clean {
+        caption(ctx, &time, &garden);
+        if rig.insets.iter().any(|v| v.abs() > 0.0) {
+            rig.insets = [0.0; 4];
+        }
+        return Ok(());
     }
     let mut root = egui::Ui::new(
         ctx.clone(),
@@ -155,7 +177,7 @@ fn panels(
     );
     let top = egui::Panel::top("time")
         .show(&mut root, |ui| {
-            top_bar(ui, &mut time, &garden, &mut charts.open);
+            top_bar(ui, &mut time, &garden, &mut charts.open, &mut capture);
         })
         .response
         .rect
@@ -180,7 +202,11 @@ fn panels(
             ui.separator();
         }
         ui.horizontal(|ui| {
-            ui.weak("Drag to orbit · right-drag to pan · wheel to zoom · F to reframe");
+            ui.weak("Drag to orbit · right-drag to pan · wheel to zoom · F to reframe · P to save a screenshot");
+            if !capture.status.is_empty() {
+                ui.separator();
+                ui.weak(&capture.status);
+            }
             if !rig.auto_frame && ui.button("Reframe").clicked() {
                 rig.reset_requested = true;
             }
@@ -198,7 +224,35 @@ fn panels(
     Ok(())
 }
 
-fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden, charts_open: &mut bool) {
+/// The clip caption: day and date top left, pot labels under it.
+fn caption(ctx: &egui::Context, time: &TimeControl, garden: &Garden) {
+    egui::Area::new("caption".into())
+        .fixed_pos(egui::pos2(18.0, 14.0))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_unmultiplied(34, 31, 28, 200))
+                .corner_radius(6)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    let day = (time.hour / 24.0).floor();
+                    ui.heading(format!("Day {day:.0}"));
+                    ui.label(format!("{} · {}", time.date, time.season));
+                    let labels: Vec<&str> = garden.pots.iter().map(|p| p.label.as_str()).collect();
+                    ui.colored_label(
+                        egui::Color32::from_rgb(214, 222, 200),
+                        labels.join("   |   "),
+                    );
+                });
+        });
+}
+
+fn top_bar(
+    ui: &mut egui::Ui,
+    time: &mut TimeControl,
+    garden: &Garden,
+    charts_open: &mut bool,
+    capture: &mut CaptureControl,
+) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         let day = (time.hour / 24.0).floor();
@@ -230,6 +284,20 @@ fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden, charts_op
         }
         ui.separator();
         ui.toggle_value(charts_open, "Charts");
+        if ui
+            .button("Screenshot")
+            .on_hover_text("Save the view as a PNG (P)")
+            .clicked()
+        {
+            capture.screenshot = true;
+        }
+        if ui
+            .button("Export CSV")
+            .on_hover_text("Write the daily and organ tables for the day on screen")
+            .clicked()
+        {
+            capture.export_csv = true;
+        }
         ui.separator();
         if time.busy {
             ui.colored_label(egui::Color32::from_rgb(200, 210, 170), "Simulating…");

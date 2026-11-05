@@ -250,7 +250,8 @@ pub fn hourly(
     let ids: Vec<OrganId> = arena.alive_ids().collect();
     let t_of = |id: OrganId| inp.temperature[id.index()];
 
-    let mut q10_cache: Option<(u64, f64)> = None;
+    // (temperature bits, factor) for each temperature seen this hour, in first-seen order.
+    let mut q10_cache: Vec<(u64, f64)> = Vec::new();
     // 8. Maintenance from each organ's own reserve (leaves pay it as day respiration).
     for &id in &ids {
         let i = id.index();
@@ -258,15 +259,15 @@ pub fn hourly(
             continue;
         }
         // Organs at one temperature (the shoot in air, roots in one soil layer) share
-        // one Q10 factor: cache the last one instead of calling pow per organ.
+        // one Q10 factor: cache each one instead of calling pow per organ.
         let t = t_of(id);
-        let factor = match q10_cache {
-            Some((bits, f)) if bits == t.0.to_bits() => f,
-            _ => {
-                let f = q10_factor(p.maintenance_q10, t);
-                q10_cache = Some((t.0.to_bits(), f));
-                f
-            }
+        let bits = t.0.to_bits();
+        let factor = if let Some(&(_, f)) = q10_cache.iter().find(|c| c.0 == bits) {
+            f
+        } else {
+            let f = q10_factor(p.maintenance_q10, t);
+            q10_cache.push((bits, f));
+            f
         };
         let m = maintenance_with_factor(p.maintenance_rate_20c, arena.nitrogen[i], factor);
         arena.reserve[i] -= m;
