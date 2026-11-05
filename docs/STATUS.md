@@ -62,6 +62,9 @@ The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.r
 - Set `main` as the repository's default branch in GitHub settings (the agent cannot change repo settings).
 - WP13 (Bevy smoke test on the GTX 1070) passed its frame-time gate on 2026-11-05 with stand-in plants: Vulkan 2.7 ms per frame, DX12 5.8 ms (budget 16 ms). Re-check on the real sim. The viewer thread has the follow-ups (default backend, slow cold-start screenshots, see-through side panel).
 
+## Performance
+- 2026-11-05 bit-identical pass (perf thread; all state hashes unchanged): single_pot 2.66 to 2.1 ms per sim-day, plot_30_beans 27.2 to 22.7, wheat_stand 120 to 104, in a container about 15% slower than earlier ones. The pot is at its 2 ms budget, the plot about 2 ms over. Details and what is left: docs/performance.md, docs/perf/handoff.md.
+
 ## Review follow-ups (fold into a later PR)
 - WP21 review (/mnt/project-files/reviews/wp21-review.md), still open after WP24:
   - Density is still short (-43% against -70%). Branches and leaf size do not respond to density, and stand LAI is 5.5 at 34 per m² against a real plateau of 3 to 4. The lever is bud outgrowth and leaf potential area scaling with the R:FR shade signal. Read the density variables from interior plants, not edge plants (a plant filter on the target).

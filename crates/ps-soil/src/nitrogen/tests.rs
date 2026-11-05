@@ -186,6 +186,11 @@ fn root_reach_spreads_length_over_nearby_cells() {
 /// The original form of [`SoilGrid::reached_cells`]: a list of the active cells in each
 /// root cell's cube, then the shares added on a dense grid. The summed-volume form must
 /// give the same bits.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 fn reached_cells_reference(g: &SoilGrid, roots: &RootCells, reach: Meters) -> RootCells {
     let r = libm::round((reach.0 / g.cell_size().0).max(0.0)).min(8.0) as usize;
     if r == 0 {
@@ -231,6 +236,7 @@ fn reached_cells_reference(g: &SoilGrid, roots: &RootCells, reach: Meters) -> Ro
 /// In a round pot (inactive corners) with overlapping reaches, the summed-volume
 /// reach matches the original cell by cell, bit for bit.
 #[test]
+#[allow(clippy::cast_precision_loss)]
 fn root_reach_matches_the_reference_bit_for_bit() {
     let g = SoilGrid::new_pot(
         Meters(0.2),
