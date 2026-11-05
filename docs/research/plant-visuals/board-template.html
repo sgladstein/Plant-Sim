@@ -1,0 +1,173 @@
+<title>Plant Look Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Literata:opsz,wght@7..72,400;7..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column of figures and findings, like a lab notebook page; wide figures break out to 1100px. */
+:root {
+  --paper: #eef1ea;
+  --sheet: #f8faf5;
+  --ink: #1d271f;
+  --muted: #5f6b60;
+  --rule: #cfd7cc;
+  --leaf: #2f6f34;
+  --leaf-soft: #dfeadb;
+  --warn: #8a5a12;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Literata", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #121712; --sheet: #192019; --ink: #e3eadf; --muted: #9caa9b; --rule: #2e3a2e;
+  --leaf: #8fc785; --leaf-soft: #233323; --warn: #e0b060; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #121712; --sheet: #192019; --ink: #e3eadf; --muted: #9caa9b; --rule: #2e3a2e;
+  --leaf: #8fc785; --leaf-soft: #233323; --warn: #e0b060; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 80px }
+.wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 56px }
+.col { max-width: 720px }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0 }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 700; letter-spacing: -0.02em }
+h2 { font-size: 1.6rem; font-weight: 700; margin-bottom: 14px }
+h3 { font-size: 1.1rem; font-weight: 700 }
+p { margin: 0 0 12px }
+.eyebrow { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted) }
+.lede { font-size: 1.2rem; color: var(--ink); max-width: 720px; margin-top: 16px }
+header { display: grid; gap: 6px }
+.meta { font-family: var(--mono); font-size: 0.8rem; color: var(--muted) }
+figure { margin: 0; display: grid; gap: 8px }
+figure img { width: 100%; height: auto; display: block; border-radius: 4px; border: 1px solid var(--rule) }
+figcaption { font-size: 0.92rem; color: var(--muted); max-width: 720px }
+figcaption b { color: var(--ink); font-weight: 600 }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px }
+.pair > * { min-width: 0 }
+@media (max-width: 700px) { .pair { grid-template-columns: 1fr } }
+.compare { position: relative; overflow: hidden; border-radius: 4px; border: 1px solid var(--rule); aspect-ratio: 1472 / 828; max-width: 100%; background: var(--sheet) }
+.compare img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: 0; border-radius: 0 }
+.compare .top { clip-path: inset(0 0 0 var(--cut, 50%)) }
+.compare .line { position: absolute; top: 0; bottom: 0; left: var(--cut, 50%); width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); pointer-events: none }
+.compare .tag { position: absolute; bottom: 10px; font-family: var(--mono); font-size: 0.75rem; background: rgba(20,25,20,.72); color: #f1f5ee; padding: 3px 8px; border-radius: 3px }
+.compare .tag.l { left: 10px } .compare .tag.r { right: 10px }
+.slider { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 0.8rem; color: var(--muted) }
+.slider input { flex: 1; accent-color: var(--leaf) }
+.verdicts { display: grid; gap: 0; border-top: 1px solid var(--rule) }
+.verdict { display: grid; grid-template-columns: 9.5rem 1fr; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--rule) }
+.verdict > * { min-width: 0 }
+@media (max-width: 560px) { .verdict { grid-template-columns: 1fr; gap: 4px } }
+.chip { font-family: var(--mono); font-size: 0.75rem; padding: 2px 8px; border-radius: 99px; display: inline-block; justify-self: start; align-self: start; border: 1px solid currentColor }
+.chip.big { color: var(--leaf); background: var(--leaf-soft) }
+.chip.mid { color: var(--ink) }
+.chip.small { color: var(--warn) }
+.sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 32px }
+.src { padding: 14px 0; border-top: 1px solid var(--rule); min-width: 0 }
+.src h3 { margin-bottom: 4px }
+.src p { font-size: 0.95rem; margin: 0 }
+.src a { font-family: var(--mono); font-size: 0.75rem; color: var(--muted) }
+ol.plan { padding-left: 1.4rem; margin: 0; display: grid; gap: 10px }
+ol.plan li::marker { font-family: var(--mono); color: var(--leaf); font-weight: 500 }
+a { color: var(--leaf) }
+a:focus-visible, input:focus-visible { outline: 2px solid var(--leaf); outline-offset: 2px }
+code { font-family: var(--mono); font-size: 0.85em; background: var(--leaf-soft); padding: 1px 5px; border-radius: 3px }
+.note { font-size: 0.92rem; color: var(--muted); border-left: 2px solid var(--rule); padding-left: 14px }
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">Plant-Sim · viewer look research · round 2</span>
+  <h1>Plant Look Board</h1>
+  <p class="lede">The plants look the same after every filter change because the problem is their shape. Every bean leaf is held at one angle, so the plant reads as a little fir tree. Here are four mockups rendered in our own viewer, what games and botanical art teach, and what to build first.</p>
+  <span class="meta">2026-11-05 · renders from main + mockup commit 886f61a · day 45 two-pot scenario unless noted</span>
+</header>
+
+<section class="col">
+  <h2>Before and after, same day, same plants</h2>
+  <p>Drag the divider. The right side has all three render-only fixes on: framing and a quieter background, varied leaf pose, and canopy shading taken from the sim's own shade signal. The plant sizes are untouched. Day 45 in a 20 cm pot is a 23 cm plant with 0.052 m² of leaf, and the mockups don't inflate that.</p>
+</section>
+<figure>
+  <div class="compare" id="cmp">
+    <img src="{{two-pots-before}}" alt="Before: two bean plants on a bench in a bright green lawn with faceted trees">
+    <img class="top" src="{{two-pots-after}}" alt="After: the same plants with a muted lawn, no tree ring, a narrower lens and varied leaf angles">
+    <span class="line"></span>
+    <span class="tag l">before</span><span class="tag r">after</span>
+  </div>
+  <label class="slider" for="cut">before <input id="cut" type="range" min="0" max="100" value="50"> after</label>
+</figure>
+
+<section class="col">
+  <h2>What each mockup did</h2>
+  <div class="verdicts">
+    <div class="verdict"><span class="chip big">clear win</span><div><h3>Leaf pose</h3><p>Young leaves stand up, mature ones spread, old ones droop below level, and each leaf gets a small random twist from its id (yaw up to 31°). The candelabra becomes a rounded bush. This is a render-only stand-in. The real fix is in the sim, where <code>PETIOLE_ELEVATION</code> is 0.5 rad for every leaf, so the light lens stays honest.</p></div></div>
+    <div class="verdict"><span class="chip big">clear win</span><div><h3>Paper "plate" view</h3><p>The garden is swapped for a seamless paper sweep. This is the most visibly different picture of the four, and it is what a botanical plate does: the plant and its roots are the only subject. It would make a strong screenshot or plate mode, and a good base for the ink-line look.</p></div></div>
+    <div class="verdict"><span class="chip mid">helps</span><div><h3>Framing and background</h3><p>A narrower lens (0.42 rad), a lower camera, a muted lawn, and no tree ring. The plants now lead the frame. But the two pots still take a lot of the frame, so a hero camera on one plant matters more than any setting change.</p></div></div>
+    <div class="verdict"><span class="chip small">subtle</span><div><h3>Canopy shading from the shade signal</h3><p>Leaves deep in the canopy go darker and cooler, outer leaves lighter and warmer. The effect is true but hard to see on a 25-leaf plant. It will matter more under cel bands and on dense plots.</p></div></div>
+  </div>
+</section>
+
+<figure>
+  <img src="{{leaf-pose-and-shading-crops}}" alt="Three crops of the same bean: before, with varied leaf pose, and with canopy shading">
+  <figcaption><b>Left to right:</b> today, leaf pose only, canopy shading only. Pose does the work. The plant on the left is a stack of flat, identical tiers; the middle one is a rounded bush.</figcaption>
+</figure>
+
+<figure>
+  <img src="{{two-pots-plate}}" alt="The two bean pots on a seamless warm paper background with soft shadows">
+  <figcaption><b>Plate view.</b> The garden is replaced by paper and a soft sun shadow. With the planned ink outlines and a scale bar, this becomes a living botanical plate of the player's own plant.</figcaption>
+</figure>
+
+<div class="pair">
+  <figure><img src="{{plot-before}}" alt="30-bean plot today"><figcaption><b>30-bean plot, today.</b> Rows of fir-shaped stacks.</figcaption></figure>
+  <figure><img src="{{plot-after}}" alt="30-bean plot with the mockups"><figcaption><b>With the mockups.</b> The plants start to merge into a canopy.</figcaption></figure>
+</div>
+
+<div class="pair">
+  <figure><img src="{{pole-row-before}}" alt="Pole bean row today"><figcaption><b>Pole row, day 60, today.</b></figcaption></figure>
+  <figure><img src="{{pole-row-after}}" alt="Pole bean row with the mockups"><figcaption><b>With the mockups.</b> Trifoliates now read as leaves, but the row is still a perfect grid. The eight plants grow in lockstep, so every node sits at the same height. That needs per-plant variation from the sim (seed variation), not a render fix.</figcaption></figure>
+</div>
+
+<section class="col">
+  <h2>What to build, in order</h2>
+  <ol class="plan">
+    <li><b>Leaf elevation by age, in the sim.</b> Young leaves near 1.2 rad, mature ones near 0.5, old lower leaves just below level. Plus a petiole twist of ±30° so the two leaf ranks don't sit in one plane. This is the single biggest change. Bean leaves really are distichous (180°), which is exactly why they look flat today without the twist.</li>
+    <li><b>A hero camera</b> that frames one plant's canopy at 50–60% of frame height, and a quieter background: muted lawn, no faceted trees, or the paper sweep.</li>
+    <li><b>The plate view</b> as a screenshot mode: paper sweep, ink lines, a scale bar, and the root system below.</li>
+    <li><b>Canopy shading and dome normals</b> together with the cel pass, so bands fall across the whole bush instead of flickering leaf by leaf.</li>
+    <li><b>Live leaf motion:</b> leaflets edge-on to a hot noon sun and folded down at night. Both are real bean behaviors, and both make the day cycle visible on the plant itself.</li>
+    <li><b>Per-plant variation in rows,</b> so a trellis of pole beans stops looking like wallpaper.</li>
+  </ol>
+  <p class="note">Elevation numbers are illustrative, not measured. A deeper source on bean leaf angle by node would firm them up before the sim change.</p>
+</section>
+
+<section>
+  <h2 class="col">What games and plant art teach</h2>
+  <div class="sources">
+    <div class="src"><h3>Dorfromantik</h3><p>Check palettes in greyscale first: readability comes from value, then hue adds mood. Each asset must read by silhouette from the game camera. They also limit vertex colours to avoid visual noise.</p><a href="https://80.lv/articles/how-dorfromantik-expands-its-cozy-world-through-minimalist-design">80.lv</a></div>
+    <div class="src"><h3>Alba: A Wildlife Adventure</h3><p>Soft, continuous forms come from normals transferred from a smooth proxy mesh, with gradients in place of textures. The palette came from location photos and Sorolla paintings.</p><a href="https://medium.com/@ustwogames/the-environment-art-of-alba-a-wildlife-adventure-6bddd8b56955">ustwo games</a></div>
+    <div class="src"><h3>Stylized tree breakdowns</h3><p>Bend foliage normals toward a sphere so a canopy shades as one volume. Darken the interior and give each leaf its own colour offset. "Always mess with the normals."</p><a href="https://cremuss.artstation.com/projects/Vyz12R">ArtStation</a></div>
+    <div class="src"><h3>Meadows (UE4 study)</h3><p>Canopies are cards over sculpted spheres with the sphere's normals. Sharpening the shadow filter gives a near cel look with no post pass. Large-scale colour variation stays subtle.</p><a href="https://80.lv/articles/meadows-creating-stylized-nature-in-ue4/">80.lv</a></div>
+    <div class="src"><h3>Sable</h3><p>Flat shading needs lines, fog and cast shadows to rebuild depth. Outlines mark overlapping forms and fade with distance so nothing pops in.</p><a href="https://www.gamedeveloper.com/marketing/how-shedworks-refined-the-art-of-sable-in-pursuit-of-readability">Game Developer</a></div>
+    <div class="src"><h3>Moebius-style post process</h3><p>Sobel edges on depth (weighted about 25×) plus normals, a thickness offset, and low-frequency UV wobble for a hand-drawn line. Leaf-over-leaf edges need an id buffer on top of this.</p><a href="https://blog.maximeheckel.com/posts/moebius-style-post-processing">maximeheckel.com</a></div>
+    <div class="src"><h3>Viridi</h3><p>A potted plant as the whole stage: flat, strong pastel colours, gentle outlines, a slow orbiting camera and silhouetted backdrops. It's the closest game to our single-pot view.</p><a href="https://www.killscreen.com/viridi-promises-capture-soothing-art-potted-plant-care/">Kill Screen</a></div>
+    <div class="src"><h3>Botany Manor</h3><p>Every invented plant starts from a real one. Ours are real, so true botanical details are the art: pulvini, heart-shaped first leaves, pink nodules, pale undersides.</p><a href="https://jgeekstudies.org/2025/02/09/botany-manor-a-cozy-game-unveiling-the-inequalities-in-academia/">Journal of Geek Studies</a></div>
+    <div class="src"><h3>Tiny Glade, Cloud Gardens, Equilinox, The Garden Path</h3><p>Cozy builders use muted earthy palettes with one saturated subject, and growth you can watch. Tiny Glade started on Bevy and outgrew its renderer for prettier procedural output. These sources are thin on technique.</p><a href="https://80.lv/articles/exclusive-tiny-glade-developers-discuss-bevy-proceduralism-publishers-cozy-games">80.lv</a></div>
+    <div class="src"><h3>Breath of the Wild</h3><p>Stylized for readability, yet plausible and "information-dense": the stylization suggests real physics. That's a fair brief for a science sim with an illustrated look.</p><a href="https://zeldauniverse.net/2017/03/14/takizawa-explains-how-the-wind-waker-hd-inspired-the-visual-style-for-breath-of-the-wild/">Zelda Universe</a></div>
+    <div class="src"><h3>Botanical drawing practice</h3><p>Map habit, axes, nodes and attachments before outlines or veins. Don't regularize intervals. Use fewer veins, not equal dark veins everywhere. Scale bars, not "life size".</p><a href="https://www.thehistoryofart.org/drawings/botanical/">thehistoryofart.org</a></div>
+    <div class="src"><h3>Bean leaf movement</h3><p>In common bean, higher light and temperature raise the leaflets on their pulvini, and drier soil makes it stronger (Yu &amp; Berg 1994). Runner bean leaves drop at dusk and rise before dawn on a circadian clock, and its shoots circle about every 90 minutes.</p><a href="https://scholarworks.uni.edu/facpub/4373">Plant Physiology</a> · <a href="https://www.circumnutation.umcs.lublin.pl/en/plants/phaseolus">circumnutation atlas</a></div>
+  </div>
+</section>
+
+<section class="col">
+  <h2>Limits of this round</h2>
+  <p class="note">Image sites such as Wikimedia Commons and PubMed Central were blocked from the research machine, so this board has no reference photos or historical plates, only text sources and our own renders. Several game sources were press pieces with little technique detail. Renders use a software GPU, so lighting matches the real build but performance does not. The mockup code sits on branch <code>claude/project-thread-aqg9ej</code> behind <code>PS_MOCK</code> and isn't meant to merge as is.</p>
+</section>
+</div>
+
+<script>
+(function () {
+  var cmp = document.getElementById('cmp');
+  var cut = document.getElementById('cut');
+  function set(v) { cmp.style.setProperty('--cut', v + '%'); }
+  cut.addEventListener('input', function () { set(cut.value); });
+  set(cut.value);
+})();
+</script>
