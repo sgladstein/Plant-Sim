@@ -9,10 +9,12 @@ the plant moves through its stages (emergence, first true leaf, flowering, pods,
 fill, maturity) when enough have added up. A warm spring makes beans flower sooner.
 
 ## Equations
-- Development rate (§3.11, §11.4), with base `Tb`, optimum `To`, maximum `Tm`:
-  `f(T) = 0` for `T ≤ Tb` or `T ≥ Tm`; `T − Tb` up to `To`; `(To − Tb)(Tm − T)/(Tm − To)`
-  above. Hourly thermal time is `f(T)/24` °C·day, so the rate at the optimum is
-  `To − Tb` and sums compare with literature °C·day below the optimum.
+- Development rate (§3.11, §11.4), a trapezoid with base `Tb`, plateau `To` to `To2`
+  and maximum `Tm` (decision 0032): `f(T) = 0` for `T ≤ Tb` or `T ≥ Tm`; `T − Tb` up to
+  `To`; `To − Tb` from `To` to `To2`; `(To − Tb)(Tm − T)/(Tm − To2)` above. With
+  `To2 = To` it is the old three-point response (wheat). Hourly thermal time is
+  `f(T)/24` °C·day, so the rate on the plateau is `To − Tb` and sums compare with
+  literature °C·day below the optimum.
 - Organ thermal age accumulates the same way at the organ's temperature.
 - Expansion temperature multiplier: 0 at or below 5 °C, linear to 1 at 25 °C, 1 to
   30 °C, linear to 0 at 40 °C. It sets the pace of each organ's expansion clock
@@ -32,10 +34,13 @@ fill, maturity) when enough have added up. A warm spring makes beans flower soon
 ## Parameters
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
-| t_base, t_opt, t_max | 8, 28, 38 | °C | "~" design plan §3.11 |
-| emergence | 80 | °C·day | "~" design plan §3.10 (60 to 80), top of the range (WP12) |
-| flowering | 440 | °C·day from germination | published sowing-to-flowering sums on base 8: about 350 (Dapaah 1999), 470 (CROPTIME 2020), 515 (Cavalcante 2020), 600 (Pinzón-Sandoval 2024); 440 is about 470 from sowing (decision 0018) |
-| maturity | 900 | °C·day from germination | Cavalcante 2020 (827 above 10 °C) and Pinzón-Sandoval 2024 (about 800 above 8.3 °C) (decision 0018) |
+| t_base, t_opt, t_opt_high, t_max (bean) | 7, 25, 33, 42 | °C | "~" synthesis of CROPGRO-Drybean (5/27/37/45 vegetative), Ferreira 1997 (6.8/24.0/34.1), APSIM bean (7.5/30/40) (decision 0032; was 8, 28, 38) |
+| t_base, t_opt = t_opt_high, t_max (wheat) | 0, 26, 34 | °C | APSIM-Wheat |
+| emergence (bean) | 90 | °C·day | 80 on base 8 (design plan §3.10, top of 60 to 80), restated so the default scenario emerges on the same day (decision 0032) |
+| flowering (bean) | 480 | °C·day from germination | 440 on base 8 from published sowing-to-flowering sums (decision 0018), restated (×1.09) to keep the flowering day (decision 0032) |
+| maturity (bean) | 965 | °C·day from germination | 900 on base 8 (Cavalcante 2020; Pinzón-Sandoval 2024; decision 0018), restated (×1.07) (decision 0032) |
+| flowering, maturity (pole bean) | 613, 1232 | °C·day | 575, 1150 restated (×1.066, ×1.071) (decision 0032) |
+| organ clocks (bean) | ×1.08 vegetative, ×1.06 reproductive | - | phyllochron 59.5, leaf and internode expansion 162 and 130, nodule 108, root emergences 54/81/130, emergence per depth 13 Cd/cm, leaf lifespan 650; pod expansion 154, seed fill delay 74, seed fill 350 (decision 0032) |
 | growth_t_min, opt_low, opt_high, max | 5, 25, 30, 40 | °C | "~" design plan §3.11 |
 
 ## Inputs and outputs
@@ -58,7 +63,7 @@ under each weather preset; slower development in cold springs; heat stalling gro
   eventually germinates (review of decision 0029).
 
 ## Validation
-`ps_physio::tests::three_point_thermal_time`, `growth_temperature_trapezoid`,
+`ps_physio::tests::three_point_thermal_time`, `trapezoid_thermal_time` (decision 0032), `growth_temperature_trapezoid`,
 `stages_advance_in_order`. In the WP11 report (default scenario, WP12): flowering on day
 44 and maturity on day 83 (gated ranges 28 to 57 and 54 to 93); 370 °C·day above 10 °C
 to flowering and 747 to maturity (Cavalcante 2020, 430 ± 15% and 700 to 950), 617 above

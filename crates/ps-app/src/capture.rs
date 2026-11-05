@@ -78,7 +78,7 @@ pub fn timelapse_ticks(
 
 /// The world state on screen, for the CSV export: the starting state with the
 /// snapshot's soils, plants, daily rows and action log.
-fn state_on_screen(src: &SimSource) -> WorldState {
+pub(crate) fn state_on_screen(src: &SimSource) -> WorldState {
     let snap = src.snapshot();
     let mut state = src.template().clone();
     state.tick = snap.tick;
@@ -89,7 +89,7 @@ fn state_on_screen(src: &SimSource) -> WorldState {
     state
 }
 
-fn write_csv(dir: &Path, state: &WorldState) -> Result<()> {
+pub(crate) fn write_csv(dir: &Path, state: &WorldState) -> Result<()> {
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let daily = dir.join("daily.csv");
     std::fs::write(&daily, ps_export::daily_csv(state))

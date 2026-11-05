@@ -268,6 +268,13 @@ impl SimSource {
             })
     }
 
+    /// Replaces the label of soil `soil` (an experiment names its pots by their level).
+    pub fn relabel(&mut self, soil: u32, label: String) {
+        if let Some(info) = self.pots.get_mut(&soil) {
+            info.label = label;
+        }
+    }
+
     /// Label of the pot at garden index `pot`.
     #[must_use]
     pub fn pot_label(&self, pot: usize) -> &str {
