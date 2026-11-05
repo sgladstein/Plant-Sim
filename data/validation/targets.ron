@@ -437,7 +437,7 @@ ValidationTargets(
       basis: Some("staked on a 2 m, 1.5 cm stake; sown 10 June at 45 N (about 20 C mean)"),
       sources: ["research_wp22_height", "gurneys_kentucky_wonder"],
       gate: Info,
-      note: "WP22 done-when as the research recommends: at least 1.5 m by day 60 and 2 m by day 75 at a 20 C mean (the plan had 2 m by day 60). About 13.5 main-stem nodes by day 60 need 15 cm internodes; the sim reaches it once the twining stem's phloem carries enough (review of WP22). The owner chose this target (decisions 0021, 0023).",
+      note: "WP22 done-when as the research recommends: at least 1.5 m by day 60 and 2 m by day 75 at a 20 C mean (the plan had 2 m by day 60). About 13.5 main-stem nodes by day 60 need 15 cm internodes; the sim reaches it once the twining stem's phloem carries enough (review of WP22). The owner chose this target (decisions 0021, 0023). Since decision 0027 the seed mean includes vines that missed their stake under sowing scatter (fixed 6 cm capture sweep), so a miss here is partly the sweep (review of #81).",
     ),
     Target(
       id: "pole_height_day75",
