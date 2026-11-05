@@ -15,6 +15,7 @@
 //! Model card: docs/models/herb-architecture.md; decisions 0013.
 
 pub mod geometry;
+pub mod grass;
 pub mod nitrogen;
 pub mod params;
 mod roots;
@@ -39,6 +40,7 @@ use ps_weather::HourWeather;
 use serde::{Deserialize, Serialize};
 
 pub use geometry::V3;
+pub use grass::GrassParams;
 pub use nitrogen::{NitrogenDay, NitrogenParams, PlantNitrogen};
 pub use params::{HerbParams, RootParams, ShadeSignal};
 pub use vine::{Climb, ClimbingParams, Support, Twine};
@@ -95,6 +97,18 @@ pub enum Role {
     Root,
     /// A cluster of root nodules (WP24).
     Nodule,
+    /// A grass leaf sheath, rolled round the stem above its node (WP23).
+    Sheath,
+    /// A grass leaf blade (WP23).
+    Blade,
+    /// The internode that carries a grass ear (WP23).
+    Peduncle,
+    /// A grass ear (WP23).
+    Ear,
+    /// A grain in an ear (WP23).
+    Grain,
+    /// A grass seed's endosperm, holding the seed reserve (WP23).
+    Endosperm,
 }
 
 /// Days over which the leaf light record averages (decision 0018).
@@ -198,6 +212,8 @@ pub enum BudFate {
     Branch,
     /// Became a raceme.
     Raceme,
+    /// A grass tiller site that stayed empty (WP23).
+    Suppressed,
 }
 
 /// An axillary bud on the main stem.
@@ -213,6 +229,9 @@ pub struct Bud {
     pub azimuth: f64,
     /// Fate.
     pub fate: BudFate,
+    /// The axis it sits on (index into [`Plant::axes`]; grasses tiller from tillers).
+    #[serde(default)]
+    pub axis: usize,
 }
 
 /// A raceme opening its flowers.
@@ -476,6 +495,9 @@ pub struct Plant {
     /// Supports in the plant's soil frame (WP22).
     #[serde(default)]
     pub supports: Vec<Support>,
+    /// A grass has started stem elongation (WP23).
+    #[serde(default)]
+    pub jointed: bool,
     /// Today's weather and soil.
     pub today: DayStats,
     /// Today's uptake shortfall.
@@ -562,6 +584,7 @@ impl Plant {
     ///
     /// # Errors
     /// [`ArchError::Graph`] only on an internal inconsistency.
+    #[allow(clippy::too_many_lines)]
     pub fn sow(
         species: &Species,
         traits: &Traits,
@@ -608,7 +631,20 @@ impl Plant {
             &params.allometry,
         )?;
         let mut meta = vec![Meta::new(Role::Collar), Meta::new(Role::Hypocotyl)];
-        for k in 0..2u32 {
+        if params.grass.is_some() {
+            // A grass seed keeps its reserve in the endosperm, which stays in the soil
+            // while the coleoptile carries the shoot up (decision 0022).
+            let o = organ(
+                OrganKind::Cotyledon,
+                Some(collar),
+                0.8 * fixed,
+                reserve,
+                SpecificSize::Bulk,
+            );
+            arena.add(&o, &params.allometry)?;
+            meta.push(Meta::new(Role::Endosperm));
+        }
+        for k in 0..if params.grass.is_some() { 0 } else { 2u32 } {
             let az = f64::from(k) * core::f64::consts::PI;
             let mut o = organ(
                 OrganKind::Cotyledon,
@@ -658,6 +694,7 @@ impl Plant {
             leaves_dropped: false,
             since_flowering: DegreeDays(0.0),
             supports: Vec::new(),
+            jointed: false,
             today: DayStats::default(),
             shortfall: KgWater(0.0),
             ftsw: 1.0,
@@ -986,15 +1023,26 @@ impl Plant {
             self.germinate()?;
         }
         if before == Stage::Germinated && stage == Stage::Emerged {
-            self.emerge(now)?;
+            if self.is_grass() {
+                self.grass_emerge(now)?;
+            } else {
+                self.emerge(now)?;
+            }
         }
         if stage < Stage::Mature {
-            // 2. Bud fate.
-            self.bud_fate(now)?;
-            // 3. Organ initiation.
-            self.grow_axes(now)?;
-            self.start_racemes(now)?;
-            self.flowering(now)?;
+            if self.is_grass() {
+                // 2. Tiller sites; 3. leaves, ears and grains (WP23).
+                self.tillering(now)?;
+                self.grow_tillers(now)?;
+                self.flowering(now)?;
+            } else {
+                // 2. Bud fate.
+                self.bud_fate(now)?;
+                // 3. Organ initiation.
+                self.grow_axes(now)?;
+                self.start_racemes(now)?;
+                self.flowering(now)?;
+            }
             self.root_initiation(now, soil)?;
         }
         // 4. Senescence and shedding.
@@ -1053,11 +1101,16 @@ impl Plant {
         let a = &self.arena;
         Events {
             germinated: self.germination_hours >= self.params.germination_hours,
-            trifoliate: a.alive_ids().any(|id| {
-                let i = id.index();
-                self.meta[i].role == Role::Trifoliate
-                    && a.expansion_age[i].0 >= 0.5 * a.curve[i].duration.0
-            }),
+            // A grass's second leaf stands in for the first trifoliate.
+            trifoliate: a
+                .alive_ids()
+                .filter(|id| {
+                    let i = id.index();
+                    matches!(self.meta[i].role, Role::Trifoliate | Role::Blade)
+                        && a.expansion_age[i].0 >= 0.5 * a.curve[i].duration.0
+                })
+                .nth(usize::from(self.is_grass()))
+                .is_some(),
             pod: a.alive_of(OrganKind::Pod).next().is_some(),
             seed_filling: a.alive_of(OrganKind::SeedInPod).next().is_some(),
         }
@@ -1074,8 +1127,20 @@ impl Plant {
     fn leaflets(&self) -> (Vec<ps_light::LeafPoint>, Vec<usize>) {
         let mut points = Vec::new();
         let mut owner = Vec::new();
+        let aspect = self.params.grass.as_ref().map(|g| g.blade_aspect);
         for id in self.arena.alive_of(OrganKind::Leaf) {
             let i = id.index();
+            if let Some(aspect) = aspect {
+                let pts = grass::blade_points(
+                    self.arena.size[i].area.0,
+                    self.positions[i].0,
+                    self.arena.orientation[i].direction,
+                    aspect,
+                );
+                owner.extend(std::iter::repeat_n(i, pts.len()));
+                points.extend(pts);
+                continue;
+            }
             let pts = geometry::leaf_points(
                 &self.arena,
                 &self.meta,
@@ -1240,7 +1305,11 @@ impl Plant {
             day: self.day,
             stage: Some(self.phenology.stage),
             main_nodes: self.axes.first().map_or(0, |x| x.nodes),
-            branches: u32::try_from(self.axes.iter().filter(|x| x.order > 0).count()).unwrap_or(0),
+            branches: if self.is_grass() {
+                self.living_tillers()
+            } else {
+                u32::try_from(self.axes.iter().filter(|x| x.order > 0).count()).unwrap_or(0)
+            },
             leaves: u32::try_from(alive(OrganKind::Leaf).count()).unwrap_or(0),
             leaf_area: alive(OrganKind::Leaf)
                 .map(|id| a.size[id.index()].area.0)

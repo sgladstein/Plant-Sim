@@ -304,5 +304,17 @@ ValidationResponses(
       tag: Emergent,
       note: "WP22 done-when: without a support the vine falls over and yields less; staked against unstaked climbing beans, -30 to -70% (a direction-plus-band check), measured on a row because the field trials are rows. In the sim most of the loss is pods on the soil rotting (pod_rot_rate, encoded), the rest the fallen canopy. The cargo test staked_pole_beans_climb_and_unstaked_ones_lodge enforces it (decision 0021).",
     ),
+    Response(
+      id: "wheat_density_tillers",
+      scenario: "m2/wheat_stand",
+      baseline: "m2/wheat_spaced",
+      variable: "branches",
+      at: Final,
+      expect: RelChange(min: -0.9, max: -0.3),
+      sources: ["research_wp23_wheat", "lecarpentier2019"],
+      gate: Info,
+      tag: Emergent,
+      note: "WP23 (decision 0022): a dense stand tillers less than a spaced plant (field 2 to 5 against several more), through the red:far-red at the crown and the carbon of each tiller site. The threshold is encoded; when it bites follows from the stand's own leaf area.",
+    ),
   ],
 )

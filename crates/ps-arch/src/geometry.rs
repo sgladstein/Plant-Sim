@@ -104,6 +104,8 @@ pub fn layout(arena: &OrganArena, meta: &[Meta], collar: V3) -> Vec<(V3, V3)> {
             (OrganKind::Internode | OrganKind::Root | OrganKind::Tendril, _) => {
                 add(base, dir, size.length.0 / m.multiplicity.max(1.0))
             }
+            // A grass ear stands on its peduncle (WP23).
+            (OrganKind::Pod, _) if m.role == crate::Role::Ear => add(base, dir, size.length.0),
             _ => base,
         };
         out.push((base, tip));

@@ -3,7 +3,7 @@
 // later pole-type phenology, and longer internodes; everything else is the bush bean's.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 3,
+  schema: 4,
   id: "pole_bean",
   name: "Pole bean archetype",
   growth_form: Vine,

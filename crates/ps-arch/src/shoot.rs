@@ -169,6 +169,7 @@ impl Plant {
             leaf,
             azimuth,
             fate: BudFate::Dormant,
+            axis: 0,
         });
         Ok(())
     }
@@ -439,6 +440,9 @@ impl Plant {
         }
         if self.phenology.stage < Stage::Flowering {
             return Ok(());
+        }
+        if self.is_grass() {
+            return self.set_grains(now);
         }
         let hp = self.params.clone();
         #[allow(clippy::cast_precision_loss)] // at most PRE_ANTHESIS_DAYS entries

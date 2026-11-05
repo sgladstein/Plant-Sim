@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 3;
+pub const SCHEMA: u32 = 4;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -349,6 +349,46 @@ param_group!(
         lodge_height: "cm",
         /// Daily chance that a vine's pod hanging onto the soil rots.
         pod_rot_rate: "1/day",
+    }
+);
+
+param_group!(
+    /// The grass shoot (schema 4, WP23, decision 0022): tillers, sheaths and blades,
+    /// stem elongation and the ear. Required when the growth form is `Grass`, absent
+    /// otherwise. The final leaf number is the `nodes_before_terminal` trait.
+    Grass {
+        /// Length of a crown internode (the short internodes of the tillering phase).
+        crown_internode_length: "cm",
+        /// Main-stem internodes below the peduncle that elongate (from jointing on).
+        elongating_internodes: "-",
+        /// Sheath length of the first leaf.
+        sheath_length_first: "cm",
+        /// Sheath length of the flag leaf; lengths rise linearly with rank between.
+        sheath_length_last: "cm",
+        /// Sheath length per gram of sheath dry mass.
+        sheath_specific_length: "cm/g",
+        /// Blade length over blade width.
+        blade_aspect: "-",
+        /// Angle of a blade above the horizontal at its base.
+        blade_elevation: "deg",
+        /// Phyllochrons from a leaf's appearance to the tiller in its axil.
+        tiller_delay: "-",
+        /// Chance that a tiller site, when its time comes, grows a tiller.
+        site_filling: "-",
+        /// Red:far-red below which no new tillers start.
+        tiller_stop_rfr: "-",
+        /// Angle of a new tiller from the vertical.
+        tiller_angle: "deg",
+        /// Highest tiller order (1 primary, 2 secondary).
+        tiller_max_order: "-",
+        /// At jointing, tillers with fewer visible leaves than this die.
+        tiller_survive_leaves: "-",
+        /// Potential length of the peduncle, the internode that carries the ear.
+        peduncle_length: "cm",
+        /// Area of the first blade as a fraction of the largest.
+        blade_first_fraction: "-",
+        /// Area of the flag blade as a fraction of the largest.
+        blade_flag_fraction: "-",
     }
 );
 

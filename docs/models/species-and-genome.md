@@ -18,9 +18,11 @@ sampled seed are drawn from `N(0, σ_l)` through ps-rng (purpose `GenotypeSample
 In M0, `σ_l = 0` for every locus, so `p_k = d_k`.
 
 ## Parameters
-All parameters, with values, units and sources, are in `data/species/bush_bean.ron`
-and `data/species/pole_bean.ron` (schema 3: the `climbing` group, WP22, decision 0021;
-every species carries it and only vines read it);
+All parameters, with values, units and sources, are in `data/species/bush_bean.ron`,
+`data/species/pole_bean.ron` and `data/species/spring_wheat.ron` (schema 3: the
+`climbing` group, WP22, decision 0021; every species carries it and only vines read it;
+schema 4: the optional `grass` group, WP23, decision 0022, present exactly when the
+growth form is `Grass`);
 the expected units are in `crates/ps-species/src/schema.rs`. The loader rejects a wrong
 unit, an empty source, an unknown or missing key, a non-finite value, and a default
 outside its bounds.

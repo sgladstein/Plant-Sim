@@ -259,6 +259,22 @@ Sources(
       cultivar: "pole bean archetype",
       conditions: "Arithmetic from CROPGRO TRIFL and the Rutjens 2025 internode range [I]",
     ),
+    "research_wp23_wheat": Source(
+      citation: "Project research notes m2-m3-bean-science.md, decision 5 and the spring wheat parameter table: 2 to 5 tillers per plant in the field; tillering stops at R:FR about 0.35 (WALTer citing Evers 2006); height 0.7 to 1.0 m [K, to verify].",
+      doi: None,
+      url: "research/m2-m3-bean-science.md (project files)",
+      licence: "project document",
+      cultivar: "spring wheat",
+      conditions: "Compiled from WALTer (Lecarpentier 2019), elong-Wheat and field phyllochron data",
+    ),
+    "lecarpentier2019": Source(
+      citation: "Lecarpentier C., Barillot R., Blanc E., Abichou M., Goldringer I., Barbillon P., Enjalbert J., Andrieu B. (2019) WALTer: a three-dimensional wheat model to study competition for light through the prediction of tillering dynamics. Annals of Botany 123(6): 961-975.",
+      doi: Some("10.1093/aob/mcy226"),
+      url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC6589517",
+      licence: "CC BY (PMC open access)",
+      cultivar: "winter wheat 'Maxwell'",
+      conditions: "Field stands at several densities; tiller emergence and regression rules",
+    ),
     "rezene2013": Source(
       citation: "Rezene Y., Gebeyehu S., Zelleke H. (2013) Morpho-physiological response to post-flowering drought stress in small red seeded common bean (Phaseolus vulgaris L.) genotypes. Journal of Plant Studies 2(1): 42.",
       doi: Some("10.5539/jps.v2n1p42"),

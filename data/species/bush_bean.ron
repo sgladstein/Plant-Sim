@@ -1,7 +1,7 @@
 // Bush bean archetype (Phaseolus vulgaris, determinate type I). Design plan §3.16, §6.1.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 3,
+  schema: 4,
   id: "bush_bean",
   name: "Bush bean archetype",
   growth_form: Herb,
