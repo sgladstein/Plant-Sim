@@ -146,9 +146,9 @@ fn single_plant_matches_ray_tracer() {
     // Design target: plant total within 3%.
     assert!(total_rel.abs() < 0.03, "plant total {total_rel:+.4}");
     // Design target: every leaf within 0.10. Measured: 55 of 57, worst 0.142, both
-    // misses in one trifoliate whose leaflets overlap within a grid cell (decision
-    // 0008, open with the owner). These bounds pin today's result so it cannot get
-    // worse unnoticed; tighten them when the target is met.
+    // misses in one trifoliate whose leaflets overlap within a grid cell. The owner
+    // accepted 95% within 0.10 for M0; re-check on a sim-exported plant in WP12 and
+    // tighten these bounds if every leaf passes (decision 0008).
     assert!(
         within * 100 >= 95 * n,
         "{within}/{n} leaves within 0.10\n{report}"

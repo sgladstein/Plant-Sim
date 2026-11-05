@@ -1,8 +1,8 @@
 # 0008: Light model details the plan left open
 
 - **Date:** 2026-11-05
-- **Status:** accepted (implementer), except the per-leaf validation miss, which is open
-  with the owner
+- **Status:** accepted (implementer; the per-leaf target change accepted by the owner on
+  2026-11-05)
 
 ## Context
 §3.5 says leaf area density is "accumulated from each leaf's area at its center", one
@@ -43,16 +43,17 @@ total and up to 0.22 off on single leaves.
    bean-like shoot: 19 trifoliate leaves (57 leaflet discs) with random spherical
    normals. Regenerate it from a sim export in WP8 or WP12.
 
-## Result and the open part
+## Result and the owner's decision
 - Plant total: +2.9% (target 3%, met, with little margin).
 - Per leaf: 55 of 57 within 0.10, worst 0.142, RMS 0.047 (target: all within 0.10,
   **missed**). Both misses are leaflets of one trifoliate that overlap inside one cell
   layer, where a grid cannot tell which leaflet is on top.
 - The test pins today's result (95% of leaves within 0.10, worst below 0.15, total
   within 3%) so it cannot regress unnoticed. It does not claim the target is met.
-- Options for the owner: accept 95% of leaves within 0.10 as the M0 target; or keep the
-  target and add a leaf-to-leaf correction for close neighbors (explicit disc tests
-  between leaves sharing a cell) in WP12; or re-measure on the WP8 plant before deciding.
+- Owner's decision (2026-11-05): M0 accepts 95% of leaves within 0.10 (with the plant
+  total within 3%). In WP12, regenerate the fixture from a sim-exported plant and re-run;
+  tighten the test bounds if the strict target then passes, and otherwise bring it back
+  to the owner (a close-neighbor correction is the candidate fix).
 
 ## Consequences
 - Model minor version: first light model, no golden hashes yet.
