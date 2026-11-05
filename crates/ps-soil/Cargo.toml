@@ -12,6 +12,7 @@ ps-units.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 libm.workspace = true
+rayon.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

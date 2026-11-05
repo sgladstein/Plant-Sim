@@ -354,44 +354,71 @@ impl SoilGrid {
             return roots.clone();
         }
         let (nx, ny, nz) = self.dims();
+        // Active cells per box from a summed-volume table: `count[(z·(ny+1) + y)·(nx+1)
+        // + x]` is the number of active cells with coordinates below (x, y, z).
+        let (sx, sy) = (nx + 1, (nx + 1) * (ny + 1));
+        let mut count = vec![0_i64; sy * (nz + 1)];
+        for z in 0..nz {
+            for y in 0..ny {
+                for x in 0..nx {
+                    let a = i64::from(self.active[self.index(Cell { x, y, z })]);
+                    let o = (z + 1) * sy + (y + 1) * sx + (x + 1);
+                    count[o] = a + count[o - 1] + count[o - sx] + count[o - sy]
+                        - count[o - 1 - sx]
+                        - count[o - 1 - sy]
+                        - count[o - sx - sy]
+                        + count[o - 1 - sx - sy];
+                }
+            }
+        }
+        let boxed = |lo: Cell, hi: Cell| {
+            let at = |x: usize, y: usize, z: usize| count[z * sy + y * sx + x];
+            let (x0, y0, z0, x1, y1, z1) = (lo.x, lo.y, lo.z, hi.x + 1, hi.y + 1, hi.z + 1);
+            at(x1, y1, z1) - at(x0, y1, z1) - at(x1, y0, z1) - at(x1, y1, z0)
+                + at(x0, y0, z1)
+                + at(x0, y1, z0)
+                + at(x1, y0, z0)
+                - at(x0, y0, z0)
+        };
         // Lengths summed per cell on a dense scratch grid, in the same order
         // `RootCells::from_pairs` would add them (its sort is stable), without the sort.
+        // An untouched cell stays +0, and `0 + share` is `share`.
         let mut length = vec![0.0_f64; self.water.len()];
-        let mut touched = vec![false; self.water.len()];
-        let mut near = Vec::new();
         for &(i, l) in roots.cells() {
             let c = self.cell_of(i);
-            near.clear();
-            for z in c.z.saturating_sub(r)..=(c.z + r).min(nz - 1) {
-                for y in c.y.saturating_sub(r)..=(c.y + r).min(ny - 1) {
-                    for x in c.x.saturating_sub(r)..=(c.x + r).min(nx - 1) {
-                        let j = self.index(Cell { x, y, z });
-                        if self.active[j] {
-                            near.push(j);
+            let lo = Cell {
+                x: c.x.saturating_sub(r),
+                y: c.y.saturating_sub(r),
+                z: c.z.saturating_sub(r),
+            };
+            let hi = Cell {
+                x: (c.x + r).min(nx - 1),
+                y: (c.y + r).min(ny - 1),
+                z: (c.z + r).min(nz - 1),
+            };
+            let near = boxed(lo, hi);
+            if near <= 0 {
+                continue;
+            }
+            #[allow(clippy::cast_precision_loss)] // at most 17³ cells
+            let share = l.0 / near as f64;
+            for z in lo.z..=hi.z {
+                for y in lo.y..=hi.y {
+                    let row = self.index(Cell { x: lo.x, y, z });
+                    let cells = row..=row + (hi.x - lo.x);
+                    for (len, &a) in length[cells.clone()].iter_mut().zip(&self.active[cells]) {
+                        if a {
+                            *len += share;
                         }
                     }
                 }
             }
-            if near.is_empty() {
-                continue;
-            }
-            #[allow(clippy::cast_precision_loss)] // at most 17³ cells
-            let share = l.0 / near.len() as f64;
-            for &j in &near {
-                if touched[j] {
-                    length[j] += share;
-                } else {
-                    touched[j] = true;
-                    length[j] = share;
-                }
-            }
         }
-        let pairs: Vec<(usize, Meters)> = touched
+        let pairs: Vec<(usize, Meters)> = length
             .iter()
-            .zip(&length)
             .enumerate()
-            .filter(|(_, (t, l))| **t && **l > 0.0)
-            .map(|(j, (_, l))| (j, Meters(*l)))
+            .filter(|(_, l)| **l > 0.0)
+            .map(|(j, l)| (j, Meters(*l)))
             .collect();
         // Already sorted and merged; `from_pairs` keeps them as they are.
         RootCells::from_pairs(pairs)
@@ -426,10 +453,19 @@ impl SoilGrid {
             1.0 - libm::exp(-UPTAKE_PPM_RESPONSE * ppm)
         };
         // Requests per plant per root cell, (no3, nh4), from the same state.
-        let reached: Vec<RootCells> = plants
-            .iter()
-            .map(|p| self.reached_cells(p.roots, p.reach))
-            .collect();
+        // Each plant's cells depend only on its roots; collect keeps plant order.
+        let reached: Vec<RootCells> = if plants.len() > 1 {
+            use rayon::prelude::*;
+            plants
+                .par_iter()
+                .map(|p| self.reached_cells(p.roots, p.reach))
+                .collect()
+        } else {
+            plants
+                .iter()
+                .map(|p| self.reached_cells(p.roots, p.reach))
+                .collect()
+        };
         let mut asked: Vec<Vec<(f64, f64)>> = Vec::with_capacity(plants.len());
         let mut cell_total: Vec<(usize, f64, f64)> = Vec::new();
         for (p, roots) in plants.iter().zip(&reached) {

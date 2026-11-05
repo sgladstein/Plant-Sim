@@ -276,8 +276,12 @@ fn bounded_traversal_is_bit_identical() {
         })
         .collect();
     g.add_leaves(&leaves);
-    let bounds = g.occupied_bounds();
-    assert!(bounds.1[0] < 11 && bounds.1[2] < 7, "{bounds:?}");
+    let bounds = g.ray_bounds();
+    assert!(
+        bounds.cells.1[0] < 11 && bounds.cells.1[2] < 7,
+        "{:?}",
+        bounds.cells
+    );
     for l in &leaves {
         let own = g.footprint_of(l);
         for p in sample_points(l) {
@@ -286,6 +290,49 @@ fn bounded_traversal_is_bit_identical() {
                 let b = g.path_depth_bounded(p, j, &own, &bounds);
                 assert_eq!(a.to_bits(), b.to_bits(), "{p:?} {j}");
             }
+        }
+    }
+    // Two clumps of different heights, so a ray's reach depends on where it starts
+    // (the shadows), with rays from every cell center too.
+    let mut g = LightGrid::with_geometry([0.0, 0.0, 0.0], Meters(0.02), [16, 14, 12], &dirs);
+    let clumps: Vec<LeafPoint> = (0..60usize)
+        .map(|i| {
+            let f = as_f64(i % 30);
+            let (x, y, z) = if i < 30 {
+                (0.04, 0.05, 0.03)
+            } else {
+                (0.2, 0.17, 0.12)
+            };
+            LeafPoint {
+                center: [x + 0.003 * f, y + 0.002 * (f % 7.0), z + 0.0025 * f],
+                area: M2(3e-4),
+                normal: [0.2, -0.1, 1.0],
+            }
+        })
+        .collect();
+    g.add_leaves(&clumps);
+    let bounds = g.ray_bounds();
+    for l in &clumps {
+        let own = g.footprint_of(l);
+        for p in sample_points(l) {
+            for j in 0..dirs.len() {
+                let a = g.path_depth(p, j, &own);
+                let b = g.path_depth_bounded(p, j, &own, &bounds);
+                assert_eq!(a.to_bits(), b.to_bits(), "{p:?} {j}");
+            }
+        }
+    }
+    for i in 0..g.slot.len() {
+        let c = [i % 16, (i / 16) % 14, i / (16 * 14)];
+        let p = [
+            (as_f64(c[0]) + 0.5) * 0.02,
+            (as_f64(c[1]) + 0.5) * 0.02,
+            (as_f64(c[2]) + 0.5) * 0.02,
+        ];
+        for j in 0..dirs.len() {
+            let a = g.path_depth(p, j, &Footprint::none());
+            let b = g.path_depth_bounded(p, j, &Footprint::none(), &bounds);
+            assert_eq!(a.to_bits(), b.to_bits(), "{p:?} {j}");
         }
     }
     // An empty grid bounds to the whole grid.
@@ -331,4 +378,64 @@ fn projection_is_the_cosine_to_the_ray() {
     // Both faces count; a degenerate normal is horizontal.
     assert!((projection([0.0, 0.0, -1.0], unit(30.0, 0.0)) - 0.5).abs() < 1e-12);
     assert!((projection([0.0; 3], unit(30.0, 0.0)) - 0.5).abs() < 1e-12);
+}
+
+/// The original form of [`LightGrid::footprint`]: every lattice sample located on its
+/// own, then sorted and merged. The per-axis form must give the same bits.
+fn footprint_reference(g: &LightGrid, l: &LeafPoint) -> Vec<(usize, f64)> {
+    let r = leaf_radius(l.area);
+    let h = 0.5 * g.cell.0;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let k = (libm::ceil(r / h) as usize).max(1);
+    let mut pts = Vec::new();
+    for j in 0..2 * k {
+        for i in 0..2 * k {
+            let u = (as_f64(i) + 0.5) / as_f64(k) - 1.0;
+            let w = (as_f64(j) + 0.5) / as_f64(k) - 1.0;
+            if u * u + w * w <= 1.0 {
+                pts.push([l.center[0] + u * r, l.center[1] + w * r, l.center[2]]);
+            }
+        }
+    }
+    let share = l.area.0 / as_f64(pts.len()) / g.cell_volume();
+    let mut cells: Vec<(usize, f64)> = pts
+        .into_iter()
+        .filter_map(|p| g.locate(p).map(|c| (g.flat(c), share)))
+        .collect();
+    cells.sort_by_key(|c| c.0);
+    let mut merged: Vec<(usize, f64)> = Vec::new();
+    for (i, v) in cells {
+        match merged.last_mut() {
+            Some(last) if last.0 == i => last.1 += v,
+            _ => merged.push((i, v)),
+        }
+    }
+    merged
+}
+
+/// Footprints of leaves of many sizes, some hanging over the grid's sides or outside
+/// it, match the original sample-by-sample form bit for bit.
+#[test]
+fn footprint_matches_the_reference_bit_for_bit() {
+    let g = LightGrid::with_geometry(
+        [0.0, 0.0, 0.0],
+        Meters(0.013),
+        [11, 9, 6],
+        &[[0.0, 0.0, 1.0]],
+    );
+    for i in 0..300usize {
+        let f = as_f64(i);
+        let l = LeafPoint {
+            center: [-0.02 + 0.0007 * f, 0.13 - 0.00041 * f, -0.005 + 0.00029 * f],
+            area: M2(1e-6 + 2.3e-5 * as_f64(i % 37)),
+            normal: [0.0, 0.0, 1.0],
+        };
+        let a = g.footprint(&l);
+        let b = footprint_reference(&g, &l);
+        assert_eq!(a.len(), b.len(), "leaf {i}");
+        for (x, y) in a.iter().zip(&b) {
+            assert_eq!(x.0, y.0, "leaf {i}");
+            assert_eq!(x.1.to_bits(), y.1.to_bits(), "leaf {i}");
+        }
+    }
 }

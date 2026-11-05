@@ -94,6 +94,125 @@ impl Footprint {
     }
 }
 
+/// Inclusive cell-coordinate bounds, `(low, high)`.
+type CellBounds = ([usize; 3], [usize; 3]);
+
+/// Where rays on a grid can stop early (see [`LightGrid::ray_bounds`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RayBounds {
+    /// Inclusive bounds of the occupied cells ([`LightGrid::occupied_bounds`]).
+    pub cells: CellBounds,
+    /// For each of the grid's directions that rises, its [`Shadow`].
+    pub shadows: Vec<Option<Shadow>>,
+}
+
+/// The highest occupied layer a rising ray can reach, by where it starts.
+///
+/// Shear the grid along the ray direction `d`: `q' = q_h − (q_z − z₀) · d_h / d_z` on
+/// each horizontal axis `h`, so a whole ray maps to one point. A ray can enter a cell
+/// only if its point lies in the cell's sheared footprint, a box `(1 + |d_h/d_z|)`
+/// cells wide. Each occupied cell marks its layer on the bins its sheared box
+/// touches (padded a hair for rounding), and each bin keeps the highest. A ray that
+/// has passed its bin's layer crosses only empty cells, which add exactly `+0`, so it
+/// can stop there.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shadow {
+    /// `d_h / d_z` per horizontal axis.
+    slope: [f64; 2],
+    /// Sheared coordinate of the first bin's lower edge, per axis.
+    start: [f64; 2],
+    /// Bin width per axis, `cell · (1 + |slope|)`.
+    width: [f64; 2],
+    /// Bins per axis.
+    bins: [usize; 2],
+    /// Per bin (x fastest), one more than the highest occupied layer; 0 for none.
+    top: Vec<u32>,
+}
+
+impl Shadow {
+    /// The shadow along `d` of the occupied cells of `grid`, given as runs along x
+    /// (`[x_first, x_last, y, z]`), or `None` unless `d` rises. A run's sheared box is
+    /// the union of its cells' boxes, which overlap.
+    fn new(grid: &LightGrid, occupied: &[[usize; 4]], d: [f64; 3]) -> Option<Self> {
+        if d[2].is_nan() || d[2] <= 1e-6 {
+            return None;
+        }
+        let s = grid.cell.0;
+        let pad = 1e-6 * s;
+        let slope = [d[0] / d[2], d[1] / d[2]];
+        let width = [s * (1.0 + slope[0].abs()), s * (1.0 + slope[1].abs())];
+        // The sheared box of cells `first..=last` on axis `a` in layer `z`, padded.
+        let span = |first: usize, last: usize, z: usize, a: usize| {
+            let rise = as_f64(z) * s * slope[a];
+            let lo = grid.origin[a] + as_f64(first) * s - rise - s * slope[a].max(0.0);
+            let hi = grid.origin[a] + as_f64(last + 1) * s - rise - s * slope[a].min(0.0);
+            (lo - pad, hi + pad)
+        };
+        let mut start = [f64::INFINITY; 2];
+        let mut end = [f64::NEG_INFINITY; 2];
+        for &[x0, x1, y, z] in occupied {
+            for (a, (first, last)) in [(x0, x1), (y, y)].into_iter().enumerate() {
+                let (lo, hi) = span(first, last, z, a);
+                start[a] = start[a].min(lo);
+                end[a] = end[a].max(hi);
+            }
+        }
+        if !(start[0].is_finite() && start[1].is_finite()) {
+            return None;
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let bin = |a: usize, x: f64| ((x - start[a]) / width[a]).max(0.0) as usize;
+        let bins = [bin(0, end[0]) + 1, bin(1, end[1]) + 1];
+        let mut top = vec![0u32; bins[0] * bins[1]];
+        for &[first, last, y, z] in occupied {
+            let (x0, x1) = span(first, last, z, 0);
+            let (y0, y1) = span(y, y, z, 1);
+            let layer = u32::try_from(z + 1).unwrap_or(u32::MAX);
+            for by in bin(1, y0)..=bin(1, y1).min(bins[1] - 1) {
+                for bx in bin(0, x0)..=bin(0, x1).min(bins[0] - 1) {
+                    let t = &mut top[by * bins[0] + bx];
+                    *t = (*t).max(layer);
+                }
+            }
+        }
+        Some(Self {
+            slope,
+            start,
+            width,
+            bins,
+            top,
+        })
+    }
+
+    /// One more than the highest occupied layer a ray through `p` can reach (0 for
+    /// none), on a grid whose bottom is at `z0`.
+    fn reach(&self, p: [f64; 3], z0: f64) -> usize {
+        let mut b = [0usize; 2];
+        for a in 0..2 {
+            let q = (p[a] - (p[2] - z0) * self.slope[a] - self.start[a]) / self.width[a];
+            if !(q >= 0.0 && q < as_f64(self.bins[a])) {
+                return 0;
+            }
+            // `q` is finite and nonnegative here, so truncation is `floor`.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let i = q as usize;
+            b[a] = i.min(self.bins[a] - 1);
+        }
+        self.top[b[1] * self.bins[0] + b[0]] as usize
+    }
+}
+
+/// The smallest and largest cell among `cells`, or `(1, 0)` if there is none.
+fn span_of(cells: &[Option<usize>]) -> (usize, usize) {
+    cells
+        .iter()
+        .flatten()
+        .fold(None, |b: Option<(usize, usize)>, &c| {
+            Some(b.map_or((c, c), |(lo, hi)| (lo.min(c), hi.max(c))))
+        })
+        .unwrap_or((1, 0))
+}
+
 /// Radius of a disc with the leaf's area.
 #[must_use]
 pub fn leaf_radius(area: M2) -> f64 {
@@ -355,32 +474,65 @@ impl LightGrid {
         let h = 0.5 * self.cell.0;
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let k = (libm::ceil(r / h) as usize).max(1);
-        let mut pts = Vec::new();
-        for j in 0..2 * k {
-            for i in 0..2 * k {
-                let u = (as_f64(i) + 0.5) / as_f64(k) - 1.0;
-                let w = (as_f64(j) + 0.5) / as_f64(k) - 1.0;
-                if u * u + w * w <= 1.0 {
-                    pts.push([l.center[0] + u * r, l.center[1] + w * r, l.center[2]]);
+        // The lattice offsets along either axis, and the cell column and row each
+        // lattice column and row falls in. A sample's cell is `locate` of the sample;
+        // its axes are independent and the height is the leaf's for every sample.
+        let offs: Vec<f64> = (0..2 * k)
+            .map(|i| (as_f64(i) + 0.5) / as_f64(k) - 1.0)
+            .collect();
+        let axis = |a: usize, u: f64| {
+            let q = (l.center[a] + u * r - self.origin[a]) / self.cell.0;
+            if q >= 0.0 && q < as_f64(self.n[a]) {
+                // `q` is finite and nonnegative here, so truncation is `floor`.
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let c = q as usize;
+                Some(c.min(self.n[a] - 1))
+            } else {
+                None
+            }
+        };
+        let xs: Vec<Option<usize>> = offs.iter().map(|&u| axis(0, u)).collect();
+        let ys: Vec<Option<usize>> = offs.iter().map(|&w| axis(1, w)).collect();
+        let z = axis(2, 0.0);
+        // Samples per cell, on the box of the columns and rows the samples reach.
+        let (x0, x1) = span_of(&xs);
+        let (y0, y1) = span_of(&ys);
+        let w = (x1 + 1).saturating_sub(x0);
+        let mut count = vec![0u32; w * (y1 + 1).saturating_sub(y0)];
+        let mut samples = 0usize;
+        for (j, &wj) in offs.iter().enumerate() {
+            for (i, &ui) in offs.iter().enumerate() {
+                if ui * ui + wj * wj <= 1.0 {
+                    samples += 1;
+                    if let (Some(x), Some(y)) = (xs[i], ys[j]) {
+                        count[(y - y0) * w + (x - x0)] += 1;
+                    }
                 }
             }
         }
-        if pts.is_empty() {
-            pts.push(l.center);
+        if samples == 0 {
+            let share = l.area.0 / self.cell_volume();
+            return self
+                .locate(l.center)
+                .map(|c| vec![(self.flat(c), share)])
+                .unwrap_or_default();
         }
-        let share = l.area.0 / as_f64(pts.len()) / self.cell_volume();
-        let mut cells: Vec<(usize, f64)> = Vec::new();
-        for p in pts {
-            if let Some(c) = self.locate(p) {
-                cells.push((self.flat(c), share));
-            }
-        }
-        cells.sort_by_key(|c| c.0);
-        let mut merged: Vec<(usize, f64)> = Vec::with_capacity(cells.len());
-        for (i, v) in cells {
-            match merged.last_mut() {
-                Some(last) if last.0 == i => last.1 += v,
-                _ => merged.push((i, v)),
+        let Some(z) = z else {
+            return Vec::new();
+        };
+        let share = l.area.0 / as_f64(samples) / self.cell_volume();
+        // In index order (rows, then columns, at one height); each cell's samples
+        // summed one by one, as the sorted merge of the samples would add them.
+        let mut merged = Vec::new();
+        for (r, row) in count.chunks(w.max(1)).enumerate() {
+            for (c, &m) in row.iter().enumerate() {
+                if m > 0 {
+                    let mut v = share;
+                    for _ in 1..m {
+                        v += share;
+                    }
+                    merged.push((self.flat([x0 + c, y0 + r, z]), v));
+                }
             }
         }
         merged
@@ -454,15 +606,16 @@ impl LightGrid {
         self.path_depth_b(from, j, own, None)
     }
 
-    /// Optical depth along a ray that stops once it leaves `bounds` (from
-    /// [`LightGrid::occupied_bounds`]); bit-identical to [`LightGrid::path_depth`].
+    /// Optical depth along a ray that stops once no occupied cell is left ahead of it
+    /// (`bounds` from [`LightGrid::ray_bounds`]); bit-identical to
+    /// [`LightGrid::path_depth`].
     #[must_use]
     pub fn path_depth_bounded(
         &self,
         from: [f64; 3],
         j: usize,
         own: &Footprint,
-        bounds: &([usize; 3], [usize; 3]),
+        bounds: &RayBounds,
     ) -> f64 {
         self.path_depth_b(from, j, own, Some(bounds))
     }
@@ -472,7 +625,7 @@ impl LightGrid {
         from: [f64; 3],
         j: usize,
         own: &Footprint,
-        bounds: Option<&([usize; 3], [usize; 3])>,
+        bounds: Option<&RayBounds>,
     ) -> f64 {
         let nd = self.directions.len();
         let dir = self.directions[j];
@@ -484,7 +637,7 @@ impl LightGrid {
             dir,
             &own.cells,
             |k| own.depth_at(k, j, nd),
-            bounds,
+            bounds.map(|b| (b.cells, b.shadows.get(j).and_then(Option::as_ref))),
         );
         self.obstacles
             .iter()
@@ -544,6 +697,37 @@ impl LightGrid {
         (lo, hi)
     }
 
+    /// [`LightGrid::occupied_bounds`] with a [`Shadow`] for each rising direction.
+    #[must_use]
+    pub fn ray_bounds(&self) -> RayBounds {
+        let cells = self.occupied_bounds();
+        let (lo, hi) = cells;
+        // Runs of occupied cells along x.
+        let mut occupied: Vec<[usize; 4]> = Vec::new();
+        for z in lo[2]..=hi[2] {
+            for y in lo[1]..=hi[1] {
+                let row = self.flat([0, y, z]);
+                for x in lo[0]..=hi[0] {
+                    if self.slot[row + x] == EMPTY {
+                        continue;
+                    }
+                    match occupied.last_mut() {
+                        Some(r) if r[2] == y && r[3] == z && r[1] + 1 == x => r[1] = x,
+                        _ => occupied.push([x, x, y, z]),
+                    }
+                }
+            }
+        }
+        let shadows = {
+            use rayon::prelude::*;
+            self.directions
+                .par_iter()
+                .map(|&d| Shadow::new(self, &occupied, d))
+                .collect()
+        };
+        RayBounds { cells, shadows }
+    }
+
     /// `Σ field · length` along the ray from `from` in unit direction `dir` until it
     /// leaves the grid, or `bounds` if given (Amanatides and Woo 1987 traversal).
     /// `own` lists the leaf's own cells (sorted by index); wherever the ray crosses one,
@@ -555,7 +739,7 @@ impl LightGrid {
         dir: [f64; 3],
         own: &[(usize, f64)],
         own_value: O,
-        bounds: Option<&([usize; 3], [usize; 3])>,
+        bounds: Option<(CellBounds, Option<&Shadow>)>,
     ) -> f64
     where
         F: Fn(usize) -> f64,
@@ -591,10 +775,20 @@ impl LightGrid {
                 t_delta[a] = -s / dir[a];
             }
         }
-        let (lo, hi) = match bounds {
-            Some((lo, hi)) => (*lo, *hi),
+        let (lo, mut hi) = match bounds {
+            Some((b, _)) => b,
             None => ([0; 3], [self.n[0] - 1, self.n[1] - 1, self.n[2] - 1]),
         };
+        // A rising ray stops past the highest occupied layer it can reach.
+        if let Some((_, Some(shadow))) = bounds {
+            let Some(top) = shadow.reach(from, self.origin[2]).checked_sub(1) else {
+                return 0.0;
+            };
+            if top < c[2] {
+                return 0.0;
+            }
+            hi[2] = hi[2].min(top);
+        }
         // The own footprint is one horizontal layer: skip the search outside its range.
         let (own_lo, own_hi) = match (own.first(), own.last()) {
             (Some(a), Some(b)) => (a.0, b.0),
@@ -828,7 +1022,7 @@ pub(crate) fn coefficients_with(
 ) -> Vec<LightCoeffs> {
     use rayon::prelude::*;
     debug_assert_eq!(grid.directions, dirs.all, "grid built for these directions");
-    let bounds = grid.occupied_bounds();
+    let bounds = grid.ray_bounds();
     let nd = dirs.all.len();
     let pts: Vec<[[f64; 3]; SAMPLE_POINTS]> = leaves.iter().map(sample_points).collect();
     // Leaves in chunks, in parallel; within a chunk, direction by direction, so a

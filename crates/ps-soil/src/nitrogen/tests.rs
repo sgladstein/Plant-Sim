@@ -182,3 +182,86 @@ fn root_reach_spreads_length_over_nearby_cells() {
     assert!((at(Cell { x: 1, y: 1, z: 1 }) - 0.2).abs() < 1e-12);
     assert!(at(Cell { x: 4, y: 4, z: 4 }).abs() < 1e-12);
 }
+
+/// The original form of [`SoilGrid::reached_cells`]: a list of the active cells in each
+/// root cell's cube, then the shares added on a dense grid. The summed-volume form must
+/// give the same bits.
+fn reached_cells_reference(g: &SoilGrid, roots: &RootCells, reach: Meters) -> RootCells {
+    let r = libm::round((reach.0 / g.cell_size().0).max(0.0)).min(8.0) as usize;
+    if r == 0 {
+        return roots.clone();
+    }
+    let (nx, ny, nz) = g.dims();
+    let mut length = vec![0.0_f64; g.len()];
+    let mut touched = vec![false; g.len()];
+    for &(i, l) in roots.cells() {
+        let c = g.cell_of(i);
+        let mut near = Vec::new();
+        for z in c.z.saturating_sub(r)..=(c.z + r).min(nz - 1) {
+            for y in c.y.saturating_sub(r)..=(c.y + r).min(ny - 1) {
+                for x in c.x.saturating_sub(r)..=(c.x + r).min(nx - 1) {
+                    let j = g.index(Cell { x, y, z });
+                    if g.is_active(j) {
+                        near.push(j);
+                    }
+                }
+            }
+        }
+        if near.is_empty() {
+            continue;
+        }
+        let share = l.0 / near.len() as f64;
+        for &j in &near {
+            if touched[j] {
+                length[j] += share;
+            } else {
+                touched[j] = true;
+                length[j] = share;
+            }
+        }
+    }
+    RootCells::from_pairs(
+        (0..g.len())
+            .filter(|&j| touched[j] && length[j] > 0.0)
+            .map(|j| (j, Meters(length[j])))
+            .collect(),
+    )
+}
+
+/// In a round pot (inactive corners) with overlapping reaches, the summed-volume
+/// reach matches the original cell by cell, bit for bit.
+#[test]
+fn root_reach_matches_the_reference_bit_for_bit() {
+    let g = SoilGrid::new_pot(
+        Meters(0.2),
+        Meters(0.25),
+        Meters(0.02),
+        Texture::Loam,
+        Celsius(20.0),
+    )
+    .unwrap();
+    let n = g.len();
+    let pairs: Vec<(usize, Meters)> = (0..400usize)
+        .map(|k| {
+            (
+                (k * 7919 + 13) % n,
+                Meters(0.001 + 0.37 * ((k * 31 % 17) as f64)),
+            )
+        })
+        .collect();
+    let roots = RootCells::from_pairs(pairs);
+    for reach in [0.009, 0.02, 0.04, 0.07, 0.2] {
+        let a = g.reached_cells(&roots, Meters(reach));
+        let b = reached_cells_reference(&g, &roots, Meters(reach));
+        assert_eq!(a.cells().len(), b.cells().len(), "reach {reach}");
+        for (x, y) in a.cells().iter().zip(b.cells()) {
+            assert_eq!(x.0, y.0);
+            assert_eq!(
+                x.1.0.to_bits(),
+                y.1.0.to_bits(),
+                "reach {reach} cell {}",
+                x.0
+            );
+        }
+    }
+}

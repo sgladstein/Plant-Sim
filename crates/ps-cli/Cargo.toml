@@ -16,6 +16,7 @@ ps-world.workspace = true
 ps-export.workspace = true
 ps-validate.workspace = true
 anyhow.workspace = true
+mimalloc.workspace = true
 tracing-subscriber.workspace = true
 ron.workspace = true
 

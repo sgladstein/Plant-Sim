@@ -14,7 +14,7 @@ use std::path::Path;
 use ps_arch::{ArchError, DayReport, HourCtx, Plant};
 use ps_soil::{SoilError, SoilGrid, SoilHour, WaterLedger};
 use ps_species::Species;
-use ps_units::{Celsius, Degrees, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
+use ps_units::{Celsius, Degrees, GramsN, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
 use ps_weather::{DateHour, HourWeather, Preset, WeatherSeries};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -1396,9 +1396,17 @@ impl World {
                 .map(|&p| plants[p].plant.nitrogen_request())
                 .collect();
             let got = entry.grid.take_up_nitrogen(&requests)?;
+            // Each plant's daily nitrogen step depends only on itself and the soil.
+            let mut got_of: Vec<Option<GramsN>> = vec![None; plants.len()];
             for (&p, u) in members.iter().zip(got) {
-                plants[p].plant.nitrogen_day(u.total(), &entry.grid, now)?;
+                got_of[p] = Some(u.total());
             }
+            let grid = &entry.grid;
+            plants
+                .par_iter_mut()
+                .zip(&got_of)
+                .filter_map(|(e, u)| u.map(|u| (e, u)))
+                .try_for_each(|(e, u)| e.plant.nitrogen_day(u, grid, now))?;
         }
         Ok(())
     }
