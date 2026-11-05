@@ -49,6 +49,18 @@ Every claim in the reports and notes carries a tag:
   - WOFOST faba bean file: EUPL.
   - Rutjens et al. 2025 climbing-bean model: CC BY 4.0 paper, code at github.com/pmxrr3/maizebeanpolyculture_2023, code licence unchecked.
 
+## Update 2026-11-05 (round 3)
+
+New research in `docs/research/`:
+- `retune/items-1-4.md`: items 1 to 4 below, packaged for the re-tune. Item 1 is withdrawn: with the Bernacchi 2002 Cc constants, Pimentel's 89.3/159.8 are within 2% of their Ci-basis values. Construction costs were recomputed from the CROPGRO source, and g1 5.79 was verified in the CLM5 PFT table.
+- `wp27-leaf-energy-balance/`: the WP27 data asked for below (bean leaf-air temperatures, boundary layer, optics) plus the solver design and a Python prototype. Key finding: with g1 = 4, sunlit, well-watered bean leaves stay at or above air temperature on hot, dry days, against field baselines of 3.5 to 4.6 °C below air. Owner decision: leaf frost reads leaf temperature.
+- `m3-breeding-and-weeds/`: the M3 gaps listed below. That is a 34-locus map with cM placements, the seed-colour pipeline, heritabilities, crossing numbers, Cousens weed parameters, the critical period and intercrop LER. It recommends a C3 first weed, because the sim has no C4 photosynthesis.
+
+Still open from the lists below:
+- items 5 to 8
+- the snap-bean time series and digitized density figures
+- the M4 tree
+
 ## Findings not yet acted on (ranked, checked against main on 2026-11-05)
 
 1. **Vcmax/Jmax basis.** `vcmax25` 89.3 and Jmax 160 (Pimentel 2011) are chloroplast-based (gm 0.47). Without gm, Rubisco-limited A runs about 20% high. Either add gm with the Bernacchi 2002 constants, or use Ci-based values (Vcmax about 70 to 75, Jmax about 150). Parked since WP12 (STATUS). Round 1, item 5.

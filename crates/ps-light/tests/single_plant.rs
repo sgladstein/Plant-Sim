@@ -49,6 +49,7 @@ fn reference(leaves_csv: &str, trace_csv: &str) -> Reference {
             center: [num(r[1]), num(r[2]), num(r[3])],
             area: M2(num(r[4])),
             normal: [num(r[5]), num(r[6]), num(r[7])],
+            strip: None,
         })
         .collect();
     let mut r = Reference {

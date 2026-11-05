@@ -22,6 +22,7 @@ pub mod dressing;
 pub mod garden;
 pub mod lens;
 pub mod look;
+pub mod moments;
 pub mod pick;
 pub mod ready;
 pub mod scene;
@@ -32,6 +33,7 @@ use bevy::prelude::*;
 pub use camera::CameraRig;
 pub use garden::{Garden, ObstacleView, PotShape, PotSize, PotView, SoilFace, SupportView};
 pub use lens::{Lens, LensInfo, Origin, Scale};
+pub use moments::Moments;
 pub use pick::{Picked, Selection};
 pub use ready::Ready;
 pub use sky::SkyState;
@@ -57,6 +59,7 @@ impl Plugin for PlantViewPlugin {
             .init_resource::<SkyState>()
             .init_resource::<Lens>()
             .init_resource::<CameraRig>()
+            .init_resource::<Moments>()
             .init_resource::<Selection>()
             .init_resource::<scene::SceneIndex>()
             .insert_resource(ClearColor(Color::linear_rgb(
@@ -76,7 +79,12 @@ impl Plugin for PlantViewPlugin {
                     sky::spawn_sun,
                 ),
             )
-            .add_systems(Update, scene::sync_scene.in_set(ViewSet::Sync))
+            .add_systems(
+                Update,
+                (scene::sync_scene, moments::flowering_cue)
+                    .chain()
+                    .in_set(ViewSet::Sync),
+            )
             .add_systems(
                 Update,
                 (

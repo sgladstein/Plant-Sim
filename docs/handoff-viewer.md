@@ -16,6 +16,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
   - `inspect.rs` fills the inspector.
   - `capture.rs` handles screenshots, CSV export and offline time-lapse.
   - `demo_source.rs` has the stand-in plants (`--demo`).
+- New model cards must be added to the `cards!` list in `ps-ui/src/model_cards.rs` (a test fails otherwise).
 - **Rule:** the sim crates (ps-world and below) never depend on Bevy. `scripts/check_deps.py` enforces this.
 
 ## 2. How to work on it
@@ -29,7 +30,8 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
   ```
   - `--screenshot` waits until the pipelines have compiled and the sim has reached `--day`, then saves and exits. It fails after 180 s.
   - `--data DIR` lets a scenario live outside the repo.
-  - Other useful flags: `--clean` (caption only), `--inspect POT[:ORGAN]`, `--charts`, `--paused`.
+  - Other useful flags: `--clean` (caption only), `--inspect POT[:ORGAN]`, `--charts`, `--paused`, `--card NAME` (open a model card).
+  - The container needs `libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-0 mesa-vulkan-drivers` to build and screenshot.
   - A debug build is too slow for wheat_stand (200 plants) past about day 80, so use a single-pot or small scenario.
   - Always look at the PNG; this is how every visual change was verified.
 - **Disk:** target/debug grows to 25+ GB. Build with `CARGO_INCREMENTAL=0`, and run `cargo clean` when free space drops under about 10 GB.
@@ -67,10 +69,10 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 | 14 Mesh generation | Done (#23). Later additions: coils for twining stems (WP22), grass blades and wheat ears (WP23), finer leaflets, option C fuller beans (#78: petioles, level blades, nodes, flowers, pods, nodules). |
 | 15 Scene sync and look | Working. Round pots and glass-fronted plot beds with a soil cutaway, stakes and trellis strings, obstacles (walls reach the lawn, cloths on posts), a garden setting (bench, lawn, tree ring), camera-relative fog, a 2% rebuild rule, and high-speed daily-mean light. |
 | 16 Sim thread | Done (sim side #32, viewer side in ps-app). |
-| 17 UI | Working: top bar, lenses with legends, charts, inspector with a why line and units, garden tools, seed library, new-run dialog. Not done: the experiment panel, the model-card panel, and assimilation and transpiration charts (they are not in the daily rows). |
+| 17 UI | Working: top bar, lenses with legends, charts, inspector with a why line and units (and each plant's own seed), model-card side panel, garden tools, seed library, new-run dialog. Not done: the experiment panel, and assimilation and transpiration charts (they are not in the daily rows). |
 | 18 Lenses | All seven M1 lenses read sim values. |
 | 19 Capture | Done: screenshot (P), CSV export, offline time-lapse (`--timelapse DIR --day --to-day --timelapse-hours 6-19`), and `--clean`. |
-| 20 The moments | Not started: cotyledon unfolding, phototropic lean, wilting and recovery, and the flowering cue. Done-when: the owner signs off on a 60-second sun-versus-shade clip. |
+| 20 The moments | Built (`ps_mesh::moments::pose`, `ps_view::moments`): emerging hook and cotyledons, lean toward the light, wilting and recovery, flowering cue (camera move-in and banner on sim time). Done-when: the owner signs off on a 60-second sun-versus-shade clip. |
 | 25 UI side | Done (#76). |
 
 ## 5. The look decision
@@ -91,13 +93,16 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 ## 7. Next steps, in order
 
 1. Merge PR #84 if it is still open: the root-copy fix, which keeps drawn lateral copies below the surface and inside the pot. The sim-side lateral wall rule is in model 0.11.0, from the implementation thread.
-2. Optionally show `Plant::individual` in the inspector (decision 0027, #80): seed factor, emergence, azimuth. Plants already draw at their own `collar_position`.
+2. Done: `Plant::individual` in the whole-plant inspector.
 3. WP20, the moments, then render the sun-versus-shade clip with `--timelapse` and `--clean` for sign-off.
 4. The rest of WP17: the experiment panel (side-by-side variable sweeps), the model-card panel, and assimilation and transpiration charts once the sim adds them to the daily rows.
 5. Performance with many plants: wheat_stand (200 plants) is slow to step in debug. Profile the release build's per-frame skeleton rebuild and instance upload.
 6. If a look option is chosen, rebase that branch onto main and gate it behind `--look`.
 
 ## 8. Gotchas
+
+- The moments are render-only posture applied after `Skeleton::lerp` in `sim_source::drive` (`ps_mesh::pose`). Picking and the inspector see the posed skeleton. A hooked hypocotyl adds `2 + Hook::POINTS` tube nodes (`nodes_after_base` counts them).
+- The flowering cue moves the auto-frame only while `CameraRig::focus` is unset; `CameraRig::cue_zoom` multiplies the framing distance.
 
 - `Skeleton::from_arena_with` lays out before coils are set. Call `skeleton.relayout()` after setting `Placement.coil`, or bases drift.
 - Axis vertex colors must count one ring per node (`nodes_after_base`), not one per organ. Otherwise coiled axes draw giant garbage triangles.

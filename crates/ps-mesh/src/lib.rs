@@ -15,6 +15,8 @@
 //! 3. [`instances`] gives one [`Instance`] per leaf, cotyledon, flower, pod, seed and bud:
 //!    a template ([`Template`]) plus a translation, rotation and scale, so leaves can be
 //!    drawn GPU-instanced from a handful of shared meshes built by [`build_template`].
+//! 4. [`pose`] adds the render-only moments (WP20): the emerging hook, wilting and the
+//!    lean toward the light.
 //!
 //! Coordinates are the sim's frame: x east, y north, z up, in meters. A renderer with a
 //! different up axis applies one root transform.
@@ -30,6 +32,7 @@ pub mod axes;
 pub mod demo;
 pub mod instances;
 pub mod mesh;
+pub mod moments;
 pub mod skeleton;
 pub mod templates;
 pub mod tube;
@@ -39,11 +42,12 @@ pub use axes::{
     copy_transforms, nodes_after_base,
 };
 pub use instances::{
-    BLADE_TILT, Instance, InstanceOptions, LEAF_JITTER, droop_level, instances, jitter, leaf_form,
-    pulvinus, unfold_level,
+    BLADE_TILT, COTYLEDON_SCALE, FLOWER_LENGTH, Instance, InstanceOptions, LEAF_JITTER,
+    droop_level, flower_length, instances, jitter, leaf_form, pulvinus, unfold_level,
 };
 pub use mesh::MeshData;
-pub use skeleton::{Coil, Container, MAX_COPIES, Placement, Skeleton};
+pub use moments::{Pose, lean_from_light, pose, wilt_of_stress};
+pub use skeleton::{Coil, Container, Hook, MAX_COPIES, Placement, Skeleton};
 pub use templates::{
     DROOP_LEVELS, Template, TemplateKey, UNFOLD_LEVELS, build_template, build_template_shaded,
 };

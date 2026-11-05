@@ -85,6 +85,7 @@ pub fn bush(n: usize, cx: f64, cy: f64) -> Vec<LeafPoint> {
                 center: [cx + r * libm::cos(a), cy + r * libm::sin(a), z],
                 area: M2(0.004),
                 normal: [tilt * libm::cos(a), tilt * libm::sin(a), 1.0],
+                strip: None,
             }
         })
         .collect()

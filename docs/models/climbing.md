@@ -24,7 +24,9 @@ Decision 0021.
    with `R = internode_ramp_nodes`.
 4. **Capture**, daily before new nodes, for each searching axis with tip `p`: over the
    supports whose height span holds `p_z`, the gap `g = |p_xy − c_xy| − d/2`; the nearest
-   with `g ≤ r_sweep` is caught with probability `P(d) = 1` for `d ≤ d_sure`,
+   with `g ≤ r_sweep` is caught, where the sweep widens with the length `L_free` of stem
+   the axis has grown upright without a support (decision 0029):
+   `r_sweep = min(r_max, r_0 + k_sweep · L_free)`. It is caught with probability `P(d) = 1` for `d ≤ d_sure`,
    `(d_max − d)/(d_max − d_sure)` up to `d_max`, 0 beyond (stream `Twining`).
 5. **Coil.** A twining internode of length `s` from base `b`, around axis `c` at radius
    `R = d/2 + r_stem` (`r_stem = √(1/(π · SSL · ρ_stem))`) and inclination
@@ -59,15 +61,17 @@ Decision 0021.
 | internode_last_fraction (pole bean) | 1.6 | - | ~ tuned to the height target |
 | specific_stem_length (pole bean) | 120 | cm/g | ~ a 2.6 mm twining stem |
 | flowering, maturity (pole bean) | 575, 1150 | Cd | CROPGRO CUL EM-FL 34/26 × 440; ~ |
-| circumnutation_radius | 6 | cm | ~ 3 to 10 (Sothern 1998) |
+| circumnutation_radius (`r_0`) | 6 | cm | ~ 3 to 10 (Sothern 1998) |
+| circumnutation_growth (`k_sweep`) | 0.25 | - | ~ the free tip swings wider as it lengthens (Darwin 1875); a lean of about 15° (decision 0029) |
+| circumnutation_radius_max (`r_max`) | 15 | cm | ~ cap (decision 0029) |
 | support_diameter_sure, support_diameter_max | 5, 20 | cm | Darwin 1875 |
-| helix_pitch | 10 | cm | ~ review of WP22 |
+| helix_pitch | 14 | cm | ~ tuned on seed means to the staked height (decision 0029; was 10, review of WP22) |
 | helix_inclination_min, helix_inclination_max | 35, 75 | deg | Rutjens 2025 |
 | phloem_conductance (pole bean) | 1500 | g/m/h | ~ climbers conduct more per area (Ewers 1985) |
 | self_support_length | 40 | cm | ~ |
 | heap_radius | 15 | cm | ~ |
 | lodge_height | 2 | cm | ~ |
-| pod_rot_rate | 0.02 | 1/day | ~ set to the unstaked yield band |
+| pod_rot_rate | 0.017 | 1/day | ~ set to the unstaked yield band on seed means (decision 0029; was 0.02) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -80,15 +84,17 @@ Decision 0021.
 | out | rotten pods | g DM | carbon and nitrogen ledgers (litter) |
 
 ## Encoded or emergent
-Encoded: capture by distance and thickness, the helix, the fall at a fixed free length,
+Encoded: capture by distance and thickness, the widening sweep, the helix, the fall at a fixed free length,
 the heap, pod rot on the soil.
 
 Emergent: height on a support, the extra stem a climber builds, the canopy of a fallen
 vine, and its yield loss together with pod rot.
 
 ## Known limits
-- A seed must be sown within 6 cm of a support for the vine to find it; it does not
-  grow toward a support farther away.
+- A vine finds a support only within its sweep: 6 cm for a young tip, widening to
+  15 cm as the free stem grows toward the 40 cm at which it falls over. It does not
+  grow toward a support farther away. A seed sown within 5 cm of a support is never
+  scattered farther from it at sowing (decision 0029).
 - The vine's height depends on its raised phloem conductance (~), a stand-in for the
   climber's wide vessels.
 - Most of the unstaked yield loss is the encoded pod rot, a stand-in for disease of
@@ -103,15 +109,17 @@ vine, and its yield loss together with pod rot.
 
 ## Validation
 - `ps_arch::vine::tests`: capture probability against Darwin's stakes (0.5, 1.5, 5 cm
-  caught, 25 cm not); the coil is anticlockwise from above, keeps its radius and rises
+  caught, 25 cm not); the sweep widens with free length up to its cap; the coil is anticlockwise from above, keeps its radius and rises
   at its inclination; the lodge dip.
 - `ps-validate/tests/pole_bean.rs::staked_pole_beans_climb_and_unstaked_ones_lodge`
   (WP22 done-when): in the row of 8, every staked main stem twines (10 or more coiled
-  internodes) and ends above 1.5 m; unstaked ones lodge, stay under 30 cm and yield 30 to
-  70% less.
+  internodes) and ends above 1.5 m; unstaked ones lodge, stay under 30 cm and yield 20 to
+  90% less on one seed (the 30 to 70% band is read on the seed mean in the validation
+  report, decision 0029).
 - `ps-validate/tests/pole_bean.rs::bush_beans_ignore_supports`.
-- Validation report: `pole_height_day60` (Info, 1.55 m in 1.5 to 2.1), `pole_height_final`
-  (Info, 2.08 m in 1.5 to 2.1), `pole_unstaked_seed_yield` (Info, the row pair, −34% in
+- Validation report, four-seed means at model 0.12.0: `pole_height_day60` (Info, 1.53 m
+  in 1.5 to 2.1), `pole_height_day75` (Info, 2.04 m in 2.0 to 2.3), `pole_height_final`
+  (Info, 2.08 m in 1.5 to 2.1), `pole_unstaked_seed_yield` (Info, the row pair, −63% in
   −30 to −70%).
 
 ## References
