@@ -552,6 +552,10 @@ pub const HERITABLE: &[Spec] = &[
 
 /// Unit required for `genome.mutation_rate`.
 pub const MUTATION_RATE_UNIT: &str = "per locus per gamete";
+/// Unit of the QTL mutation step SD (decision 0023).
+pub const MUTATION_EFFECT_SD_UNIT: &str = "allele SD";
+/// Unit of a chromosome's genetic length (decision 0023).
+pub const CHROMOSOME_LENGTH_UNIT: &str = "cM";
 
 /// Looks up a spec by key.
 #[must_use]

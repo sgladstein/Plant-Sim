@@ -121,6 +121,17 @@ impl RngKey {
     pub const fn stream(self) -> Stream {
         Stream { key: self, next: 0 }
     }
+
+    /// A stream over this key starting at draw `start`. Lets one key hold fixed,
+    /// non-overlapping blocks of draws (meiosis gives each chromosome its own block),
+    /// so a change in how many draws one block uses never shifts another.
+    #[must_use]
+    pub const fn stream_at(self, start: u32) -> Stream {
+        Stream {
+            key: self,
+            next: start,
+        }
+    }
 }
 
 const PHILOX_M0: u32 = 0xD251_1F53;
@@ -276,6 +287,19 @@ impl Stream {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn stream_at_starts_mid_stream() {
+        let key = RngKey::new(9, 4, 2, Purpose::Recombination);
+        let mut a = key.stream();
+        for _ in 0..5 {
+            a.next_u64();
+        }
+        let mut b = key.stream_at(5);
+        assert_eq!(b.position(), 5);
+        assert_eq!(a.next_u64(), b.next_u64());
+        assert_eq!(key.stream_at(1 << 20).next_u64(), draw_u64(&key, 1 << 20));
+    }
 
     // Known-answer tests from Random123 (kat_vectors, philox4x32_10).
     #[test]
