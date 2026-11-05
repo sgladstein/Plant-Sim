@@ -22,10 +22,15 @@ a Windows release build (`plant-sim-windows` artifact).
 
 ```text
 cargo run --release -p ps-app -- [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
+                                 [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 ```
 
+`--present` and `--frame-latency` set the swap chain's present mode (default auto vsync)
+and maximum queued frames, for frame-pacing tests.
+
 Lens names: off, light, soil-water, plant-water, roots, carbon, phenology, shade.
-`--screenshot` renders 90 frames, saves the window and exits; with `xvfb-run` and Mesa's
+`--screenshot` waits until the GPU pipelines have compiled (`ps_view::Ready`) plus 60
+frames, saves the window and exits after the file is written (or fails after 180 s); with `xvfb-run` and Mesa's
 lavapipe it works in a Linux container (slow, but enough for a visual check):
 
 ```text
@@ -70,8 +75,25 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
   `#[allow(clippy::needless_pass_by_value)]`; big sync systems also allow
   `too_many_arguments` and `too_many_lines`.
 
-## Still to confirm on the GTX 1070 (WP13 done-when)
+- Cold start: pipelines compile in the background, so the first seconds render sky only.
+  `ps_view::ready` copies `PipelineCache::waiting_pipelines().count()` from the render
+  world into shared atomics each frame; the scene is `Ready` after 20 quiet frames, and
+  a "Preparing shaders…" overlay (Bevy UI) covers the view until then.
 
-- The owner runs the `plant-sim-windows` artifact and sends a screenshot.
-- DX12 is wgpu's default on Windows; also try `WGPU_BACKEND=vulkan`.
-- Frame time with two plants at 1440p (budget 16 ms, §4).
+## GTX 1070 results (WP13, 2026-11-05, stand-in plants, 2560×1440)
+
+| Backend | vsync off mean | p99 | vsync on |
+| --- | --- | --- | --- |
+| Vulkan | 2.70 ms | 2.94 ms | p95 30.4 ms (uneven pacing) |
+| DX12 | 5.78 ms | 6.05 ms | p99 32.6 ms |
+
+- With no `WGPU_BACKEND` set, wgpu picked **Vulkan** on the owner's PC (not DX12). Keep
+  that: Vulkan is twice as fast here (it runs at ~51% GPU, so it is CPU/submit bound;
+  DX12 sits at 98% GPU). `WGPU_BACKEND=dx12` remains the fallback.
+- Both are far under the 16 ms budget. The vsync-on spikes (missed vblanks with 3 ms of
+  work) are open: compare `--present fifo|mailbox|auto` and `--frame-latency 2|3` with a
+  frame-time histogram per backend. When ps-session drives the view, snapshot reads must
+  not block the render thread on a lock.
+- DX12 cold start was slow enough that the old fixed-frame `--screenshot` saved nothing
+  or a black frame; it now waits for readiness.
+- Not done yet: wgpu's on-disk pipeline cache for Vulkan, to shorten cold starts.

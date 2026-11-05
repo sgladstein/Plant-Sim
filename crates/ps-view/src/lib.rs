@@ -21,6 +21,7 @@ pub mod diorama;
 pub mod garden;
 pub mod lens;
 pub mod look;
+pub mod ready;
 pub mod scene;
 pub mod sky;
 
@@ -29,6 +30,7 @@ use bevy::prelude::*;
 pub use camera::CameraRig;
 pub use garden::{Garden, PotSize, PotView, SoilFace};
 pub use lens::{Lens, LensInfo, Origin, Scale};
+pub use ready::Ready;
 pub use sky::SkyState;
 
 /// System sets, in order, so a data source can run before the scene sync.
@@ -47,6 +49,7 @@ pub struct PlantViewPlugin;
 
 impl Plugin for PlantViewPlugin {
     fn build(&self, app: &mut App) {
+        ready::build(app);
         app.init_resource::<Garden>()
             .init_resource::<SkyState>()
             .init_resource::<Lens>()
