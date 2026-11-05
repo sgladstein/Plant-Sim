@@ -1,0 +1,16 @@
+[package]
+name = "ps-mesh"
+description = "Engine-free plant geometry: organ placement, tapered stem and root tubes, organ templates, instancing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-graph.workspace = true
+ps-units.workspace = true
+glam.workspace = true
+
+[lints]
+workspace = true
