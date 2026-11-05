@@ -10,6 +10,8 @@ publish.workspace = true
 [dependencies]
 ps-units.workspace = true
 ps-soil.workspace = true
+ps-light.workspace = true
+libm.workspace = true
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false }
@@ -20,3 +22,7 @@ harness = false
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "light"
+harness = false

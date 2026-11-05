@@ -3,8 +3,9 @@
 //! Benches live in `benches/` and run with `cargo bench -p ps-bench`. The scenes here
 //! are deterministic and built without randomness, so numbers compare across commits.
 
+use ps_light::LeafPoint;
 use ps_soil::{SoilGrid, SoilHour, Texture};
-use ps_units::{Celsius, Meters, Millimeters, WPerM2};
+use ps_units::{Celsius, M2, Meters, Millimeters, WPerM2};
 
 /// Plants in the M2 plot budget (design plan §7, WP21: 30 plants under 20 ms per sim-day).
 pub const PLOT_PLANTS: usize = 30;
@@ -64,4 +65,64 @@ pub fn dense_roots(grid: &SoilGrid, plants: usize) -> Vec<Vec<Meters>> {
             r
         })
         .collect()
+}
+
+/// A bush of `n` leaves of 40 cm² around `(cx, cy)`: a golden-angle spiral up to
+/// 0.45 m tall with tilted blades. Deterministic.
+#[must_use]
+pub fn bush(n: usize, cx: f64, cy: f64) -> Vec<LeafPoint> {
+    let ga = core::f64::consts::PI * (3.0 - libm::sqrt(5.0));
+    (0..n)
+        .map(|i| {
+            #[allow(clippy::cast_precision_loss)]
+            let (fi, fn_) = (i as f64, n as f64);
+            let f = (fi + 0.5) / fn_;
+            let a = ga * fi;
+            let r = 0.18 * libm::sqrt(f);
+            let z = 0.05 + 0.40 * (1.0 - f * 0.6) * (0.5 + 0.5 * libm::sin(a * 0.37));
+            let tilt = 0.4 * libm::cos(a * 1.3);
+            LeafPoint {
+                center: [cx + r * libm::cos(a), cy + r * libm::sin(a), z],
+                area: M2(0.004),
+                normal: [tilt * libm::cos(a), tilt * libm::sin(a), 1.0],
+            }
+        })
+        .collect()
+}
+
+/// Thirty bushes of `leaves_each` leaves on a 6 × 5 grid at 40 cm spacing (one merged
+/// light grid, as in a plot).
+#[must_use]
+pub fn plot_canopy(leaves_each: usize) -> Vec<LeafPoint> {
+    let mut out = Vec::with_capacity(PLOT_PLANTS * leaves_each);
+    for i in 0..6u8 {
+        for j in 0..5u8 {
+            out.extend(bush(leaves_each, 0.4 * f64::from(i), 0.4 * f64::from(j)));
+        }
+    }
+    out
+}
+
+/// Unit vectors toward the sun at each hour's midpoint, midsummer at 45° N (15
+/// daylight hours); `None` below the horizon.
+#[must_use]
+pub fn summer_sun_path() -> [Option<[f64; 3]>; 24] {
+    let deg = core::f64::consts::PI / 180.0;
+    let (lat, dec) = (45.0 * deg, 23.0 * deg);
+    let mut p = [None; 24];
+    for (h, s) in p.iter_mut().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let ha = (h as f64 + 0.5 - 12.0) * core::f64::consts::PI / 12.0;
+        let sin_e =
+            libm::sin(lat) * libm::sin(dec) + libm::cos(lat) * libm::cos(dec) * libm::cos(ha);
+        if sin_e > 0.0 {
+            let ce = libm::sqrt(1.0 - sin_e * sin_e);
+            let az = libm::atan2(
+                libm::sin(ha),
+                libm::cos(ha) * libm::sin(lat) - libm::tan(dec) * libm::cos(lat),
+            ) + core::f64::consts::PI;
+            *s = Some([ce * libm::sin(az), ce * libm::cos(az), sin_e]);
+        }
+    }
+    p
 }

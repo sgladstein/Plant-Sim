@@ -422,6 +422,8 @@ name = "ps-bench"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "libm",
+ "ps-light",
  "ps-soil",
  "ps-units",
 ]

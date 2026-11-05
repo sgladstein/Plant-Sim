@@ -11,13 +11,13 @@ measures against them. Update the table when a work package changes a hot path.
 | Plot, M2 | 30 plants under 20 ms per sim-day | §7, WP21 and M2 exit |
 | Frame, M1 | under 16 ms at one sim-week per second (7 sim-days per second, about 2.3 ms of sim per frame at 60 fps) | §7, M1 exit |
 | Light, per plant | about 40 rays × 50 cells per leaf per day (a 300-leaf plant: 600,000 cell visits) | §3.5 |
-| Gas exchange | one solve per light class: 30 plants × 32 classes × 24 h ≈ 23,000 solves per day | §3.8 |
+| Gas exchange | one solve per light class: 30 plants × 32 classes × 24 h ≈ 23,000 solves per day (WP7 uses a 17 PAR × 4 capacity table, about 68 solves per plant per hour) | §3.8 |
 
 ## Running
 
 ```
 cargo bench -p ps-bench            # criterion, wall time
-cargo bench -p ps-bench -- soil    # one group
+cargo bench -p ps-bench --bench soil    # one file (soil, light)
 ```
 
 Scenes are fixed and deterministic (`crates/ps-bench/src/lib.rs`), so numbers compare
@@ -35,9 +35,9 @@ should be within a factor of about 1.5 either way.
 | soil, pot: uptake + FTSW, 1 plant | 0.09 ms | fine |
 | soil, 3 × 3 m plot (72,000 cells): hydrology | 11 ms | over half the 20 ms plot budget on its own |
 | soil, plot: uptake + FTSW, 30 plants, dense root arrays | 215 ms | 10× the whole plot budget |
-| light (WP6 branch), 60-leaf plant, daily rebuild | 6.2 ms | 3× the whole M0 budget |
-| light (WP6 branch), 300-leaf plant | 31 ms | 15× |
-| light (WP6 branch), 30 plants × 100 leaves, one grid | 113 ms | 6× the plot budget |
+| light (main after #18), 60-leaf plant, daily rebuild | 6.5 ms | 3× the whole M0 budget |
+| light, 300-leaf plant | 32 ms | 15× |
+| light, 30 plants × 100 leaves, one grid | 110 ms | 6× the plot budget |
 
 ## Known hot spots
 
