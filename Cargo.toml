@@ -26,6 +26,12 @@ ron = "0.10"
 rayon = "1"
 ps-mesh = { path = "crates/ps-mesh" }
 glam = "0.33"
+ps-view = { path = "crates/ps-view" }
+ps-ui = { path = "crates/ps-ui" }
+# Render crates only (ps-view, ps-ui, ps-app); see docs/bevy-notes.md before changing.
+bevy = { version = "=0.20.1", default-features = false, features = ["3d", "ui"] }
+bevy_egui = { version = "=0.43.1", default-features = false, features = ["render", "default_fonts"] }
+anyhow = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
