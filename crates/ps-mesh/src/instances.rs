@@ -205,9 +205,9 @@ pub fn instances(skeleton: &Skeleton, options: InstanceOptions) -> Vec<Instance>
             Template::Flower => Vec3::splat(p.length),
             Template::Bud => Vec3::splat(p.radius),
             Template::Nodule => Vec3::splat(if p.radius > 0.0 {
-                p.radius.clamp(0.000_7, 0.004)
+                p.radius.clamp(0.001_5, 0.004)
             } else {
-                0.001_5
+                0.002
             }),
         };
         let id = i as u32;
