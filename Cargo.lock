@@ -5026,7 +5026,7 @@ version = "0.1.0"
 dependencies = [
  "ps-weather",
  "ps-world",
- "thiserror",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
