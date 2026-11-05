@@ -1,0 +1,157 @@
+//! WP6 done-when 2: a single plant against the Monte Carlo ray tracer fixture
+//! (`validation/fixtures/light_raytrace.py`).
+
+use std::fmt::Write as _;
+
+use ps_light::{LeafPoint, rebuild_daily, sky_sectors};
+use ps_units::M2;
+
+const LEAVES: &str = include_str!("fixtures/plant_leaves.csv");
+const TRACE: &str = include_str!("fixtures/plant_raytrace.csv");
+
+fn rows(text: &str) -> impl Iterator<Item = Vec<&str>> {
+    text.lines()
+        .filter(|l| !l.starts_with('#'))
+        .skip(1)
+        .map(|l| l.split(',').collect())
+}
+
+fn num(s: &str) -> f64 {
+    s.parse().expect("fixture number")
+}
+
+fn unit(elev_deg: f64, az_deg: f64) -> [f64; 3] {
+    let e = elev_deg.to_radians();
+    let a = az_deg.to_radians();
+    [
+        libm::cos(e) * libm::sin(a),
+        libm::cos(e) * libm::cos(a),
+        libm::sin(e),
+    ]
+}
+
+struct Reference {
+    leaves: Vec<LeafPoint>,
+    /// `sun[d][leaf]`: ray-traced transmittance toward sun direction `d`.
+    sun: Vec<Vec<f64>>,
+    sun_dirs: Vec<[f64; 3]>,
+    /// `sky[s][leaf]`, in ps-light sky-sector order.
+    sky: Vec<Vec<f64>>,
+    sky_dirs: Vec<[f64; 3]>,
+}
+
+fn reference() -> Reference {
+    let leaves: Vec<LeafPoint> = rows(LEAVES)
+        .map(|r| LeafPoint {
+            center: [num(r[1]), num(r[2]), num(r[3])],
+            area: M2(num(r[4])),
+            normal: [num(r[5]), num(r[6]), num(r[7])],
+        })
+        .collect();
+    let mut r = Reference {
+        leaves,
+        sun: Vec::new(),
+        sun_dirs: Vec::new(),
+        sky: Vec::new(),
+        sky_dirs: Vec::new(),
+    };
+    // Rows are grouped by leaf, then by direction in a fixed order.
+    let mut order: Vec<(String, f64, f64)> = Vec::new();
+    for row in rows(TRACE) {
+        let key = (row[1].to_string(), num(row[2]), num(row[3]));
+        let d = if let Some(d) = order.iter().position(|k| *k == key) {
+            d
+        } else {
+            order.push(key);
+            order.len() - 1
+        };
+        let (kind, elev, az) = &order[d];
+        let (vals, dirs, idx) = if kind == "sun" {
+            let i = order[..d].iter().filter(|k| k.0 == "sun").count();
+            (&mut r.sun, &mut r.sun_dirs, i)
+        } else {
+            let i = order[..d].iter().filter(|k| k.0 == "sky").count();
+            (&mut r.sky, &mut r.sky_dirs, i)
+        };
+        if vals.len() == idx {
+            vals.push(Vec::new());
+            dirs.push(unit(*elev, *az));
+        }
+        vals[idx].push(num(row[4]));
+    }
+    r
+}
+
+#[test]
+fn fixture_sky_directions_match_sky_sectors() {
+    let r = reference();
+    let sky = sky_sectors();
+    assert_eq!(r.sky_dirs.len(), sky.len());
+    for (a, b) in r.sky_dirs.iter().zip(&sky) {
+        for k in 0..3 {
+            assert!(
+                (a[k] - b.direction[k]).abs() < 1e-5,
+                "{a:?} vs {:?}",
+                b.direction
+            );
+        }
+    }
+}
+
+#[test]
+fn single_plant_matches_ray_tracer() {
+    let r = reference();
+    let n = r.leaves.len();
+    let sky = sky_sectors();
+    let mut sun_path = [None; 24];
+    for (h, d) in r.sun_dirs.iter().enumerate() {
+        sun_path[8 + h] = Some(*d);
+    }
+    let (_, c) = rebuild_daily(&r.leaves, &[[0.0, 0.0, 0.0]], &sun_path, &sky, 0.5);
+    assert_eq!(c.len(), n);
+
+    // Per leaf: the daily light index, the mean of the direct coefficients over the
+    // test sun positions and the diffuse coefficient, equally weighted.
+    let mut errors = Vec::with_capacity(n);
+    let (mut total_model, mut total_ref) = (0.0, 0.0);
+    let mut report = String::new();
+    for i in 0..n {
+        let ns = f64::from(u32::try_from(r.sun.len()).unwrap());
+        let ref_direct: f64 = r.sun.iter().map(|d| d[i]).sum::<f64>() / ns;
+        let ref_diffuse: f64 = r.sky.iter().zip(&sky).map(|(d, s)| s.weight * d[i]).sum();
+        let mod_direct: f64 = (0..r.sun.len()).map(|h| c[i].direct[8 + h]).sum::<f64>() / ns;
+        let mod_diffuse = c[i].diffuse;
+        let model = 0.5 * (mod_direct + mod_diffuse);
+        let refv = 0.5 * (ref_direct + ref_diffuse);
+        let a = r.leaves[i].area.0;
+        total_model += a * model;
+        total_ref += a * refv;
+        let err = model - refv;
+        errors.push(err.abs());
+        writeln!(
+            report,
+            "leaf {i:2} z {:.3}: direct {mod_direct:.3}/{ref_direct:.3} \
+             diffuse {mod_diffuse:.3}/{ref_diffuse:.3} err {err:+.3}",
+            r.leaves[i].center[2]
+        )
+        .unwrap();
+    }
+    let total_rel = total_model / total_ref - 1.0;
+    let worst = errors.iter().fold(0.0_f64, |a, &b| a.max(b));
+    let within = errors.iter().filter(|&&e| e <= 0.10).count();
+    println!(
+        "{report}total {total_model:.5} vs {total_ref:.5} ({total_rel:+.4}); \
+         {within}/{n} leaves within 0.10, worst {worst:.3}"
+    );
+    // Design target: plant total within 3%.
+    assert!(total_rel.abs() < 0.03, "plant total {total_rel:+.4}");
+    // Design target: every leaf within 0.10. Measured: 55 of 57, worst 0.142, both
+    // misses in one trifoliate whose leaflets overlap within a grid cell. The owner
+    // accepted 95% within 0.10 for M0; re-check on a sim-exported plant in WP12 and
+    // tighten these bounds if every leaf passes (decision 0008).
+    assert!(
+        within * 100 >= 95 * n,
+        "{within}/{n} leaves within 0.10\n{report}"
+    );
+    assert!(worst < 0.15, "worst per-leaf error {worst:.3}\n{report}");
+}

@@ -255,6 +255,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-light"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "ps-graph",
+ "ps-units",
+ "serde",
+]
+
+[[package]]
 name = "ps-rng"
 version = "0.1.0"
 dependencies = [

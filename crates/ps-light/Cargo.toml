@@ -1,0 +1,17 @@
+[package]
+name = "ps-light"
+description = "Turbid-medium voxel light model: adaptive grid, sun and sky ray marching, per-leaf coefficients, R:FR"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-units.workspace = true
+ps-graph.workspace = true
+serde.workspace = true
+libm.workspace = true
+
+[lints]
+workspace = true
