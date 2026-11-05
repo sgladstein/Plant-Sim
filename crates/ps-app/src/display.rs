@@ -3,7 +3,7 @@
 //! On the owner's GTX 1070, FIFO vsync spiked to about 30 ms every ~14 frames (a present
 //! cadence beating against 60 Hz), while mailbox ran smoothly but uncapped at about
 //! 250 fps. So the default is mailbox (Bevy falls back to immediate, then FIFO) with a
-//! frame limiter at the monitor's refresh rate. The window also shrinks to fit the
+//! frame limiter at twice the monitor's refresh rate (see [`REFRESH_MULTIPLE`]). The window also shrinks to fit the
 //! monitor, since 1600×900 at 175% scaling is wider than a 2560-pixel display.
 
 use std::time::{Duration, Instant};
@@ -17,7 +17,7 @@ const FIT: f32 = 0.92;
 /// The frame limiter: holds each frame until its slot.
 #[derive(Debug, Resource)]
 pub struct FrameCap {
-    /// Requested cap, frames per second; `None` uses the monitor's refresh rate.
+    /// Requested cap, frames per second; `None` uses twice the monitor's refresh rate.
     pub fps: Option<f64>,
     /// Off entirely (vsync present modes, or `--fps-cap 0`).
     pub off: bool,
@@ -28,6 +28,8 @@ pub struct FrameCap {
     /// late `sleep` wakes, so a coarse timer (15.6 ms on some Windows setups) is never
     /// trusted to wake in time.
     slack: Duration,
+    /// Time the limiter held the last frame, for the bench CSV.
+    pub last_wait: Duration,
 }
 
 impl FrameCap {
@@ -41,6 +43,7 @@ impl FrameCap {
             next: None,
             frames_without_rate: 0,
             slack: INITIAL_SLACK,
+            last_wait: Duration::ZERO,
         }
     }
 
@@ -50,6 +53,13 @@ impl FrameCap {
         self.interval.map(|d| 1.0 / d.as_secs_f64())
     }
 }
+
+/// The default cap is this multiple of the refresh rate. Capped at exactly the refresh
+/// rate, mailbox on the owner's 1070 dropped a whole display interval about once every
+/// 100 frames (28 ms spikes, each followed by a catch-up frame), even with spin-waiting;
+/// uncapped it never did. Twice the rate keeps a fresh frame ready for every vblank
+/// while still bounding GPU load.
+const REFRESH_MULTIPLE: f64 = 2.0;
 
 /// Starting spin margin before a deadline.
 const INITIAL_SLACK: Duration = Duration::from_millis(2);
@@ -105,13 +115,13 @@ pub(crate) fn limit_frame(
                 .iter()
                 .next()
                 .and_then(|m| m.refresh_rate_millihertz)
-                .map(|mhz| f64::from(mhz) / 1000.0)
+                .map(|mhz| f64::from(mhz) / 1000.0 * REFRESH_MULTIPLE)
         });
         // Monitors may not be reported on the first frames, and some report no rate;
         // assume 60 Hz after a moment.
         let hz = match hz.filter(|h| *h >= 10.0) {
             Some(hz) => hz,
-            None if cap.frames_without_rate >= 60 => 60.0,
+            None if cap.frames_without_rate >= 60 => 60.0 * REFRESH_MULTIPLE,
             None => {
                 cap.frames_without_rate += 1;
                 return;
@@ -125,6 +135,7 @@ pub(crate) fn limit_frame(
     };
     let now = Instant::now();
     let next = cap.next.unwrap_or(now);
+    cap.last_wait = next.saturating_duration_since(now);
     if next > now {
         let wait = next - now;
         // Sleep the wait minus the learned slack, then spin to the deadline. A sleep that

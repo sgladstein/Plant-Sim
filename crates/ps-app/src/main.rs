@@ -11,7 +11,7 @@
 //!           [--scenario FILE.ron] [--data DIR] [--demo] [--window WxH] [--fps-cap N]
 //! ```
 //!
-//! The default present mode is mailbox with a frame cap at the monitor's refresh rate
+//! The default present mode is mailbox with a frame cap at twice the monitor's refresh rate
 //! (`--fps-cap N` overrides it, 0 turns it off; FIFO and auto vsync are never capped).
 //! `--window WxH` sets the window size in physical pixels (clamped to fit the monitor);
 //! without it the 1600x900 logical default shrinks to fit the monitor.
