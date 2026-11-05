@@ -7,7 +7,14 @@
 //! ps-cli replay SCENARIO LOG [--data DIR] [--until-tick T] [--out DIR]
 //! ps-cli replay --snapshot FILE [--out DIR]
 //! ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]
+//! ps-cli founders LIBRARY SPECIES [--count N] [--world-seed S] [--line] [--data DIR]
+//! ps-cli breed  LIBRARY PLAN [--data DIR] [--out DIR]
 //! ```
+//!
+//! `founders` adds pure lines to a seed library file (created if missing): the species
+//! line with `--line`, else `--count` lines drawn from the species population. `breed`
+//! grows one bench generation from a plan file (WP30), adds the picked seeds to the
+//! library and writes `OUT/<plan file stem>/bench.csv`.
 //!
 //! `run` writes `daily.csv`, `organs.csv`, `hashes.csv` and `log.ron` for each scenario
 //! into `OUT/<scenario file stem>/` (default `out/`), running the scenarios in parallel.
@@ -31,10 +38,12 @@ const USAGE: &str = "usage:
   ps-cli bench  SCENARIO... [--data DIR] [--days N] [--repeat N]
   ps-cli replay SCENARIO LOG [--data DIR] [--until-tick T] [--out DIR]
   ps-cli replay --snapshot FILE [--out DIR]
-  ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]";
+  ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]
+  ps-cli founders LIBRARY SPECIES [--count N] [--world-seed S] [--line] [--data DIR]
+  ps-cli breed  LIBRARY PLAN [--data DIR] [--out DIR]";
 
 /// Options that take no value.
-const FLAGS: [&str; 1] = ["allow-missing"];
+const FLAGS: [&str; 2] = ["allow-missing", "line"];
 
 /// Parsed command line: positional arguments and `--key value` options.
 #[derive(Debug, Default)]
@@ -534,6 +543,134 @@ fn cmd_validate(a: &Args) -> Result<()> {
     Ok(())
 }
 
+/// Reads a seed library file, or an empty library if the file does not exist.
+fn read_library(path: &Path) -> Result<ps_breed::SeedLibrary> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => ps_breed::SeedLibrary::from_ron(&text)
+            .with_context(|| format!("parsing {}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ps_breed::SeedLibrary::new()),
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+    }
+}
+
+fn read_species(data: &Path, id: &str) -> Result<ps_species::Species> {
+    let path = data.join("species").join(format!("{id}.ron"));
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    ps_species::Species::from_ron(&text).with_context(|| format!("parsing {}", path.display()))
+}
+
+fn cmd_founders(a: &Args) -> Result<()> {
+    a.check_keys(&["count", "world-seed", "line", "data"])?;
+    let [lib_path, species_id] = a.files.as_slice() else {
+        bail!("founders needs LIBRARY SPECIES\n{USAGE}");
+    };
+    let id = species_id.to_string_lossy().into_owned();
+    let data = a.data_dir();
+    let species = read_species(&data, &id)?;
+    let looks = ps_breed::Looks::load(
+        &data,
+        &std::collections::BTreeMap::from([(id.clone(), species.clone())]),
+    )?;
+    let mut lib = read_library(lib_path)?;
+    let added = if a.get("line").is_some() {
+        vec![lib.add_line(&id, &species, &looks)?]
+    } else {
+        let n = a.number::<u32>("count")?.unwrap_or(10);
+        let seed = a.number::<u64>("world-seed")?.unwrap_or(1);
+        lib.add_founders(&id, &species, n, seed, &looks)?
+    };
+    std::fs::write(lib_path, lib.to_ron()?)
+        .with_context(|| format!("writing {}", lib_path.display()))?;
+    println!(
+        "added {} {id} seed(s), ids {:?}; {} seeds in {}",
+        added.len(),
+        added,
+        lib.seeds.len(),
+        lib_path.display()
+    );
+    Ok(())
+}
+
+fn cmd_breed(a: &Args) -> Result<()> {
+    a.check_keys(&["data", "out"])?;
+    let [lib_path, plan_path] = a.files.as_slice() else {
+        bail!("breed needs LIBRARY PLAN\n{USAGE}");
+    };
+    let data = a.data_dir();
+    let mut lib = read_library(lib_path)?;
+    let text = std::fs::read_to_string(plan_path)
+        .with_context(|| format!("reading {}", plan_path.display()))?;
+    let plan: ps_breed::BenchPlan =
+        ron::from_str(&text).with_context(|| format!("parsing {}", plan_path.display()))?;
+    let scenario = plan.scenario(&lib)?;
+    let catalog = Catalog::load(&data, &scenario)?;
+    let looks = ps_breed::Looks::load(&data, &catalog.species)?;
+    let t = Instant::now(); // determinism: allow (bench timing only)
+    let g = ps_breed::run_generation(&mut lib, &plan, &catalog, &looks)?;
+    let secs = t.elapsed().as_secs_f64();
+    std::fs::write(lib_path, lib.to_ron()?)
+        .with_context(|| format!("writing {}", lib_path.display()))?;
+    let stem = plan_path
+        .file_stem()
+        .map_or_else(|| "bench".into(), |s| s.to_string_lossy().into_owned());
+    let dir = a.out_dir().join(stem);
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(dir.join("bench.csv"), bench_csv(&g.rows))?;
+    println!(
+        "{}: {} pots, {} days, {} seeds saved to {} in {secs:.1} s; hash {:016x}",
+        plan.label,
+        g.rows.len(),
+        g.days,
+        g.saved.len(),
+        lib_path.display(),
+        g.hash
+    );
+    println!("rows: {}", dir.join("bench.csv").display());
+    Ok(())
+}
+
+/// The bench rows as CSV, one plant per line.
+fn bench_csv(rows: &[ps_breed::BenchRow]) -> String {
+    let mut csv = String::from(
+        "pot,seed,species,crossed_with,emergence_day,flowering_day,maturity_day,height_cm,\
+         leaf_area_cm2,dry_mass_g,pods,seeds,seed_yield_g,mean_seed_mg,seed_coat,ground,\
+         pattern,flower,saved\n",
+    );
+    let opt = |v: Option<u32>| v.map_or_else(String::new, |v| v.to_string());
+    for r in rows {
+        let look = r.look.as_ref();
+        let field = |f: fn(&ps_species::seed_colour::SeedLook) -> &str| {
+            look.map_or_else(String::new, |l| f(l).to_owned())
+        };
+        let saved: Vec<String> = r.saved.iter().map(u64::to_string).collect();
+        let _ = writeln!(
+            csv,
+            "{},{},{},{},{},{},{},{:.2},{:.1},{:.3},{},{},{:.4},{:.1},{},{},{},{},{}",
+            r.pot,
+            r.seed,
+            r.species,
+            r.crossed_with.map_or_else(String::new, |p| p.to_string()),
+            opt(r.emergence_day),
+            opt(r.flowering_day),
+            opt(r.maturity_day),
+            r.height_cm,
+            r.leaf_area_cm2,
+            r.dry_mass_g,
+            r.pods,
+            r.seeds,
+            r.seed_yield_g,
+            r.mean_seed_mg,
+            field(|l| &l.seed_coat),
+            field(|l| &l.ground),
+            field(|l| &l.pattern),
+            field(|l| &l.flower),
+            saved.join(" ")
+        );
+    }
+    csv
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -546,6 +683,8 @@ fn main() -> Result<()> {
         "bench" => cmd_bench(&a),
         "replay" => cmd_replay(&a),
         "validate" => cmd_validate(&a),
+        "founders" => cmd_founders(&a),
+        "breed" => cmd_breed(&a),
         "" | "help" | "-h" | "--help" => {
             println!("{USAGE}");
             Ok(())

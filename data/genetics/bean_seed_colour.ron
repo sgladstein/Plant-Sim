@@ -8,6 +8,7 @@
 // C = pattern rows). Colours are hints from the Munsell/ISCC-NBS names [I]; "~" marks a
 // rule or value to validate against photos.
 (
+  species: ["bush_bean", "pole_bean"],
   source: "WP28 research §3, from McClean and Bassett 2002, Beninger, Hosfield and Bassett 2000, the Bassett and McClean partly coloured review, Hosfield (citing Bassett 1998c, 1999) and Parker 2024",
   default: (seed_coat: "#6E4E37", ground: "#F4F1E8", pattern: "self", coverage: 1.0, glossy: true, flower: "#F4F1E8"),
   layers: [

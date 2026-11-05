@@ -16,6 +16,7 @@ ps-mesh = { path = "../ps-mesh" }
 ps-world = { path = "../ps-world" }
 ps-graph.workspace = true
 ps-species.workspace = true
+ps-breed.workspace = true
 libm.workspace = true
 
 [dev-dependencies]

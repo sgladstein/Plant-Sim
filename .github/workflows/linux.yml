@@ -58,11 +58,15 @@ jobs:
       - name: sim speed (report only)
         continue-on-error: true
         run: |
-          cargo build --release --locked -q -p ps-bench --example sim_days
+          cargo build --release --locked -q -p ps-bench --example sim_days --example breed_generation
           {
             echo "## Sim speed (report only, shared runner)"
             echo
             target/release/examples/sim_days 3
+            echo
+            echo "## Breeding bench: one ten-seed generation (WP30, report only)"
+            echo
+            target/release/examples/breed_generation 3
           } >> "$GITHUB_STEP_SUMMARY"
 
   # WP11: the validation report (design plan §8). Fails on a missed M0 target that is

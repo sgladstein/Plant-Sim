@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 pub use hash::hash_of;
 pub use lens::{LensData, PlantLens, SoilLens};
 pub use scenario::{
-    Action, ActionKind, FieldVariation, Irrigation, ObstacleSpec, Scenario, SeedChoice, SoilSpec,
-    Sowing, Start, SupportSpec, WeatherSource,
+    Action, ActionKind, FieldVariation, Irrigation, ObstacleSpec, SCENARIO_SCHEMA, Scenario,
+    SeedChoice, SoilSpec, Sowing, Start, SupportSpec, WeatherSource,
 };
 
 /// Model version: bumped on any change to an equation, a default parameter or the
@@ -170,6 +170,9 @@ pub struct PlantEntry {
     pub species: String,
     /// The genotype it grew from (WP28): its alleles, in the species' locus order.
     pub genotype: Genotype,
+    /// Seed library id of the seed it grew from, when sown from the library (WP30).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_id: Option<u64>,
     /// The plant.
     pub plant: Plant,
 }
@@ -492,6 +495,22 @@ fn support_in_frame(p: &SupportSpec, centre: [f64; 2]) -> ps_arch::Support {
         height: p.height_cm * 0.01,
         diameter: p.diameter_cm * 0.01,
     }
+}
+
+/// Checks a saved seed's genotype against its species: one finite allele pair per
+/// locus (WP30).
+fn check_genotype(species: &Species, g: &Genotype) -> Result<(), String> {
+    let n = species.genome.loci.len();
+    if g.alleles.len() != n {
+        return Err(format!("{} loci, the species has {n}", g.alleles.len()));
+    }
+    if g.alleles
+        .iter()
+        .any(|(a, b)| !(a.is_finite() && b.is_finite()))
+    {
+        return Err("an allele is not finite".into());
+    }
+    Ok(())
 }
 
 fn obstacle_in_frame(o: &ObstacleSpec, centre: [f64; 2]) -> ps_light::Obstacle {
@@ -856,6 +875,12 @@ impl World {
                 if !soil_known(s.soil) {
                     return err(format!("unknown soil {}", s.soil));
                 }
+                if let SeedChoice::Saved { id, genotype } = &s.seed
+                    && let Some(sp) = self.state.catalog.species.get(&s.species)
+                    && let Err(why) = check_genotype(sp, genotype)
+                {
+                    return err(format!("saved seed {id} of {}: {why}", s.species));
+                }
             }
             ActionKind::Water { soil, mm } => {
                 if !soil_known(*soil) {
@@ -1067,10 +1092,16 @@ impl World {
             .ok_or_else(|| WorldError::Species(format!("{} not in the catalog", s.species)))?;
         let id =
             u32::try_from(self.state.plants.len()).map_err(|_| err("too many plants".into()))?;
-        let genotype = match s.seed {
-            SeedChoice::Default => species.default_genotype(),
-            SeedChoice::Sample => {
-                species.sample_genotype(self.state.scenario.world_seed, u64::from(id))
+        let (genotype, seed_id) = match &s.seed {
+            SeedChoice::Default => (species.default_genotype(), None),
+            SeedChoice::Sample => (
+                species.sample_genotype(self.state.scenario.world_seed, u64::from(id)),
+                None,
+            ),
+            SeedChoice::Saved { id: seed, genotype } => {
+                check_genotype(species, genotype)
+                    .map_err(|why| err(format!("saved seed {seed} of {}: {why}", s.species)))?;
+                (genotype.clone(), Some(*seed))
             }
         };
         let traits = species
@@ -1136,6 +1167,7 @@ impl World {
             soil,
             species: s.species.clone(),
             genotype,
+            seed_id,
             plant,
         });
         Ok(())
@@ -1153,6 +1185,12 @@ impl World {
     /// A seed's genotype: the mother's egg and the father's pollen, each from its own
     /// meiosis keyed by (world seed, `(mother << 32) | seed organ`, the tick the seed
     /// was made), as decision 0031 item 7 sets. A selfed seed has the mother as father.
+    ///
+    /// Computing it on demand rather than storing it at seed set (decision 0035) relies
+    /// on these invariants: plants and each plant's organ arena only grow (ids are never
+    /// reused), a plant's genotype never changes after sowing, organ birth ticks are
+    /// saved, a pod stays in `Plant::pods` with its cross after seed set, and meiosis
+    /// draws are keyed, so a read consumes nothing.
     fn seed_genotype_of(
         &self,
         mother: u32,

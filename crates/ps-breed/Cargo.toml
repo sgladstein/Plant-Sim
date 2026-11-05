@@ -1,0 +1,24 @@
+[package]
+name = "ps-breed"
+description = "Seed library and breeding bench: saved seeds with pedigrees, and headless ten-pot generations (WP30)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-species.workspace = true
+ps-world.workspace = true
+ps-physio.workspace = true
+ps-soil.workspace = true
+ps-graph.workspace = true
+ps-arch.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+ron.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

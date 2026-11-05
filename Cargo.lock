@@ -4998,6 +4998,7 @@ dependencies = [
  "criterion",
  "libm",
  "mimalloc",
+ "ps-breed",
  "ps-graph",
  "ps-light",
  "ps-mesh",
@@ -5009,12 +5010,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-breed"
+version = "0.1.0"
+dependencies = [
+ "ps-arch",
+ "ps-graph",
+ "ps-physio",
+ "ps-soil",
+ "ps-species",
+ "ps-world",
+ "ron 0.10.1",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "ps-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "mimalloc",
+ "ps-breed",
  "ps-export",
+ "ps-species",
  "ps-validate",
  "ps-world",
  "ron 0.10.1",
