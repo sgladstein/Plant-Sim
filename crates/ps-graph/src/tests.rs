@@ -161,3 +161,33 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn secondary_growth_keeps_length_and_widens() {
+    let a = allom();
+    let mut g = OrganArena::new();
+    let s = g.add(&organ(OrganKind::Seed, None), &a).unwrap();
+    let i = g.add(&organ(OrganKind::Internode, Some(s)), &a).unwrap();
+    let before = g.size[i.index()];
+    assert_eq!(g.primary_radius(i), before.radius);
+    g.grow_secondary(i, GramsDM(0.03), &a).unwrap();
+    let after = g.size[i.index()];
+    assert_eq!(g.structural(i), GramsDM(0.04));
+    assert_eq!(g.secondary(i), GramsDM(0.03));
+    assert!((g.primary(i).0 - 0.01).abs() < 1e-15);
+    assert!((after.length.0 - before.length.0).abs() < 1e-15);
+    assert!((after.radius.0 / before.radius.0 - 2.0).abs() < 1e-12);
+    assert!((g.primary_radius(i).0 - before.radius.0).abs() < 1e-15);
+    // Primary growth after thickening lengthens by the primary mass only.
+    g.grow(i, GramsDM(0.01), &a).unwrap();
+    assert!((g.size[i.index()].length.0 - 2.0 * before.length.0).abs() < 1e-12);
+    assert!(g.grow_secondary(i, GramsDM(-1e-6), &a).is_err());
+    // A save from before the column existed reads zero secondary mass and keeps
+    // adding organs in step.
+    let mut old = g.clone();
+    old.secondary.clear();
+    assert_eq!(old.secondary(i), GramsDM(0.0));
+    let l = old.add(&organ(OrganKind::Leaf, Some(i)), &a).unwrap();
+    assert_eq!(old.secondary.len(), old.len());
+    assert_eq!(old.secondary(l), GramsDM(0.0));
+}

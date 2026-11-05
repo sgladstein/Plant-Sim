@@ -114,9 +114,9 @@ leaves actually absorb), final organ sizes (carbon shortfall), which leaves die 
 shade, and where roots end up.
 
 ## Known limits
-- No secondary thickening of stems or roots yet, so stems are light and the root
-  system is about 4% of dry mass (root:shoot 0.04 at seed fill against 0.08 to 0.30
-  published): a known limit at the M0 exit (WP12).
+- Stems and roots thicken (decision 0036, organ-growth card), but the root system is
+  still short and light: root:shoot is 0.07 at seed fill against 0.08 to 0.30
+  published, and root length is far below measured beans early (R2a).
 - From flowering on the plant is short of sinks: the sink feedback discards about 60%
   of potential gross assimilation, even at half light. So a source stress (shade,
   drought, heat) acts mainly through pod number, which pod set ties to carbon, light,
@@ -130,7 +130,8 @@ shade, and where roots end up.
 - Drought raises root:shoot by 16 to 39%, but from a base 2 to 8 times too low.
 - No phototropism or hydrotropism yet; roots bend only by gravity and noise.
 - Laterals are lumped into cohorts and have no laterals of their own.
-- Leaves do not senesce from the base during seed fill (§3.11; M2 with nitrogen).
+- Leaves senesce from the base during seed fill only through nitrogen mining (nitrogen
+  card); the seeds' own nitrogen demand does not yet strip them at a capped rate (R1b).
 - At maturity all leaves drop at once.
 - Branches carry no axillary buds or racemes except their terminal one.
 

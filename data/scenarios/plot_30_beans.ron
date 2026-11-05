@@ -5,7 +5,7 @@
 // (decision 0019); its cost per sim-day is the M2 budget (under 20 ms).
 Scenario(
   schema: 1,
-  model_version: "0.18.0",
+  model_version: "0.19.0",
   world_seed: 7,
   latitude_deg: 45.0,
   start: (year: 2026, month: 5, day: 15, hour: 0),

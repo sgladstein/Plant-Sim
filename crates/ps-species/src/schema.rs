@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 11;
+pub const SCHEMA: u32 = 12;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -446,6 +446,22 @@ param_group!(
         blade_first_fraction: "-",
         /// Area of the flag blade as a fraction of the largest.
         blade_flag_fraction: "-",
+    }
+);
+
+param_group!(
+    /// Secondary growth: stem and root thickening (schema 12, R1a, decision 0036).
+    Thickening {
+        /// 1 if the species has a cambium and thickens its stems and roots, 0 if not
+        /// (grasses).
+        secondary_growth: "-",
+        /// Pipe-model stem cross-section per unit of leaf area the stem has carried
+        /// above it (the Huber value of a whole herb stem).
+        pipe_area_per_leaf_area: "m2/m2",
+        /// Extra stem cross-section per unit of fruit dry mass above it (0: none).
+        pipe_area_per_fruit_mass: "m2/g",
+        /// Most a stem's radius can grow per day (cambial activity).
+        stem_radial_rate_max: "mm/day",
     }
 );
 

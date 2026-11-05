@@ -5,7 +5,7 @@
 // decision 0020).
 Scenario(
   schema: 1,
-  model_version: "0.18.0",
+  model_version: "0.19.0",
   world_seed: 7,
   latitude_deg: 45.0,
   start: (year: 2026, month: 6, day: 10, hour: 0),

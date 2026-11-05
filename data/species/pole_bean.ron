@@ -3,7 +3,7 @@
 // later pole-type phenology, and longer internodes; everything else is the bush bean's.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 11,
+  schema: 12,
   id: "pole_bean",
   name: "Pole bean archetype",
   growth_form: Vine,
@@ -237,6 +237,16 @@ Species(
     divergence_sd: (value: 10.0, unit: "deg", source: "~ measured divergence angles scatter by about 5 to 15 degrees about the ideal angle"),
     internode_length_cv: (value: 0.1, unit: "-", source: "~ internode-to-internode scatter of final length about the node profile, about 10%, matching leaf_size_cv; with emergence spread it brings stand height CV toward the 10% field stands show (variation review item 6, decision 0029)"),
   ),
+  thickening: (           // schema 12, R1a, decision 0036: stem and root secondary growth
+    secondary_growth: (value: 1.0, unit: "-", source: "botany: a dicot with a vascular cambium; bean stems and tap roots widen through the season"),
+    pipe_area_per_leaf_area: (value: 3.0e-4, unit: "m2/m2", source: "~ whole-stem Huber value: basal stem area over plant leaf area 1.5e-4 to 3.1e-4 from field stem diameters (Rodriguez Rodriguez 2026; Anjos 2018) and UFGA8501 LAI (R1 numbers, research thread); calibrate to basal_stem_diameter"),
+    pipe_area_per_fruit_mass: (value: 0.0, unit: "m2/g", source: "~ off: no pod-load term unless calibration needs one (R1 spec §3.2)"),
+    stem_radial_rate_max: (value: 0.1, unit: "mm/day", source: "~ a cap: a bean hypocotyl needs 0.02 to 0.05 mm/day on average, sunflower about 0.15 (Radu & Gurau 2023; R1 numbers, research thread)"),
+  ),
+  root_secondary_rate: (  // schema 12, R1a: root diameter growth by segment age, before each type's factor
+    points: [(0.0, 0.0), (4.0, 0.0005), (5.0, 0.001), (7.0, 0.0015), (11.0, 0.002), (13.0, 0.0023), (18.0, 0.0026), (24.0, 0.00285), (29.0, 0.003)],
+    x_unit: "day", unit: "cm/day",
+    source: "OpenSimRoot bean (Carioca) growthrates.xml, secondaryGrowthRate by root segment age: a diameter increment that adds 0.1 cm in 43 days"),
   roots: [
     RootType(name: "tap", origin: Radicle, order: 0,
       count: (value: 1.0, unit: "-", source: "botany"),
@@ -247,6 +257,7 @@ Species(
       apical_zone: (value: 10.0, unit: "cm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
       insertion_angle: (value: 0.0, unit: "deg", source: "straight down"),
       diameter: (value: 0.9, unit: "mm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
+      secondary_factor: (points: [(0.0, 4.0), (20.0, 4.0), (40.0, 2.0)], x_unit: "cm", unit: "-", source: "OpenSimRoot bean (Carioca) growthrates.xml, secondaryGrowthScalingFactor by distance from the root base"),
       gravitropism: 1.0, hydrotropism: 0.5),
     RootType(name: "basal_1", origin: Basal, order: 0,
       count: (value: 4.0, unit: "-", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16): whorl 1"),
@@ -257,6 +268,7 @@ Species(
       apical_zone: (value: 8.0, unit: "cm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
       insertion_angle: (value: 80.0, unit: "deg", source: "~ OpenSimRoot bean (Carioca), values only (research review item 14 to 16) gives 90, near horizontal"),
       diameter: (value: 0.68, unit: "mm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
+      secondary_factor: (points: [(0.0, 0.7), (20.0, 0.7), (40.0, 0.4)], x_unit: "cm", unit: "-", source: "OpenSimRoot bean (Carioca) growthrates.xml, secondaryGrowthScalingFactor by distance from the root base"),
       gravitropism: 0.15, hydrotropism: 0.3),
     RootType(name: "basal_2", origin: Basal, order: 0,
       count: (value: 4.0, unit: "-", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16): whorl 2"),
@@ -267,6 +279,7 @@ Species(
       apical_zone: (value: 10.0, unit: "cm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
       insertion_angle: (value: 70.0, unit: "deg", source: "~"),
       diameter: (value: 0.68, unit: "mm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
+      secondary_factor: (points: [(0.0, 0.7), (20.0, 0.7), (40.0, 0.4)], x_unit: "cm", unit: "-", source: "OpenSimRoot bean (Carioca) growthrates.xml, secondaryGrowthScalingFactor by distance from the root base"),
       gravitropism: 0.1, hydrotropism: 0.3),
     RootType(name: "hypocotyl_borne", origin: Hypocotyl, order: 0,
       count: (value: 10.0, unit: "-", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16): up to 10"),
@@ -277,6 +290,7 @@ Species(
       apical_zone: (value: 10.0, unit: "cm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
       insertion_angle: (value: 85.0, unit: "deg", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
       diameter: (value: 0.64, unit: "mm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
+      secondary_factor: (points: [(0.0, 0.6), (50.0, 0.2)], x_unit: "cm", unit: "-", source: "OpenSimRoot bean (Carioca) growthrates.xml, secondaryGrowthScalingFactor by distance from the root base"),
       gravitropism: 0.0, hydrotropism: 0.2),
     RootType(name: "lateral", origin: Lateral, order: 1,
       count: (value: 1.0, unit: "-", source: "laterals per site"),
@@ -287,6 +301,7 @@ Species(
       apical_zone: (value: 0.0, unit: "cm", source: "unused"),
       insertion_angle: (value: 75.0, unit: "deg", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
       diameter: (value: 0.3, unit: "mm", source: "OpenSimRoot bean (Carioca), values only (research review item 14 to 16)"),
+      secondary_factor: (points: [(0.0, 0.1)], x_unit: "cm", unit: "-", source: "OpenSimRoot bean (Carioca) growthrates.xml, secondaryGrowthScalingFactor by distance from the root base (slow laterals)"),
       gravitropism: 0.0, hydrotropism: 0.1),
   ],
   appearance: ( leaf_template: "trifoliate", leaf_color: "#4f8a3a", flower_color: "#f4f0e6", pod_template: "bean_pod" ),

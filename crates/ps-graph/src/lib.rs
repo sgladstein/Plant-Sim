@@ -7,6 +7,10 @@
 //!
 //! Invariant (property-tested): an organ's structural mass never shrinks. At death it is
 //! frozen; resorption and litter are booked by the caller from the returned mass.
+//!
+//! Structural mass is primary plus secondary (R1a, decision 0036): secondary growth
+//! (stem and root thickening) widens a stem or root segment at fixed length, so the
+//! length follows the primary mass and the radius the total.
 
 pub mod allometry;
 pub mod curve;
@@ -14,7 +18,7 @@ pub mod curve;
 pub use allometry::{Allometry, OrganSize, SpecificSize};
 pub use curve::{CurveError, ExpansionCurve};
 
-use ps_units::{DegreeDays, GramsC, GramsDM, GramsN, Hours, Radians};
+use ps_units::{DegreeDays, GramsC, GramsDM, GramsN, Hours, Meters, Radians};
 use serde::{Deserialize, Serialize};
 
 /// Index of an organ within its plant's arena.
@@ -189,6 +193,10 @@ pub struct OrganArena {
     /// Rendered dimensions derived from structural mass.
     pub size: Vec<OrganSize>,
     structural: Vec<GramsDM>,
+    /// The secondary part of the structural mass (R1a). Missing entries (a save from
+    /// before model 0.18.0) read as zero.
+    #[serde(default)]
+    secondary: Vec<GramsDM>,
     /// Local carbon reserve; may go negative briefly (starvation signal).
     pub reserve: Vec<GramsC>,
     /// Nitrogen content.
@@ -287,6 +295,8 @@ impl OrganArena {
         self.size
             .push(allometry.size(o.kind, o.specific, o.structural));
         self.structural.push(o.structural);
+        self.secondary.resize(id.index(), GramsDM(0.0));
+        self.secondary.push(GramsDM(0.0));
         self.reserve.push(o.reserve);
         self.nitrogen.push(o.nitrogen);
         self.unmet.push(GramsC(0.0));
@@ -316,6 +326,42 @@ impl OrganArena {
         &self.structural
     }
 
+    /// The secondary part of an organ's structural mass (R1a; zero for organs that
+    /// never thickened).
+    #[must_use]
+    pub fn secondary(&self, id: OrganId) -> GramsDM {
+        self.secondary
+            .get(id.index())
+            .copied()
+            .unwrap_or(GramsDM(0.0))
+    }
+
+    /// The primary part of an organ's structural mass: what its expansion built, and
+    /// what sets its length and its nitrogen requirement.
+    ///
+    /// # Panics
+    /// As [`OrganArena::structural`].
+    #[must_use]
+    pub fn primary(&self, id: OrganId) -> GramsDM {
+        self.structural(id) - self.secondary(id)
+    }
+
+    /// An organ's radius without its secondary growth, `r · sqrt(W_p / W)`: the radius
+    /// of the primary tissue, which carries the phloem (R1a, decision 0036).
+    ///
+    /// # Panics
+    /// As [`OrganArena::structural`].
+    #[must_use]
+    pub fn primary_radius(&self, id: OrganId) -> Meters {
+        let r = self.size[id.index()].radius;
+        let s = self.secondary(id).0;
+        if s <= 0.0 {
+            return r;
+        }
+        let w = self.structural(id).0;
+        Meters(r.0 * libm::sqrt(((w - s) / w).max(0.0)))
+    }
+
     /// Adds structural mass to a living organ and updates its size.
     ///
     /// # Errors
@@ -332,7 +378,46 @@ impl OrganArena {
             return Err(GraphError::NegativeGrowth { id, delta: delta.0 });
         }
         self.structural[i] += delta;
-        self.size[i] = allometry.size(self.kind[i], self.specific[i], self.structural[i]);
+        let secondary = self.secondary(id);
+        self.size[i] = if secondary.0 > 0.0 {
+            allometry.size_split(
+                self.kind[i],
+                self.specific[i],
+                self.structural[i],
+                secondary,
+            )
+        } else {
+            allometry.size(self.kind[i], self.specific[i], self.structural[i])
+        };
+        Ok(())
+    }
+
+    /// Adds secondary structural mass to a living organ (R1a thickening): the length
+    /// stays, the radius widens.
+    ///
+    /// # Errors
+    /// As [`OrganArena::grow`].
+    pub fn grow_secondary(
+        &mut self,
+        id: OrganId,
+        delta: GramsDM,
+        allometry: &Allometry,
+    ) -> Result<(), GraphError> {
+        let i = self.check_alive(id)?;
+        if !(delta.0.is_finite() && delta.0 >= 0.0) {
+            return Err(GraphError::NegativeGrowth { id, delta: delta.0 });
+        }
+        if self.secondary.len() < self.len() {
+            self.secondary.resize(self.len(), GramsDM(0.0));
+        }
+        self.structural[i] += delta;
+        self.secondary[i] += delta;
+        self.size[i] = allometry.size_split(
+            self.kind[i],
+            self.specific[i],
+            self.structural[i],
+            self.secondary[i],
+        );
         Ok(())
     }
 
@@ -436,6 +521,9 @@ impl OrganArena {
             f(self.size[i].radius.to_bits());
             f(self.size[i].area.to_bits());
             f(self.structural[i].to_bits());
+            f(self
+                .secondary(OrganId(u32::try_from(i).unwrap_or(u32::MAX)))
+                .to_bits());
             f(self.reserve[i].to_bits());
             f(self.nitrogen[i].to_bits());
             f(self.unmet[i].to_bits());

@@ -83,6 +83,7 @@ fn run_hour(
             stress: 1.0,
             respiring: true,
             n_floor: None,
+            secondary: &[],
         },
         ledger,
     )
@@ -279,6 +280,7 @@ fn inputs_must_cover_every_organ() {
             stress: 1.0,
             respiring: true,
             n_floor: None,
+            secondary: &[],
         },
         &mut ledger,
     );
@@ -363,4 +365,58 @@ fn implicit_transport_crosses_a_chain_in_one_hour() {
     let r: Vec<f64> = ids.iter().map(|id| g.reserve[id.index()].0).collect();
     assert!(r[4] > 1e-7, "four edges away: {}", r[4]);
     assert!(r.windows(2).all(|w| w[0] >= w[1] && w[1] >= 0.0), "{r:?}");
+}
+
+/// R1a: secondary growth takes at most `SECONDARY_PRIORITY` of the reserve above the
+/// floor, widens a finished internode at fixed length, leaves the primary deficit
+/// record alone and keeps the ledger closed.
+#[test]
+fn secondary_growth_is_a_low_priority_sink() {
+    let p = params();
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let s = g.add(&organ(OrganKind::Seed, None, 0.0, 0.0), &a).unwrap();
+    // A finished internode (no primary potential) holding a reserve.
+    let i = g
+        .add(&organ(OrganKind::Internode, Some(s), 0.0, 0.004), &a)
+        .unwrap();
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    let temps = vec![Celsius(20.0); g.len()];
+    let income = vec![GramsC(0.0); g.len()];
+    let mut pot = vec![GramsDM(0.0); g.len()];
+    pot[i.index()] = GramsDM(1.0);
+    let len0 = g.size[i.index()].length;
+    let r0 = g.size[i.index()].radius;
+    let before = g.reserve[i.index()].0 + g.reserve[s.index()].0;
+    let inp = HourInputs {
+        temperature: &temps,
+        income: &income,
+        ftsw: 1.0,
+        stress: 1.0,
+        respiring: false,
+        n_floor: None,
+        secondary: &pot,
+    };
+    let rep = allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
+    // A large potential is limited by the priority share of the reserve above the
+    // floor after transport.
+    assert!(rep.secondary.0 > 0.0);
+    assert!(rep.secondary.0 <= allocation::SECONDARY_PRIORITY * before + 1e-15);
+    assert_eq!(rep.unmet, GramsC(0.0));
+    assert!(g.secondary(i).0 > 0.0);
+    assert!((g.size[i.index()].length.0 - len0.0).abs() < 1e-15);
+    assert!(g.size[i.index()].radius.0 > r0.0);
+    // The primary radius is recomputed as r √(W_p / W): equal up to rounding.
+    assert!((g.primary_radius(i).0 - r0.0).abs() <= 1e-12 * r0.0);
+    assert_eq!(g.potential_demand[i.index()], GramsC(0.0));
+    assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-12);
+    // No reserve above the floor: nothing is built.
+    let floor = p.reserve_floor * g.structural(i).0;
+    g.reserve[i.index()] = GramsC(floor);
+    g.reserve[s.index()] = GramsC(0.0);
+    let w = g.structural(i);
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    let rep = allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
+    assert!(rep.secondary.0 < 1e-12, "{}", rep.secondary.0);
+    assert!((g.structural(i).0 - w.0).abs() < 1e-12);
 }
