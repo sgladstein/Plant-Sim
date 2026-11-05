@@ -61,9 +61,13 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
 - **Sink feedback on gross assimilation:** `A' = f(C) (A + Rd) − Rd`,
   `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (provisional; see gas-exchange).
 - **Leaf death:** at thermal age `expanded + lifespan`, after 5 days below light index
-  0.1, at frost, at starvation, or at maturity. A killing frost also stops every apex
-  and kills buds and flowers, so the plant does not regrow (§7 M0 exit). Pods, seeds,
-  stems and roots are spared: they stop growing only because the leaves are gone.
+  0.1, at frost, at starvation, or at maturity. A leaf freezes when its own lowest
+  temperature of the day (energy balance, WP27) is below `leaf_frost_kill`, so on a
+  clear, calm night exposed leaves can freeze in air just above the threshold while
+  covered ones survive (owner decision 2026-11-05, decision 0034). A killing frost of
+  the air (the day's minimum below the threshold) also stops every apex and kills buds
+  and flowers, so the plant does not regrow (§7 M0 exit). Pods, seeds, stems and roots
+  are spared: they stop growing only because the leaves are gone.
 
 ## Parameters
 All values, units and sources are in `data/species/bush_bean.ron`. The main ones:
@@ -137,6 +141,7 @@ shade, and where roots end up.
 - `counts_hold_across_world_seeds` takes pods 6 to 20 (the §8.2 range) for seeds 1 to 8.
 - The WP11 validation report (`ps-cli validate`): the §8.3 shade, drought, heat and
   frost responses, gated for M0. `ps-cli/tests/cli.rs::a_frost_night_kills_the_leaves_for_good`.
+  `ps-arch/tests/leaf_energy.rs::a_clear_calm_night_frosts_exposed_leaves_but_not_the_growing_points`.
 - `dry_soil_holds_the_seed`, `same_seed_same_plant` (bit-identical arena),
   `roots_stay_in_the_pot`.
 - Debug builds assert the carbon ledger every hour (WP7) through all of these runs.

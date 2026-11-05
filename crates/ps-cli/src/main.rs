@@ -13,6 +13,11 @@
 //! into `OUT/<scenario file stem>/` (default `out/`), running the scenarios in parallel.
 //! Golden hash files live at `DIR/<os>-<arch>/<stem>.csv`.
 
+// mimalloc: the sim's parallel sections allocate per plant, and glibc malloc serializes
+// them (docs/performance.md). The allocator never changes results.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant; // determinism: allow (bench timing only; never reaches the sim)

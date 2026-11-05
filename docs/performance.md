@@ -133,6 +133,58 @@ hash 5.7%. Bit-identical work has little left to give here; the levers are model
 choices for the owner: fewer rays per leaf, or one light sample per tiller rather
 than per blade for grasses.
 
+After the decision 0029 merge (model 0.12.0), a bit-identical pass (perf thread,
+2026-11-05) cut every scenario; all seven state hashes are unchanged. `sim_days 5`,
+fastest of 5 runs, two passes each, same container:
+
+| Scenario | main 5eb2328 | this pass | Change |
+| --- | --- | --- | --- |
+| single_pot | 2.66 to 2.70 | 2.06 to 2.19 | about -20% |
+| two_pot_sun_shade | 3.86 to 4.22 | 3.33 to 3.50 | about -15% |
+| plot_30_beans | 27.2 to 29.1 | 22.7 to 22.8 | about -17% |
+| m2/pole_trellis | 19.7 to 19.8 | 17.4 to 17.8 | about -11% |
+| m2/pole_row_trellis | 13.8 to 14.5 | 12.0 to 12.3 | about -14% |
+| m2/wheat_spaced | 17.9 | 15.9 to 16.5 | about -10% |
+| m2/wheat_stand | 120 to 123 | 104 to 105 | about -14% |
+
+This container ran about 15% slower than the one behind the earlier numbers (main
+measured 2.66 against 2.2 to 2.3 for the single pot). What changed:
+
+- **Allocator.** With glibc malloc, each plant's hourly growth ran about 38% slower in
+  the plot's parallel section than alone (allocation contention). ps-cli, ps-app and
+  the bench examples now use mimalloc (`#[global_allocator]`); the sim crates do not
+  depend on it, and the allocator cannot change results. Hourly growth on the plot
+  went from about 850 to 650 ms per run.
+- **Ray tails.** A ray stops past the highest occupied layer it can reach. Per rising
+  direction, `LightGrid::ray_bounds` builds a `Shadow`: the grid sheared along the ray
+  so a ray is one point, with each bin holding the top occupied layer whose sheared
+  cell box covers it (padded for rounding). The rest of the ray crosses only empty
+  cells, which add exactly `+0`. On the day-50 plot canopy this removes 28% of cell
+  steps (finer bins remove up to 34% but cost more to build than they save). A
+  per-layer bounding box instead removed only 7%.
+- **Footprints.** `LightGrid::footprint` locates the lattice samples per axis and
+  counts samples per cell, instead of locating, sorting and merging each sample. The
+  merged value is the same running sum of equal shares.
+- **Own cells.** Each leaf's rays find its own footprint cells in a dense index over
+  its range instead of a binary search (about 5% of ray time).
+- **Daily nitrogen.** Root reach uses a summed-volume table of active cells and one
+  pass per root cell; each plant's reach, uptake plan and daily nitrogen step run in
+  parallel (collect keeps plant order). Plot daily nitrogen 1.6 to 1.1 ms per sim-day.
+- **Soil storage sums.** The world keeps only the soil ledger's fluxes and the
+  storage after uptake, so `step_hour_lean` and `take_up_lean` skip three of the four
+  full-grid storage sums per hour in release builds (each a chain of dependent
+  additions). Debug builds still sum them and assert closure every hour.
+
+Tried and dropped: branchless axis selection in the ray loop (35% slower than the
+unrolled form); per-layer horizontal bounds checked at every z step (no faster: the
+check cost as much as the 7% of steps it saved).
+
+Where the plot's time goes now (fastest of 5, 90 days, 4 threads): daily light
+rebuild 8.1 ms per sim-day (rays 6.9, grid fit 0.7, shadows 0.4), hourly growth 7.3,
+soil step 1.9, demand 1.6, daily nitrogen 1.1, uptake 0.7. Hourly growth does about
+4.6 ms of work per sim-day spread over 4 threads; the other 2.7 ms is wake-up and
+scheduling around 2,160 short parallel sections.
+
 CI prints the same table into the summary of the linux workflow's `bench-summary`
 job. That job only reports: shared runners are too noisy to gate on wall time, so it
 cannot fail the build.
@@ -172,9 +224,9 @@ owner's machine.
 ## Known hot spots
 
 1. **Light ray count.** Each leaf marches 7 sample points × (daylight sun hours + 16 sky
-   sectors), about 217 rays per leaf, at about 140 cells per ray on a 48-cell grid: 16×
-   the §3.5 estimate. Exact speedups (same bits) and model options are in the perf
-   review.
+   sectors), about 217 rays per leaf (3 points per grass blade from decision 0030). On
+   the day-50 plot canopy rays take about 16 steps each after the shadow cut. What is
+   left is a model choice (fewer points or directions, or a rebuild every other day).
 2. **Soil uptake.** Dense root arrays were fixed by decision 0012 (sparse sorted
    `(cell, length)` lists, one joint `take_up` per hour). What remains is 36% building
    `per_cell` with a binary search per root cell and 27% sorting the per-cell request

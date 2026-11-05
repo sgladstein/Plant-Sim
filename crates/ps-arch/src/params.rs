@@ -2,7 +2,7 @@
 
 use ps_graph::Allometry;
 use ps_physio::allocation::{CarbonParams, Temperature};
-use ps_physio::{Cardinal, GrowthTemperature, LeafParams, Thresholds};
+use ps_physio::{Cardinal, GrowthTemperature, LeafEnergyParams, LeafParams, Thresholds};
 use ps_species::{RootOrigin, Species, Traits};
 use ps_units::{
     Celsius, DegreeDays, GPerM3, GramsDM, KgPerMH, M2, M2PerG, M2PerHour, MPerG, Meters,
@@ -132,6 +132,8 @@ pub struct HerbParams {
     pub allometry: Allometry,
     /// PAR absorptance of leaves.
     pub absorptance: f64,
+    /// Leaf energy balance parameters (WP27, decision 0034).
+    pub energy: LeafEnergyParams,
     /// Photosynthetic capacity at the end of leaf life.
     pub capacity_floor: f64,
     /// FTSW below which conductance falls.
@@ -216,7 +218,7 @@ pub struct HerbParams {
     pub shade_pod_set: f64,
     /// Leaf lifespan in thermal age.
     pub leaf_lifespan: DegreeDays,
-    /// Air temperature that kills leaves.
+    /// Leaf temperature that kills a leaf (its own, WP27; air for the growing points).
     pub frost: Celsius,
     /// Flowers per raceme.
     pub flowers_per_raceme: u32,
@@ -326,6 +328,16 @@ impl HerbParams {
                 seed_aspect: c.seed_aspect.value,
             },
             absorptance: c.leaf_absorptance.value,
+            energy: LeafEnergyParams {
+                width: Meters(c.leaf_width.value),
+                // Absorbed near infrared per absorbed PAR energy: the solar NIR per PAR
+                // energy times the ratio of the absorptances.
+                nir_ratio: (1.0 - ps_light::PAR_FRACTION) / ps_light::PAR_FRACTION
+                    * c.leaf_nir_absorptance.value
+                    / c.leaf_absorptance.value,
+                emissivity: c.leaf_emissivity.value,
+                abaxial_share: c.abaxial_conductance_share.value,
+            },
             capacity_floor: c.leaf_capacity_floor.value,
             ftsw_conductance: c.ftsw_threshold.value,
             ftsw_expansion: c.ftsw_expansion_threshold.value,

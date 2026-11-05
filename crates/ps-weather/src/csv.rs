@@ -4,18 +4,23 @@
 //! `wind_m_s`, `cloud_fraction`, in any column order. Timestamps are ISO 8601 local
 //! clock time, `YYYY-MM-DDTHH[:MM[:SS]]`; minutes must be zero.
 //!
-//! Daily files: `date, t_min_c, t_max_c, rh_pct, radiation_mj_m2, rain_mm`, disaggregated
-//! with [`crate::hourly::disaggregate`].
+//! Daily files: `date, t_min_c, t_max_c, rh_pct, radiation_mj_m2, rain_mm` and optional
+//! `wind_m_s` (the daily mean), disaggregated with [`crate::hourly::disaggregate`].
+//!
+//! Wind is the mean at 2 m; a file without it reads FAO-56's default, 2 m s⁻¹ (WP27).
+//! Without a `cloud_fraction` column an hourly file's cloud comes from the hour's
+//! clearness index, and a night hour, which has none, keeps the last daylight hour's
+//! (1 before the first daylight hour of the file).
 //!
 //! Plain comma-separated text with a header row; `#` starts a comment line; no quoting.
 
-use ps_units::{Celsius, Degrees, JPerM2, KPa, Millimeters, WPerM2};
+use ps_units::{Celsius, Degrees, JPerM2, KPa, MetersPerSecond, Millimeters, WPerM2};
 
 use crate::calendar::{DateHour, civil_from_days, day_of_year, days_from_civil};
 use crate::hourly::{HourWeather, WeatherSeries};
 use crate::presets::DailyWeather;
 use crate::radiation::{
-    cloud_fraction_from_kt, erbs_diffuse_fraction, saturation_vapor_pressure_kpa,
+    DEFAULT_WIND_M_S, cloud_fraction_from_kt, erbs_diffuse_fraction, saturation_vapor_pressure_kpa,
 };
 use crate::solar::{extraterrestrial_horizontal_j_m2, sun_position};
 
@@ -219,6 +224,8 @@ pub fn read_hourly(
     let c_g = t.col("radiation_w_m2")?;
     let c_r = t.col("rain_mm")?;
     let c_cloud = t.opt_col("cloud_fraction");
+    let c_wind = t.opt_col("wind_m_s");
+    let mut last_cloud = 1.0;
 
     let day0_dh = DateHour::new(start.year, start.month, start.day, 0).ok_or(CsvError::Empty)?;
     let day0 = day0_dh.epoch_hours();
@@ -278,7 +285,15 @@ pub fn read_hourly(
                 0.0,
                 1.0,
             )?,
-            None => cloud_fraction_from_kt(kt),
+            // The clearness index means nothing at night or in twilight: keep the
+            // last daylight hour's cloud.
+            None if h0 >= TWILIGHT_H0_W_M2 => cloud_fraction_from_kt(kt),
+            None => last_cloud,
+        };
+        last_cloud = cloud;
+        let wind = match c_wind {
+            Some(c) => check(line, "wind_m_s", num(line, "wind_m_s", f[c])?, 0.0, 75.0)?,
+            None => DEFAULT_WIND_M_S,
         };
         hours.push(HourWeather {
             t_air: Celsius(ta),
@@ -289,6 +304,7 @@ pub fn read_hourly(
             diffuse: WPerM2(g * fd),
             rain: Millimeters(rain),
             cloud_fraction: cloud,
+            wind: MetersPerSecond(wind),
             sun: sun_position(latitude, ts.year, doy, h + 0.5),
         });
     }
@@ -322,6 +338,7 @@ pub fn read_daily(
     let c_rh = t.col("rh_pct")?;
     let c_g = t.col("radiation_mj_m2")?;
     let c_r = t.col("rain_mm")?;
+    let c_wind = t.opt_col("wind_m_s");
     let mut days = Vec::new();
     let first = days_from_civil(start.year, start.month, start.day);
     let mut prev: Option<i64> = None;
@@ -374,6 +391,10 @@ pub fn read_daily(
                 0.0,
                 500.0,
             )?),
+            wind: MetersPerSecond(match c_wind {
+                Some(c) => check(line, "wind_m_s", num(line, "wind_m_s", f[c])?, 0.0, 75.0)?,
+                None => DEFAULT_WIND_M_S,
+            }),
         });
     }
     if days.is_empty() {

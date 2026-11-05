@@ -22,6 +22,7 @@ cards!(
     "gas-exchange.md",
     "grass.md",
     "herb-architecture.md",
+    "leaf-energy-balance.md",
     "light.md",
     "nitrogen.md",
     "organ-growth.md",

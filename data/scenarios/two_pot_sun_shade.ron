@@ -2,7 +2,7 @@
 // days (design plan §6.2).
 Scenario(
   schema: 1,
-  model_version: "0.15.0",
+  model_version: "0.17.0",
   world_seed: 42,
   latitude_deg: 45.0,
   start: (year: 2000, month: 5, day: 15, hour: 6),

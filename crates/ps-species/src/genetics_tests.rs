@@ -601,3 +601,39 @@ fn lines_and_frequencies_are_validated() {
     no_trait.trait_name = String::new();
     assert!(check(no_trait).is_err());
 }
+
+/// WP29: only genomes of one layout cross; a cross draws each gamete from its own
+/// parent's species, and a self through `cross_genotype` is `seed_genotype`.
+#[test]
+fn crosses_need_one_genome_layout() {
+    let bush = bean();
+    let pole = Species::from_ron(include_str!("../../../data/species/pole_bean.ron")).unwrap();
+    assert!(bush.can_cross(&pole) && pole.can_cross(&bush));
+    assert!(bush.can_cross(&bush));
+    assert!(!bush.can_cross(&wheat()) && !wheat().can_cross(&bush));
+    // Moving one locus breaks the layout.
+    let mut moved = bean();
+    moved.genome.loci[0].position_cm = moved.genome.loci[0].position_cm.map(|p| p + 1.0);
+    assert!(!bush.can_cross(&moved));
+
+    let (m, f) = (bush.sample_genotype(7, 1), pole.sample_genotype(7, 2));
+    let selfed = bush.cross_genotype(&m, &bush, &m, 7, 99, 1000);
+    assert_eq!(selfed, bush.seed_genotype(&m, &m, 7, 99, 1000));
+    // Pure lines: the F1 takes the egg's allele from the mother and the pollen's from
+    // the father (bar mutation), and the pole father brings Fin.
+    let f1 = bush.cross_genotype(&m, &pole, &f, 7, 99, 1000);
+    let fin = bush
+        .genome
+        .loci
+        .iter()
+        .position(|l| l.name.as_deref() == Some("fin"))
+        .unwrap();
+    assert_eq!(f1.alleles[fin], (m.alleles[fin].0, f.alleles[fin].0));
+    assert_eq!((m.alleles[fin].0, f.alleles[fin].0), (0.0, 1.0));
+    let t = bush.phenotype(&f1).traits().unwrap();
+    assert!(
+        (t.habit - 1.0).abs() < 1e-12,
+        "Fin is dominant: {}",
+        t.habit
+    );
+}

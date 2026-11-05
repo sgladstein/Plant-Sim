@@ -16,7 +16,7 @@ use std::sync::Arc;
 use ps_arch::{ArchError, DayReport, HourCtx, HourLens, Plant};
 use ps_soil::{SoilError, SoilGrid, SoilHour, WaterLedger};
 use ps_species::{Genotype, Species};
-use ps_units::{Celsius, Degrees, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
+use ps_units::{Celsius, Degrees, GramsN, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
 use ps_weather::{DateHour, HourWeather, Preset, WeatherSeries};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.15.0";
+pub const MODEL_VERSION: &str = "0.17.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -224,6 +224,22 @@ pub struct SeedLot {
     pub seed_mass_g: f64,
     /// Whether the plant had reached maturity (seeds picked earlier are green).
     pub mature: bool,
+    /// Each seed with its parents and genotype, in organ order (WP29).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seed_genotypes: Vec<SeedGenotype>,
+}
+
+/// One seed's parents and genotype (WP29).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SeedGenotype {
+    /// The seed's organ id within its mother.
+    pub organ: u32,
+    /// Seed parent: the plant that bore it.
+    pub mother: u32,
+    /// Pollen parent: the mother itself when the flower selfed.
+    pub father: u32,
+    /// Its genotype, in the mother's species' locus order.
+    pub genotype: Genotype,
 }
 
 /// The world's complete state: what snapshots store and the hash covers.
@@ -888,6 +904,15 @@ impl World {
                     }
                 }
             }
+            ActionKind::Pollinate {
+                plant,
+                organ,
+                pollen,
+            } => {
+                if now && let Err(why) = self.check_pollinate(*plant, *organ, *pollen) {
+                    return err(why);
+                }
+            }
             ActionKind::PlaceObstacle(o) => {
                 if !soil_known(o.soil) {
                     return err(format!("unknown soil {}", o.soil));
@@ -1116,6 +1141,111 @@ impl World {
         Ok(())
     }
 
+    /// The parents and genotype of a living seed still in its pod or ear (WP29), or
+    /// `None` for anything else. The same record a harvest puts in the seed library.
+    #[must_use]
+    pub fn seed_genotype(&self, plant: u32, organ: u32) -> Option<SeedGenotype> {
+        let p = self.state.plants.get(plant as usize)?;
+        let origin = p.plant.seed_origin(ps_graph::OrganId(organ))?;
+        self.seed_genotype_of(plant, &origin).ok()
+    }
+
+    /// A seed's genotype: the mother's egg and the father's pollen, each from its own
+    /// meiosis keyed by (world seed, `(mother << 32) | seed organ`, the tick the seed
+    /// was made), as decision 0031 item 7 sets. A selfed seed has the mother as father.
+    fn seed_genotype_of(
+        &self,
+        mother: u32,
+        origin: &ps_arch::SeedOrigin,
+    ) -> Result<SeedGenotype, WorldError> {
+        let father = origin.pollen.unwrap_or(mother);
+        let entry =
+            |id: u32| {
+                let e = self.state.plants.get(id as usize).ok_or_else(|| {
+                    WorldError::Scenario(format!("seed parent {id} is not a plant"))
+                })?;
+                let sp = self.state.catalog.species.get(&e.species).ok_or_else(|| {
+                    WorldError::Species(format!("{} not in the catalog", e.species))
+                })?;
+                Ok::<_, WorldError>((e, sp))
+            };
+        let (m, m_species) = entry(mother)?;
+        let (f, f_species) = entry(father)?;
+        let genotype = m_species.cross_genotype(
+            &m.genotype,
+            f_species,
+            &f.genotype,
+            self.state.scenario.world_seed,
+            (u64::from(mother) << 32) | u64::from(origin.organ.0),
+            origin.born.0,
+        );
+        Ok(SeedGenotype {
+            organ: origin.organ.0,
+            mother,
+            father,
+            genotype,
+        })
+    }
+
+    /// Checks a hand-pollination against the world now (WP29): the flower is open and
+    /// not yet crossed, and the pollen plant has an open flower and a genome that
+    /// crosses with the seed parent's.
+    fn check_pollinate(&self, plant: u32, organ: u32, pollen: u32) -> Result<(), String> {
+        let plants = &self.state.plants;
+        let m = plants
+            .get(plant as usize)
+            .ok_or_else(|| format!("unknown plant {plant}"))?;
+        m.plant
+            .check_pollinate(ps_graph::OrganId(organ))
+            .map_err(|e| e.to_string())?;
+        let f = plants
+            .get(pollen as usize)
+            .ok_or_else(|| format!("unknown pollen plant {pollen}"))?;
+        if !f.plant.has_open_flower() {
+            return Err(format!("pollen plant {pollen} has no open flower"));
+        }
+        let species = |e: &PlantEntry| self.state.catalog.species.get(&e.species);
+        match (species(m), species(f)) {
+            (Some(a), Some(b)) if a.can_cross(b) => Ok(()),
+            _ => Err(format!(
+                "{} (plant {plant}) does not cross with {} (plant {pollen})",
+                m.species, f.species
+            )),
+        }
+    }
+
+    /// Picks a pod or ear into the seed library, each seed with its parents and
+    /// genotype (WP25, WP29).
+    fn harvest(&mut self, tick: u64, plant: u32, organ: u32) -> Result<(), WorldError> {
+        let err = |why: String| WorldError::Action { tick, why };
+        let p = self
+            .state
+            .plants
+            .get_mut(plant as usize)
+            .ok_or_else(|| err(format!("unknown plant {plant}")))?;
+        let got = p
+            .plant
+            .harvest(ps_graph::OrganId(organ), Hours(tick))
+            .map_err(|e| err(e.to_string()))?;
+        let (day, species) = (p.plant.day, p.species.clone());
+        let seed_genotypes = got
+            .origins
+            .iter()
+            .map(|o| self.seed_genotype_of(plant, o))
+            .collect::<Result<_, _>>()?;
+        self.state.seed_library.push(SeedLot {
+            day,
+            plant,
+            species,
+            organ,
+            seeds: got.seeds,
+            seed_mass_g: got.seed_mass.0,
+            mature: got.mature,
+            seed_genotypes,
+        });
+        Ok(())
+    }
+
     fn apply_due(&mut self) -> Result<(), WorldError> {
         let now = self.state.tick;
         while let Some(a) = self.state.scenario.events.get(self.state.scripted).cloned() {
@@ -1188,26 +1318,18 @@ impl World {
                     .prune(ps_graph::OrganId(organ), Hours(tick))
                     .map_err(|e| err(e.to_string()))?;
             }
-            ActionKind::Harvest { plant, organ } => {
-                let p = self
-                    .state
-                    .plants
-                    .get_mut(plant as usize)
-                    .ok_or_else(|| err(format!("unknown plant {plant}")))?;
-                let got = p
-                    .plant
-                    .harvest(ps_graph::OrganId(organ), Hours(tick))
-                    .map_err(|e| err(e.to_string()))?;
-                let lot = SeedLot {
-                    day: p.plant.day,
-                    plant,
-                    species: p.species.clone(),
-                    organ,
-                    seeds: got.seeds,
-                    seed_mass_g: got.seed_mass.0,
-                    mature: got.mature,
-                };
-                self.state.seed_library.push(lot);
+            ActionKind::Harvest { plant, organ } => self.harvest(tick, plant, organ)?,
+            ActionKind::Pollinate {
+                plant,
+                organ,
+                pollen,
+            } => {
+                self.check_pollinate(plant, organ, pollen).map_err(err)?;
+                if let Some(p) = self.state.plants.get_mut(plant as usize) {
+                    p.plant
+                        .pollinate(ps_graph::OrganId(organ), pollen)
+                        .map_err(|e| err(e.to_string()))?;
+                }
             }
             ActionKind::PlaceObstacle(o) => {
                 let i = self
@@ -1317,10 +1439,11 @@ impl World {
                 .iter_mut()
                 .map(|e| e.plant.update_water_status(soil))
                 .collect::<Result<Vec<()>, _>>()?;
-            // Plants with the same leaf parameters and stress bits share one class
-            // table (the hour's weather is the soil's): the table is a pure function of
-            // those, so sharing it gives the same bits as building one per plant.
-            let mut keys: Vec<([u64; 14], u64)> = Vec::new();
+            // Plants with the same leaf and leaf energy parameters and stress bits share
+            // one class table (the hour's weather, wind included, is the soil's): the
+            // table is a pure function of those, so sharing it gives the same bits as
+            // building one per plant.
+            let mut keys: Vec<ps_arch::TableKey> = Vec::new();
             let mut owners: Vec<usize> = Vec::new();
             let slot: Vec<usize> = members
                 .iter()
@@ -1334,8 +1457,11 @@ impl World {
                     })
                 })
                 .collect();
+            // Each table is a pure function of its owner's key and the hour, and
+            // collect keeps the owners' order, so building them in parallel gives the
+            // same tables.
             let tables: Vec<_> = owners
-                .iter()
+                .par_iter()
                 .map(|&m| members[m].plant.class_table(&ctx))
                 .collect();
             let (demand, areas): (Vec<KgWater>, Vec<f64>) = members
@@ -1353,7 +1479,8 @@ impl World {
             let lai = leaf_area / entry.grid.surface_area().max(1e-12);
             let water_in = wx.rain.0 * entry.rain_fraction + irr + entry.pending_mm;
             entry.pending_mm = 0.0;
-            let led = entry.grid.step_hour(&SoilHour {
+            // Lean: the soil entry keeps only the fluxes and the storage after uptake.
+            let led = entry.grid.step_hour_lean(&SoilHour {
                 water_in: Millimeters(water_in),
                 surface_radiation: WPerM2(local.global.0 * libm::exp(-SOIL_EXTINCTION * lai)),
                 t_air: wx.t_air,
@@ -1365,7 +1492,7 @@ impl World {
                 .zip(&demand)
                 .map(|(e, d)| e.plant.uptake_request(*d))
                 .collect();
-            let joint = soils[si].grid.take_up(&requests)?;
+            let joint = soils[si].grid.take_up_lean(&requests)?;
             soils[si].ledger.accumulate(&joint.ledger);
             // 8 to 12. Carbon.
             let soil = &soils[si].grid;
@@ -1531,9 +1658,17 @@ impl World {
                 .map(|&p| plants[p].plant.nitrogen_request())
                 .collect();
             let got = entry.grid.take_up_nitrogen(&requests)?;
+            // Each plant's daily nitrogen step depends only on itself and the soil.
+            let mut got_of: Vec<Option<GramsN>> = vec![None; plants.len()];
             for (&p, u) in members.iter().zip(got) {
-                plants[p].plant.nitrogen_day(u.total(), &entry.grid, now)?;
+                got_of[p] = Some(u.total());
             }
+            let grid = &entry.grid;
+            plants
+                .par_iter_mut()
+                .zip(&got_of)
+                .filter_map(|(e, u)| u.map(|u| (e, u)))
+                .try_for_each(|(e, u)| e.plant.nitrogen_day(u, grid, now))?;
         }
         Ok(())
     }

@@ -34,7 +34,7 @@ Target machine: Windows PC, GeForce GTX 1070, 1080p or 1440p. Desktop only. Clau
 
 - A soil block with one or more plants on top. Orbit, pan and zoom with the mouse; the camera auto-frames the plant's bounding box by default because a plant grows about a thousandfold in size from seed to maturity. Manual camera overrides auto-framing until reset.
 - Roots are shown rhizobox-style: the soil block is a slab with a glass front, so most roots are visible through the glass, and an X-ray lens fades the soil to show the whole 3D root system.
-- Sun position follows latitude, date and hour; day and night; weather (rain, cloud, temperature, humidity). Wind is a visual sway only, no mechanics.
+- Sun position follows latitude, date and hour; day and night; weather (rain, cloud, temperature, humidity). Wind is a visual sway, and from M2 it cools leaves through the leaf energy balance (WP27); it has no mechanical effect.
 - In M1 the block is two pots side by side (same seed, one variable different). In M2 it is a plot. In M4 it is terrain.
 
 ### 2.2 Time controls
@@ -108,12 +108,12 @@ Hourly steps run 24 times per sim-day. The daily step runs once, at sim-midnight
 
 Hourly step, in order (in the code, steps 3, 5 and 6 run from the soil as it stands before step 4, so step 7 draws on the hour's infiltrated water; decision 0014):
 
-1. Weather for the hour: air temperature, humidity (converted to vapor pressure deficit), global radiation split into direct and diffuse, rain, cloud fraction.
+1. Weather for the hour: air temperature, humidity (converted to vapor pressure deficit), global radiation split into direct and diffuse, rain, cloud fraction, wind at 2 m (from M2, WP27).
 2. Solar geometry: sun elevation and azimuth from latitude, day of year and hour.
 3. Light: absorbed PAR per leaf = the stored daily coefficient for this hour's sun position × this hour's direct radiation, plus the diffuse coefficient × diffuse radiation. Yields sunlit fraction and the red:far-red proxy per leaf.
 4. Soil water: infiltrate rain and irrigation into the top cells, drain cells above field capacity downward, redistribute laterally, evaporate from exposed topsoil, update soil temperature.
 5. Plant water status: fraction of transpirable soil water (FTSW) over root-occupied cells, weighted by root length density. One stress factor results and is used in exactly two places: stomatal conductance and expansion growth.
-6. Gas exchange per light class (§3.8): coupled Farquhar photosynthesis and Medlyn conductance give assimilation and transpiration per unit leaf area per class. Each leaf copies its class result scaled by its area and sunlit or shaded fraction.
+6. Gas exchange per light class (§3.8): coupled Farquhar photosynthesis and Medlyn conductance give assimilation and transpiration per unit leaf area per class. Each leaf copies its class result scaled by its area and sunlit or shaded fraction. From M2 (WP27, decision 0034) each class is solved together with the leaf energy balance, and each leaf part then solves its own leaf temperature and transpiration from its own light, sky view and wind.
 7. Water uptake: remove transpired water from soil cells in proportion to root length density and water above wilting point. A shortfall is logged; no second penalty is applied because the stress factor already reduced conductance.
 8. Maintenance respiration per organ, paid from the organ's own reserve.
 9. Carbon income: each leaf adds its hourly net assimilation to its own reserve.
@@ -207,7 +207,7 @@ Turbid-medium voxel model (Beer's law with a leaf-angle G-function, RATP and Sin
 ### 3.8 Gas exchange and respiration
 
 - **Coupled Farquhar–von Caemmerer–Berry photosynthesis with Medlyn stomatal conductance**, solved by Newton iteration on intercellular CO2, giving assimilation, conductance and transpiration together.
-- **Per light class, not per leaf.** Each hour each plant bins its leaves' absorbed PAR into 16 log-spaced classes from 1 to 2,000 µmol m⁻² s⁻¹, separately for sunlit and shaded fractions. Leaf temperature equals air temperature in M0; a leaf energy balance is an M2 upgrade. The solver runs once per class; each leaf multiplies the class rate by its area and fraction. Cost: 30 plants × 32 classes × 24 hours ≈ 23,000 solves per sim-day, well under the M2 budget.
+- **Per light class, not per leaf.** Each hour each plant bins its leaves' absorbed PAR into 16 log-spaced classes from 1 to 2,000 µmol m⁻² s⁻¹, separately for sunlit and shaded fractions. Leaf temperature equals air temperature in M0; from M2 a leaf energy balance (WP27, decision 0034, docs/models/leaf-energy-balance.md) solves each class at a reference leaf in the open, and each leaf part corrects its own temperature and transpiration. The solver runs once per class; each leaf multiplies the class rate by its area and fraction. Cost: 30 plants × 32 classes × 24 hours ≈ 23,000 solves per sim-day, well under the M2 budget.
 - **Leaf aging.** Capacity declines linearly with thermal age after full expansion to 40% at the end of lifespan; stands in for nitrogen remobilization until M2, when leaf nitrogen takes over.
 - **Starting parameters for bean** (§3.16): Vcmax 89, Jmax 160, dark respiration 0.9 µmol m⁻² s⁻¹ at 25 °C, Medlyn g1 \~4 kPa^0.5, CO2 420 ppm adjustable.
 - **Sink feedback (provisional, decision 0013)**: gross assimilation falls linearly to zero as the leaf's reserve concentration rises from 0.10 to 0.30 g C per g DM; the daily report logs the share lost so missing sinks show up.
@@ -244,7 +244,7 @@ Emergent consequences this is designed to give: shaded lower leaves and branches
 - **Pods** expand over \~20 days to full length, then **seeds** fill over \~20 days as the strongest sinks; 3 to 6 seeds per pod; final seed mass is a species parameter reduced by unmet demand.
 - **Temperature on growth**: an expansion multiplier, zero at 5 °C, one from 25 to 30 °C, zero at 40 °C. Leaves die at -1 °C (frost preset). Heat waves abort flowers and raise respiration.
 - **Senescence**: leaf lifespan \~600 °C·day; leaves below 10% of full-sun absorbed PAR for 5 days senesce; during seed fill leaves senesce from the base upward at a rate tied to seed demand (encoded in M0; emergent via nitrogen remobilization in M2). Whole-plant senescence at maturity ends the annual's life.
-- **Pollination (M3)**: flowers self-pollinate by default. A hand-pollination action records a cross (pollen parent id) on the flower; its seeds then carry recombined genotypes (§3.12).
+- **Pollination (M3)**: flowers self-pollinate by default. A hand-pollination action records a cross (pollen parent id) on the flower; its seeds then carry recombined genotypes (§3.12; decision 0035).
 
 ### 3.12 Species, genotype and phenotype
 

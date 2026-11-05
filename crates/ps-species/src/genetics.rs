@@ -151,12 +151,33 @@ impl Species {
         Gamete { alleles }
     }
 
-    /// A seed of `mother` fertilized by `father` (pass the mother twice for a selfed
-    /// seed). `entity` is the seed's ovule entity and `tick` the tick of fertilization.
+    /// Whether a plant of this species can be crossed with one of `other` (WP29): the
+    /// genomes have the same layout (every locus with the same trait, symbol, tier,
+    /// chromosome and position, and the same chromosome lengths), so an allele means
+    /// the same thing in both. Bush and pole bean cross; bean and wheat do not.
     #[must_use]
-    pub fn seed_genotype(
+    pub fn can_cross(&self, other: &Species) -> bool {
+        let (a, b) = (&self.genome, &other.genome);
+        a.loci.len() == b.loci.len()
+            && a.loci.iter().zip(&b.loci).all(|(x, y)| {
+                x.trait_name == y.trait_name
+                    && x.name == y.name
+                    && x.tier() == y.tier()
+                    && x.chromosome == y.chromosome
+                    && x.position_cm.map(f64::to_bits) == y.position_cm.map(f64::to_bits)
+            })
+            && (1..=CHROMOSOMES)
+                .all(|c| a.chromosome_length_cm(c).to_bits() == b.chromosome_length_cm(c).to_bits())
+    }
+
+    /// A seed of `mother` (this species) fertilized by `father` of `father_species`
+    /// (WP29): each parent's own meiosis, keyed as in [`Species::seed_genotype`]. For
+    /// a selfed seed it equals [`Species::seed_genotype`] with the mother twice.
+    #[must_use]
+    pub fn cross_genotype(
         &self,
         mother: &Genotype,
+        father_species: &Species,
         father: &Genotype,
         world_seed: u64,
         entity: u64,
@@ -169,8 +190,22 @@ impl Species {
             side,
         };
         let egg = self.meiosis(mother, key(GameteSide::Egg));
-        let pollen = self.meiosis(father, key(GameteSide::Pollen));
+        let pollen = father_species.meiosis(father, key(GameteSide::Pollen));
         Genotype::fertilize(&egg, &pollen)
+    }
+
+    /// A seed of `mother` fertilized by `father` (pass the mother twice for a selfed
+    /// seed). `entity` is the seed's ovule entity and `tick` the tick of fertilization.
+    #[must_use]
+    pub fn seed_genotype(
+        &self,
+        mother: &Genotype,
+        father: &Genotype,
+        world_seed: u64,
+        entity: u64,
+        tick: u64,
+    ) -> Genotype {
+        self.cross_genotype(mother, self, father, world_seed, entity, tick)
     }
 
     /// For each locus, whether the gamete takes the paternal allele.

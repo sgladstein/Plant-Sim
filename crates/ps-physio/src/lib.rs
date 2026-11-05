@@ -2,6 +2,7 @@
 //!
 //! - [`gas`]: coupled Farquhar and Medlyn gas exchange for one leaf class.
 //! - [`classes`]: the per-plant light-class table and leaf lookup.
+//! - [`energy`]: the leaf energy balance (leaf temperature, WP27).
 //! - [`respiration`]: maintenance and growth respiration.
 //! - [`thermal`]: thermal time and the expansion temperature multiplier.
 //! - [`phenology`]: V and R stages.
@@ -12,6 +13,7 @@
 
 pub mod allocation;
 pub mod classes;
+pub mod energy;
 pub mod gas;
 pub mod phenology;
 pub mod respiration;
@@ -21,6 +23,7 @@ pub use allocation::{
     CarbonLedger, CarbonParams, ConstructionCost, HourInputs, HourReport, Temperature,
 };
 pub use classes::{ClassTable, Rates};
+pub use energy::{Air, LeafEnergyParams, LeafHeat, Site};
 pub use gas::{GasExchange, LeafEnv, LeafParams, Limitation, PeakedArrhenius};
 pub use phenology::{Events, Phenology, Stage, Thresholds};
 pub use thermal::{Cardinal, GrowthTemperature};

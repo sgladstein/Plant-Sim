@@ -41,8 +41,9 @@ Daily (§3.2 daily step 6), in crate `ps-light`:
 - **Ray.** From point `p` in unit direction `d`, the optical depth is
   `τ = Σ_cells (D_c(d) − D_own,c(d)) · ℓ_c + Σ_boxes κ ℓ_box`, with `ℓ_c` the path
   length in each cell (Amanatides–Woo traversal) and `D_own` the leaf's own footprint.
-- **Ray origins.** A broad leaf (a bean leaflet): seven points, the leaf center and six
-  points at radius `r/√2` in the blade plane (the leaf normal) at 60° spacing. A grass
+- **Ray origins.** A broad leaf (a bean leaflet): five points, the leaf center and four
+  points at radius `r/√2` in the blade plane (the leaf normal) at 90° spacing (decision
+  0033; seven points at 60° before, cut for plot speed). A grass
   blade is three strips, each sampled at three points along it, its center and `±ℓ/3`
   (the centers of its thirds), with `ℓ` the strip's length (decision 0030).
 - **Direct coefficient.** For each hour `h` with the sun above the horizon,
@@ -166,21 +167,23 @@ interception as it grows, and shade between neighboring plants.
   tracer fixture (`validation/fixtures/light_raytrace.py`, seed 20261105, 4000 rays per
   leaflet, 57 leaflets with random spherical normals, 5 sun positions and the 16 sky
   directions). The per-leaf light index is the mean of the direct coefficients and the
-  diffuse coefficient. With each leaf's own projection (decision 0025): plant total
-  +2.8% (target 3%, met); all 57 leaflets within 0.10 absolute (worst 0.076); 51 of 57
-  within max(0.05, 10% relative), reported but not gated. With one G of 0.5 it was
+  diffuse coefficient. With five ray origins per leaflet (decision 0033): plant total
+  +2.99% (the gate is under 3%, so it passes at its edge); all 57 leaflets within 0.10 absolute (worst 0.093); 51 of 57
+  within max(0.05, 10% relative), reported but not gated. With seven origins it was
+  +2.8% and worst 0.076 (decision 0025). With one G of 0.5 it was
   +1.7%, 56 of 57, worst 0.122 (decisions 0008, 0010). The test also prints each leaf's
   worst single sun direction.
 - `sim_plant_against_ray_tracer` (same file): the WP12 re-check on a 60-day sim plant
   (74 leaflets, `plant60_*`, exported by the ps-arch test `export_leaves_for_ray_tracer`,
-  traced with `light_raytrace.py --leaves`). With each leaf's own projection (decision
-  0025) the plant total is +3.8%, 63 of 74 leaflets are within 0.10 and the worst is
-  0.26. With one G of 0.5 it was +9.9%, 49 of 74 and 0.32: the sim draws every blade
+  traced with `light_raytrace.py --leaves`). With five ray origins (decision 0033) the
+  plant total is +4.4%, 61 of 74 leaflets are within 0.10 (the gate is 82%, 61 leaflets)
+  and the worst is 0.27; with seven, +3.8%, 63 of 74 and 0.26 (decision 0025). With one G of 0.5 it was +9.9%, 49 of 74 and 0.32: the sim draws every blade
   tilted about 19°, a planophile canopy, and G = 0.5 assumes spherical leaf angles
   (decision 0018).
 - `plot_grid_light_against_ray_tracer` (same file): both fixtures lit through the 3 cm
-  plot grid. Synthetic shoot: −0.7%, 54 of 57 within 0.10. Sim plant: −0.8%, 61 of 74
-  (+5.6% and 51 of 74 with one G, decision 0019).
+  plot grid, five origins (decision 0033). Synthetic shoot: −0.5%, 54 of 57 within 0.10.
+  Sim plant: −0.35%, 60 of 74 (seven origins: −0.7% and 54 of 57; −0.8% and 61 of 74;
+  +5.6% and 51 of 74 with one G, decision 0019).
 - `ps_light::plot::tests`: `the_plot_grid_has_fixed_cells_and_starts_at_the_ground`,
   `neighbors_in_a_plot_shade_each_other`.
 - `isolated_leaf_is_fully_lit` (also: a horizontal leaf in the open absorbs exactly the

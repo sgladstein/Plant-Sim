@@ -12,7 +12,8 @@ Status: spec, written 2026-11-05 after the owner chose R1, R2 and R3 (review:
   "rather a lot") [M, F]. The first lateral cohorts only appear between days 20 and 30
   [M].
 - There are no second-order (fine) laterals. These are 0.1 mm across, about 1,350 m/g,
-  and carry most of the real root length [F, archive roots note §1].
+  and add length, though in bean pots and fields first-order laterals carry most of it
+  (second-order share 0.1 to 0.4, [numbers](numbers/README.md)) [F].
 - The nitrogen uptake works around the missing length with a 25× capacity factor and a
   4 cm reach (nitrogen card, issue #58). A constant factor is wrong in time: too little
   root early, too much late.
@@ -69,10 +70,10 @@ cap, elongation rate) from OpenSimRoot [F].
 
 ### 3.3 Uptake from real root length
 - **Water.** Today `min(k · L/V · (W − W_p), u_max · L, available)` per cell. With 10 to
-  100 times more `L` early, re-fit `k` and `u_max` to the CERES value of about 0.03 cm³
-  of water per cm of root per day, and add saturation in root length density,
-  `L/V ÷ (L/V + 0.5 cm cm⁻³)` [F, archive roots note §4; the saturating form is an
-  inference there].
+  100 times more `L` early, keep `u_max` (already the CERES value of 0.03 cm³ of water
+  per cm of root per day), re-fit `k` on seed means, and add saturation in root length
+  density, `L/V ÷ (L/V + 0.5 cm cm⁻³)` [F, archive roots note §4; the saturating form is
+  an inference there].
 - **Nitrogen.** Remove the 25× capacity factor and the 4 cm reach: uptake capacity per
   cell from the cell's own root length, with CROPGRO's RTNO3 per unit length (decision
   0020 second review round names it) [F].
@@ -81,7 +82,9 @@ cap, elongation rate) from OpenSimRoot [F].
 
 ### 3.4 Done when (R2a)
 - Root length per plant inside the §5 bands on four-seed means; the first lateral
-  cohorts appear in the first week after germination.
+  laterals on the tap root appear 3 to 5 days after germination (Vieira 2008; Arthikala
+  2018 [F]). The day-21 gap is mostly first-order laterals on basal and adventitious
+  axes, so tune lateral density, length and timing first [I].
 - `root_shoot_seed_fill` passes (with R1).
 - The 25× factor and the root reach are gone; plot Ndfa moves from 18% toward the 30 to
   60% band, and `ndfa_low_n_bed` still passes.
@@ -94,8 +97,8 @@ new random draws; ties are broken in a fixed order, so determinism holds.
 
 | Response | Rule | Source |
 | --- | --- | --- |
-| Dry soil slows elongation | Tip elongation × `f_w = clamp((θ_rel − θ_stop)/(θ_full − θ_stop), 0, 1)` with `θ_rel` the cell's relative available water, `θ_stop` 0.05 and `θ_full` 0.3 (roots keep growing to drier soil than leaves expand). After R3, switch to water potential: growth stops near −1.5 MPa | Sharp et al. 1988, maize primary roots at low water potential; Bengough et al. 2011 [K, to verify]; thresholds ~ |
-| Xerobranching | No lateral cohort forms on a parent segment whose cell is below `θ_rel` 0.1 when the cohort would form; it forms later if the cell rewets before the segment ages past a window (7 days, ~) | Orman-Ligeza et al. 2018 [K, to verify] |
+| Dry soil slows elongation | Tip elongation × `f_w = clamp((θ_rel − θ_stop)/(θ_full − θ_stop), 0, 1)` with `θ_rel` the cell's relative available water, `θ_stop` 0 and `θ_full` 0.3, with a floor of 0.3 on `f_w` (root tips keep full elongation near −1.6 MPa). After R3, switch to water potential with the same floor | Sharp 2004 (maize), Yamaguchi 2010 (soybean) [F, [numbers](numbers/README.md)]; `θ_full` ~ |
+| Xerobranching | No lateral cohort forms on a parent segment whose cell is below `θ_rel` 0.1 when the cohort would form, and it does not form later (the effect looked irreversible in barley) | Orman-Ligeza et al. 2018 [F] |
 | Proliferation in N-rich cells | Lateral and fine-root cohort length × `1 + a_N · clamp((NO₃_cell − NO₃_mean)/NO₃_mean, 0, 2)`, `a_N` 1 (so up to 3×), carbon still limiting | Drew 1975 (barley laterals several-fold in a nitrate patch); Hodge 2004 [K, to verify] |
 | Proliferation in wet cells | The same form with relative available water against the root-zone mean, `a_W` 0.5 | [K, to verify]; ~ |
 | Hydropatterning | A lateral cohort's direction is chosen from the existing golden-angle candidates as the first one whose tip cell holds at least the median available water of the candidates, else today's rule | Bao et al. 2014 [K, to verify] |
@@ -109,8 +112,8 @@ research confirms the response sizes.
   root length in the wet half at least 1.5× the dry half by day 45, and uptake from the
   wet half higher [I].
 - **Nitrate patch** (new scenario: a fertilized 6 cm cube at 10 cm depth): lateral and
-  fine-root length in the patch at least 2× the same cube in the control [K, to verify
-  against Drew 1975].
+  fine-root length in the patch at least 1.5× the same cube in the control (expect 1.5 to
+  4; Zhang 1999, Linkohr 2002 [F]; no legume data).
 - **Uniform soil**: the root system is within 5% of R2a's (the plasticity rules do
   nothing where nothing differs).
 - Drought from flowering: root:shoot still rises (existing checks), and root length
@@ -121,11 +124,11 @@ research confirms the response sizes.
 
 | Id (proposed) | Scenario | Variable | Band | Source |
 | --- | --- | --- | --- | --- |
-| `root_length_day21` | single_pot | root length per plant | 20 to 120 m | Miller et al. 2003 (120 to 170 m basal + adventitious, sand) as an upper reference [F]; the lower edge [I] for a 24 cm pot; to verify |
-| `root_length_flowering` | single_pot | root length at R1 | to set from a bean source | data gap [F: archive roots note §3 "no root length time series found"] |
-| `fine_root_share` | single_pot | share of root length in fine laterals at R1 | 0.5 to 0.8 | [K, to verify] |
+| `root_length_day21` | single_pot | root length per plant | 20 to 150 m, aim 40 to 90 | Miller et al. 2003, 20 L sand pots, 40 to 90 m (low P) to 78 to 228 m (high P) [F]; Polania 2009, 35 to 62 m at 32 days [F] |
+| `root_length_flowering` | single_pot | root length at R1 | 60 to 180 m | Trindade and Araújo 2014 (93 to 180 m in 4 kg pots); Araújo 2004 (75 to 116 m at 45 days) [F] |
+| `fine_root_share` | single_pot | share of root length in second-order laterals at R1 | 0.1 to 0.4 | Miller 2003 (second-order negligible at 43 days in the field); soybean 39% (Jin 2013) [F]. Defined by root order, not diameter |
 | `split_pot_foraging` | m2/split_pot (new) | wet:dry root length at day 45 | at least 1.5 | [I] |
-| `nitrate_patch_proliferation` | m2/nitrate_patch (new) | patch:control root length | at least 2 | Drew 1975 [K, to verify] |
+| `nitrate_patch_proliferation` | m2/nitrate_patch (new) | patch:control root length | at least 1.5 | Zhang 1999, Linkohr 2002 [F]; Drew 1975 [K] |
 
 Data asks for Science research: a bean root length time course in a pot or the field,
 fine-root share of length, bean lateral emergence timing, and response sizes for nitrate

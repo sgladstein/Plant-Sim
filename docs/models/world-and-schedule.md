@@ -72,8 +72,9 @@ also records, beside the state and never in it:
   facing a low sun); and the plant's share of the PAR its soil's plants absorb
   (area x mean, summed in plant order);
 - per organ: the hour's phloem flux from its parent into it (negative for an export),
-  copied out of the transport solve; the temperature it grew at (air for the shoot,
-  the soil layer for roots and the seed; leaf temperature replaces air with WP27); and
+  copied out of the transport solve; its temperature (a leaf's own from the energy
+  balance, WP27; air for the rest of the shoot; the soil layer for roots and the
+  seed); and
   its nitrogen per structural dry mass after the hour;
 - per soil: each layer's temperature.
 

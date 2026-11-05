@@ -29,6 +29,9 @@ libm = "0.2"
 proptest = "1"
 ron = "0.10"
 rayon = "1"
+# Binaries only (ps-cli, ps-app, ps-bench examples): the sim's hourly steps allocate in
+# parallel, and glibc malloc slows them by about a third (docs/performance.md).
+mimalloc = { version = "0.1", default-features = false }
 ps-mesh = { path = "crates/ps-mesh" }
 ps-session = { path = "crates/ps-session" }
 glam = "0.33"
