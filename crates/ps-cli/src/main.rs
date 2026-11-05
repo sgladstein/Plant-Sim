@@ -553,6 +553,16 @@ fn read_library(path: &Path) -> Result<ps_breed::SeedLibrary> {
     }
 }
 
+/// Writes the library beside its file, then renames it over the file, so a failed
+/// write never leaves a half library.
+fn write_library(path: &Path, lib: &ps_breed::SeedLibrary) -> Result<()> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, lib.to_ron()?).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
+}
+
 fn read_species(data: &Path, id: &str) -> Result<ps_species::Species> {
     let path = data.join("species").join(format!("{id}.ron"));
     let text =
@@ -580,8 +590,7 @@ fn cmd_founders(a: &Args) -> Result<()> {
         let seed = a.number::<u64>("world-seed")?.unwrap_or(1);
         lib.add_founders(&id, &species, n, seed, &looks)?
     };
-    std::fs::write(lib_path, lib.to_ron()?)
-        .with_context(|| format!("writing {}", lib_path.display()))?;
+    write_library(lib_path, &lib)?;
     println!(
         "added {} {id} seed(s), ids {:?}; {} seeds in {}",
         added.len(),
@@ -605,12 +614,12 @@ fn cmd_breed(a: &Args) -> Result<()> {
         ron::from_str(&text).with_context(|| format!("parsing {}", plan_path.display()))?;
     let scenario = plan.scenario(&lib)?;
     let catalog = Catalog::load(&data, &scenario)?;
-    let looks = ps_breed::Looks::load(&data, &catalog.species)?;
+    let kin = ps_breed::load_species(&data)?;
+    let looks = ps_breed::Looks::load(&data, &kin)?;
     let t = Instant::now(); // determinism: allow (bench timing only)
-    let g = ps_breed::run_generation(&mut lib, &plan, &catalog, &looks)?;
+    let g = ps_breed::run_generation(&mut lib, &plan, &catalog, &kin, &looks)?;
     let secs = t.elapsed().as_secs_f64();
-    std::fs::write(lib_path, lib.to_ron()?)
-        .with_context(|| format!("writing {}", lib_path.display()))?;
+    write_library(lib_path, &lib)?;
     let stem = plan_path
         .file_stem()
         .map_or_else(|| "bench".into(), |s| s.to_string_lossy().into_owned());

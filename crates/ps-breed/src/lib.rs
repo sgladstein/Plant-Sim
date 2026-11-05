@@ -13,8 +13,10 @@
 //! pot builds its own light grid, so the pots never shade each other. Flowers self
 //! unless the plan crosses two pots. The bench stops once every plant is mature (or at
 //! the plan's last day), picks every pod, measures each plant ([`BenchRow`]) and adds the
-//! seeds to the library with their parents. A generation is deterministic: the plan, the
-//! library seeds and the model version fix it, whatever the thread count.
+//! seeds to the library with their parents. Each seed takes the species file that
+//! matches its growth habit, so reciprocal crosses grow alike. A generation is
+//! deterministic: the plan, the library seeds and the model version fix it, whatever
+//! the thread count.
 
 mod bench;
 mod library;
@@ -23,7 +25,7 @@ pub use bench::{
     BenchConditions, BenchCross, BenchPlan, BenchRow, Generation, MAX_POTS, grow, measure,
     run_generation,
 };
-pub use library::{LibrarySeed, Looks, Origin, SeedLibrary};
+pub use library::{LibrarySeed, Looks, Origin, SeedLibrary, load_species};
 
 use ps_world::WorldError;
 

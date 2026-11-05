@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use ps_breed::{
-    BenchCross, BenchPlan, BreedError, Looks, Origin, SeedLibrary, grow, run_generation,
+    BenchCross, BenchPlan, BreedError, Looks, Origin, SeedLibrary, grow, load_species,
+    run_generation,
 };
 use ps_species::Species;
 use ps_world::{Catalog, Scenario, World};
@@ -13,17 +14,17 @@ fn data() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data")
 }
 
+/// Every species file in data/.
+fn kin() -> BTreeMap<String, Species> {
+    load_species(&data()).unwrap()
+}
+
 fn species(id: &str) -> Species {
-    let text = std::fs::read_to_string(data().join(format!("species/{id}.ron"))).unwrap();
-    Species::from_ron(&text).unwrap()
+    kin().remove(id).unwrap()
 }
 
 fn looks() -> Looks {
-    let mut sp = BTreeMap::new();
-    for id in ["bush_bean", "pole_bean"] {
-        sp.insert(id.to_owned(), species(id));
-    }
-    Looks::load(&data(), &sp).unwrap()
+    Looks::load(&data(), &kin()).unwrap()
 }
 
 fn plan(label: &str, seeds: Vec<u64>) -> BenchPlan {
@@ -61,7 +62,7 @@ fn a_ten_seed_generation_fills_the_library() {
 
     let p = plan("bench 1", ids.clone());
     let c = catalog(&lib, &p);
-    let g = run_generation(&mut lib, &p, &c, &looks).unwrap();
+    let g = run_generation(&mut lib, &p, &c, &kin(), &looks).unwrap();
     assert_eq!(g.rows.len(), 10);
     assert!(
         g.days < 120,
@@ -84,6 +85,8 @@ fn a_ten_seed_generation_fills_the_library() {
             assert_eq!((s.mother, s.father), (Some(ids[i]), Some(ids[i])));
             assert!(!s.crossed);
             assert_eq!(s.generation, 1);
+            // Selfed bush lines stay bush beans.
+            assert_eq!(s.species, "bush_bean");
             assert!(
                 matches!(&s.origin, Origin::Harvest { run, plant, mature: true, .. }
                 if run == "bench 1" && *plant as usize == i)
@@ -107,65 +110,80 @@ fn a_ten_seed_generation_fills_the_library() {
     assert_eq!(back, lib);
 }
 
-/// M3 exit, first steps: a cross on the bench gives F1 seeds that name both parents;
-/// the F1 selfed on the next bench gives F2 seeds that segregate for habit (fin).
+/// M3 exit, first steps: crosses on the bench give F1 seeds that name both parents, and
+/// the F1s selfed on the next bench give F2 seeds that segregate for habit (fin). Fin is
+/// dominant, so an F1 climbs whichever way it was crossed: it grows by the pole bean
+/// file, and a bush (fin fin) F2 seed by the bush bean file (decision 0038 item 7).
 #[test]
 fn a_bench_cross_gives_an_f1_and_its_f2_segregates() {
-    let looks = looks();
+    let (kin, looks) = (kin(), looks());
     let mut lib = SeedLibrary::new();
     let bush = lib
-        .add_line("bush_bean", &species("bush_bean"), &looks)
+        .add_line("bush_bean", &kin["bush_bean"], &looks)
         .unwrap();
     let pole = lib
-        .add_line("pole_bean", &species("pole_bean"), &looks)
+        .add_line("pole_bean", &kin["pole_bean"], &looks)
         .unwrap();
     let mut p = plan("cross", vec![bush, pole]);
-    p.crosses = vec![BenchCross {
-        mother: 0,
-        father: 1,
-    }];
+    p.crosses = vec![
+        BenchCross {
+            mother: 0,
+            father: 1,
+        },
+        BenchCross {
+            mother: 1,
+            father: 0,
+        },
+    ];
     let c = catalog(&lib, &p);
-    let g = run_generation(&mut lib, &p, &c, &looks).unwrap();
-    assert_eq!(g.rows[0].crossed_with, Some(1));
-    let f1: Vec<u64> = g.rows[0]
-        .saved
-        .iter()
-        .copied()
-        .filter(|&id| lib.get(id).unwrap().crossed)
-        .collect();
-    assert!(!f1.is_empty(), "{:?}", g.rows[0]);
-    let fin = species("bush_bean")
+    let g = run_generation(&mut lib, &p, &c, &kin, &looks).unwrap();
+    let fin = kin["bush_bean"]
         .genome
         .loci
         .iter()
         .position(|l| l.name.as_deref() == Some("fin"))
         .unwrap();
-    for &id in &f1 {
-        let s = lib.get(id).unwrap();
-        assert_eq!((s.mother, s.father), (Some(bush), Some(pole)));
-        assert_eq!(s.species, "bush_bean");
-        assert_eq!(
-            s.genotype.alleles[fin],
-            (0.0, 1.0),
-            "fin from the bush, Fin from the pole"
-        );
+    // Alleles are (egg, pollen): fin from the bush, Fin from the pole.
+    let lines = [
+        (bush, pole, (0.0, 1.0), "bush_bean"),
+        (pole, bush, (1.0, 0.0), "pole_bean"),
+    ];
+    let mut f1 = Vec::new();
+    for (pot, &(mother, father, alleles, file)) in lines.iter().enumerate() {
+        let row = &g.rows[pot];
+        assert_eq!(row.crossed_with, Some(1 - pot));
+        let (crossed, selfed): (Vec<u64>, Vec<u64>) = row
+            .saved
+            .iter()
+            .partition(|&&id| lib.get(id).unwrap().crossed);
+        assert!(!crossed.is_empty(), "{row:?}");
+        for &id in &crossed {
+            let s = lib.get(id).unwrap();
+            assert_eq!((s.mother, s.father), (Some(mother), Some(father)));
+            assert_eq!(s.genotype.alleles[fin], alleles);
+            assert_eq!(s.species, "pole_bean", "an F1 climbs");
+        }
+        // Flowers open while the father has none self, true to the mother's file.
+        for &id in &selfed {
+            let s = lib.get(id).unwrap();
+            assert_eq!(
+                (s.mother, s.father, s.species.as_str()),
+                (Some(mother), Some(mother), file)
+            );
+        }
+        f1.push(crossed[0]);
     }
-    // The pole father's own seeds are selfed.
-    assert!(g.rows[1].saved.iter().all(|&id| {
-        let s = lib.get(id).unwrap();
-        !s.crossed && s.father == Some(pole)
-    }));
 
-    // F2: two F1 seeds, selfed.
-    let p2 = plan("F2", f1.iter().copied().cycle().take(2).collect());
+    // F2: one F1 from each mother, side by side and selfed.
+    let p2 = plan("F2", f1);
     let c2 = catalog(&lib, &p2);
-    let g2 = run_generation(&mut lib, &p2, &c2, &looks).unwrap();
-    // The F1 climbs (Fin is dominant): taller than the bush line.
+    let g2 = run_generation(&mut lib, &p2, &c2, &kin, &looks).unwrap();
+    // The reciprocal F1s grow alike, as tall as the pole line and far above the bush.
+    let (a, b) = (g2.rows[0].height_cm, g2.rows[1].height_cm);
+    let (bush_cm, pole_cm) = (g.rows[0].height_cm, g.rows[1].height_cm);
     assert!(
-        g2.rows[0].height_cm > g.rows[0].height_cm,
-        "F1 {} cm, bush {} cm",
-        g2.rows[0].height_cm,
-        g.rows[0].height_cm
+        (a - b).abs() < 0.15 * a.max(b) && a.min(b) > 0.8 * pole_cm && a.min(b) > 2.0 * bush_cm,
+        "F1s {a} and {b} cm, pole {pole_cm} cm, bush {bush_cm} cm"
     );
     let f2: Vec<_> = g2.saved.iter().map(|&id| lib.get(id).unwrap()).collect();
     assert!(f2.len() >= 8, "{} F2 seeds", f2.len());
@@ -178,6 +196,17 @@ fn a_bench_cross_gives_an_f1_and_its_f2_segregates() {
         })
         .collect();
     assert!(classes.len() >= 2, "fin segregates in the F2: {classes:?}");
+    // A bush (fin fin) F2 seed grows by the bush file, a climbing one by the pole file.
+    for s in &f2 {
+        let (a, b) = s.genotype.alleles[fin];
+        let file = if a + b < 0.5 {
+            "bush_bean"
+        } else {
+            "pole_bean"
+        };
+        assert_eq!(s.species, file, "fin alleles ({a}, {b})");
+    }
+    assert!(f2.iter().any(|s| s.species == "bush_bean"));
 }
 
 /// The same plan from the same library gives the same generation; a library seed sown
@@ -219,7 +248,9 @@ fn generations_repeat_and_garden_seeds_join_the_library() {
     .unwrap();
     w.run_until(w.tick() + 1).unwrap();
     let before = lib.seeds.len();
-    let new = lib.add_lots(w.state(), 0, "garden", &looks).unwrap();
+    let new = lib
+        .add_lots(w.state(), 0, "garden", &kin(), &looks)
+        .unwrap();
     assert!(!new.is_empty());
     assert_eq!(lib.seeds.len(), before + new.len());
     assert!(
@@ -229,7 +260,7 @@ fn generations_repeat_and_garden_seeds_join_the_library() {
     // Importing from the end adds nothing.
     let n = w.state().seed_library.len();
     assert!(
-        lib.add_lots(w.state(), n, "garden", &looks)
+        lib.add_lots(w.state(), n, "garden", &kin(), &looks)
             .unwrap()
             .is_empty()
     );
@@ -272,6 +303,20 @@ fn plans_and_libraries_are_checked() {
     // A pure line seed may grow twice on one bench (replicates).
     p.max_days = 10;
     assert!(p.check(&lib).is_ok());
+    // A cross between files of different genome layouts fails before the bench grows.
+    let wheat = lib
+        .add_line("spring_wheat", &species("spring_wheat"), &looks)
+        .unwrap();
+    let mut p = plan("x", vec![id, wheat]);
+    p.crosses = vec![BenchCross {
+        mother: 0,
+        father: 1,
+    }];
+    let c = catalog(&lib, &p);
+    match grow(&lib, &p, &c) {
+        Err(BreedError::Plan(why)) => assert!(why.contains("genome layout"), "{why}"),
+        other => panic!("{:?}", other.map(|w| w.tick())),
+    }
 
     // Ids must increase.
     let mut bad = lib.clone();
