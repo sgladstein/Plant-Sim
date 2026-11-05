@@ -26,7 +26,7 @@ use crate::camera::CameraRig;
 use crate::diorama::{self, ColoredMesh};
 use crate::garden::{Garden, PotSize, PotView, natural_color};
 use crate::lens::Lens;
-use crate::toon::{Toon, toon};
+use crate::toon::{Style, Toon, toon, toon_background};
 
 /// Rebuild threshold for stem and root meshes (§4).
 pub const REBUILD_THRESHOLD: f32 = 0.02;
@@ -265,9 +265,17 @@ pub(crate) fn setup_scene(
         Floor::Deck,
     ));
     let garden_mesh = meshes.add(colored(&ColoredMesh::default()));
+    let background_material = toons.add(toon_background(StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 0.9,
+        reflectance: 0.15,
+        double_sided: false,
+        cull_mode: None,
+        ..default()
+    }));
     commands.spawn((
         Mesh3d(garden_mesh.clone()),
-        MeshMaterial3d(dressing_material),
+        MeshMaterial3d(background_material),
         Transform::from_xyz(0.0, floor - crate::dressing::BENCH_HEIGHT, 0.0),
         Floor::Dressing,
         // 20k grass blades in the shadow map cost time and speckle the lawn.
@@ -278,7 +286,7 @@ pub(crate) fn setup_scene(
         garden: garden_mesh,
     });
     let g = crate::look::GROUND;
-    let ground = toons.add(toon(StandardMaterial {
+    let ground = toons.add(toon_background(StandardMaterial {
         base_color: Color::linear_rgb(g[0], g[1], g[2]),
         perceptual_roughness: 1.0,
         reflectance: 0.1,
@@ -443,6 +451,25 @@ fn spawn_pot(
     }
 }
 
+/// Illustrated style: leaves deep in the canopy are darker and cooler, sunlit outer
+/// leaves lighter and warmer, from each leaf's own absorbed light in the sim (true value
+/// layering, where games fake it with a shell gradient).
+fn canopy_shade(pot: &PotView, i: usize, p: &Placement, rgb: [f32; 3]) -> [f32; 3] {
+    if p.kind != OrganKind::Leaf {
+        return rgb;
+    }
+    let Some(par) = pot.organ_value(Lens::Light, i).filter(|v| v.is_finite()) else {
+        return rgb;
+    };
+    let t = (par / 1200.0).clamp(0.0, 1.0).sqrt();
+    let k = 0.55 + 0.5 * t;
+    [
+        rgb[0] * k * (0.92 + 0.12 * t),
+        rgb[1] * k,
+        rgb[2] * k * (1.12 - 0.15 * t),
+    ]
+}
+
 /// The color of organ `i` of `pot` under `lens`, and whether it is a lens value.
 fn organ_color(pot: &PotView, lens: Lens, i: usize, p: &Placement) -> ([f32; 3], bool) {
     let natural = natural_color(p);
@@ -514,6 +541,7 @@ pub(crate) fn sync_scene(
     mut rig: ResMut<CameraRig>,
     mut floors: Query<(&Floor, &mut Transform)>,
     dressing: Option<Res<DressingMeshes>>,
+    style: Res<Style>,
 ) {
     let Some(root) = index.root else {
         return;
@@ -688,7 +716,10 @@ pub(crate) fn sync_scene(
             let Some(p) = pot.skeleton.get(inst.organ) else {
                 continue;
             };
-            let (rgb, glow) = organ_color(pot, lens, inst.organ.index(), p);
+            let (mut rgb, glow) = organ_color(pot, lens, inst.organ.index(), p);
+            if *style == Style::Illustrated && lens == Lens::Off {
+                rgb = canopy_shade(pot, inst.organ.index(), p, rgb);
+            }
             let (material, color) = assets.material(&mut materials, rgb, glow);
             let transform = Transform {
                 translation: inst.translation,

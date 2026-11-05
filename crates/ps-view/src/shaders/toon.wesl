@@ -15,9 +15,9 @@ import bevy_pbr::render::{
 
 const INV_PI: f32 = 0.31830988;
 
-// 0 = natural (standard PBR lighting), 1 = illustrated.
+// x: 0 = natural (standard PBR lighting), 1 = illustrated. y: 1 for background.
 @group(constants::MATERIAL_BIND_GROUP) @binding(100)
-var<uniform> toon_strength: f32;
+var<uniform> toon_params: vec4<f32>;
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
@@ -33,7 +33,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         out.color = main_pass_post_lighting_processing(pbr_input, base);
         return out;
     }
-    if toon_strength < 0.5 {
+    if toon_params.x < 0.5 {
         out.color = main_pass_post_lighting_processing(pbr_input, apply_pbr_lighting(pbr_input));
         return out;
     }
@@ -60,12 +60,18 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // Two tones with a soft edge: lit or in shade, little in between.
     let ndl = dot(N, L);
-    let lit = smoothstep(0.0, 0.12, ndl) * smoothstep(0.3, 0.7, shadow);
+    let background = toon_params.y;
+    // Background (lawn, trees) is shaded flat, so faceted shapes read as simple masses.
+    let lit = mix(
+        smoothstep(0.0, 0.12, ndl) * smoothstep(0.3, 0.7, shadow),
+        0.55 + 0.45 * smoothstep(0.3, 0.7, shadow),
+        background,
+    );
 
     // The shade tone is a cool sky fill, a third of the sun, brighter facing up.
     let up = clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
     let sky_tint = mix(vec3<f32>(0.42, 0.40, 0.36), vec3<f32>(0.50, 0.58, 0.78), up);
-    let fill = (sun_rgb * 0.38 + lights.ambient_color.rgb * view.exposure * 4.0) * sky_tint;
+    let fill = (sun_rgb * 0.38 + lights.ambient_color.rgb * view.exposure * 14.0) * sky_tint;
 
     // Leaves let light through: a backlit blade glows a little.
     let through = pbr_input.material.diffuse_transmission
@@ -73,7 +79,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // Illustrations run a little richer than life.
     let luma = dot(base.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let paint = max(mix(vec3<f32>(luma), base.rgb, 1.25), vec3<f32>(0.0));
+    // Illustrations run a little richer than life; the background runs paler and
+    // greyer, so the plant is the most saturated thing on screen.
+    let sat = mix(1.12, 0.55, background);
+    let paint = max(mix(vec3<f32>(luma), base.rgb, sat), vec3<f32>(0.0))
+        * mix(1.0, 1.25, background);
     var color = paint * (fill + sun_rgb * 0.8 * (lit + through));
 
     // A warm rim where the surface turns away from the camera, on the sunny side.
@@ -83,7 +93,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // Ink: surfaces seen edge-on (stem and pot silhouettes) darken toward a deep
     // brown-green line.
-    let ink = max(1.0 - smoothstep(0.1, 0.38, ndv), smoothstep(0.3, 0.8, edge));
+    // Ink: silhouettes and leaf margins, none on the background.
+    let ink = max(1.0 - smoothstep(0.1, 0.38, ndv), smoothstep(0.3, 0.8, edge))
+        * (1.0 - background);
     color = mix(color, vec3<f32>(0.012, 0.018, 0.008), ink * 0.9);
 
     color += pbr_input.material.emissive.rgb;

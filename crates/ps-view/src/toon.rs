@@ -18,9 +18,10 @@ pub type Toon = ExtendedMaterial<StandardMaterial, ToonExt>;
 /// Settings for the shader: `strength` 0 draws standard PBR, 1 the illustrated look.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Debug, Default)]
 pub struct ToonExt {
-    /// 0 = natural, 1 = illustrated.
+    /// x: style (0 = natural, 1 = illustrated); y: background (1 for set dressing such
+    /// as lawn and trees, drawn flatter and paler so the plant stands out); z, w unused.
     #[uniform(100)]
-    pub strength: f32,
+    pub params: Vec4,
 }
 
 impl MaterialExtension for ToonExt {
@@ -34,7 +35,20 @@ impl MaterialExtension for ToonExt {
 pub fn toon(base: StandardMaterial) -> Toon {
     ExtendedMaterial {
         base,
-        extension: ToonExt { strength: 1.0 },
+        extension: ToonExt {
+            params: Vec4::new(1.0, 0.0, 0.0, 0.0),
+        },
+    }
+}
+
+/// A [`Toon`] for background set dressing (flatter and paler in the illustrated style).
+#[must_use]
+pub fn toon_background(base: StandardMaterial) -> Toon {
+    ExtendedMaterial {
+        base,
+        extension: ToonExt {
+            params: Vec4::new(1.0, 1.0, 0.0, 0.0),
+        },
     }
 }
 
@@ -59,7 +73,9 @@ impl Style {
         }
     }
 
-    fn strength(self) -> f32 {
+    /// The shader's style value.
+    #[must_use]
+    pub fn strength(self) -> f32 {
         match self {
             Self::Natural => 0.0,
             Self::Illustrated => 1.0,
@@ -74,10 +90,10 @@ pub(crate) fn apply_style(style: Res<Style>, mut toons: ResMut<Assets<Toon>>) {
     let s = style.strength();
     let stale = toons
         .iter()
-        .any(|(_, m)| (m.extension.strength - s).abs() > f32::EPSILON);
+        .any(|(_, m)| (m.extension.params.x - s).abs() > f32::EPSILON);
     if stale {
         for (_, m) in toons.iter_mut() {
-            m.extension.strength = s;
+            m.extension.params.x = s;
         }
     }
 }

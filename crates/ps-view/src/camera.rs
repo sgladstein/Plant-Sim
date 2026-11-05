@@ -50,7 +50,7 @@ impl Default for CameraRig {
 }
 
 /// Vertical field of view, rad.
-pub const FOV_Y: f32 = 0.7;
+pub const FOV_Y: f32 = 0.5;
 
 impl CameraRig {
     /// Camera position for the current yaw, pitch and distance.
@@ -71,7 +71,9 @@ impl CameraRig {
         let (lo, hi) = bounds;
         let center = 0.5 * (lo + hi);
         let radius = 0.5 * (hi - lo).length().max(0.05);
-        let distance = 1.15 * radius / (0.5 * FOV_Y).sin();
+        // A narrower lens and a tighter margin make the plant, not the setting, fill
+        // the frame (visual design review).
+        let distance = 1.03 * radius / (0.5 * FOV_Y).sin();
         (center, distance)
     }
 }
