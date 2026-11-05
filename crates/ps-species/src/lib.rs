@@ -19,7 +19,9 @@ use std::collections::BTreeMap;
 use ps_rng::{Purpose, RngKey};
 use serde::{Deserialize, Serialize};
 
-pub use schema::{Climbing, Constants, Grass, Nitrogen, Phenology, SCHEMA, Spec, Variation};
+pub use schema::{
+    Climbing, Constants, Grass, Nitrogen, Phenology, SCHEMA, Spec, Thickening, Variation,
+};
 pub use traits::{TRAIT_KEYS, Traits};
 
 /// A numeric parameter with provenance.
@@ -32,6 +34,92 @@ pub struct Param {
     pub unit: String,
     /// Where the value comes from; "~" means a guess to validate.
     pub source: String,
+}
+
+/// A piecewise-linear table with provenance (schema 12): points `(x, y)` with `x`
+/// strictly increasing, read by linear interpolation and held level beyond the ends.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParamTable {
+    /// Points `(x, y)`, `x` strictly increasing.
+    pub points: Vec<(f64, f64)>,
+    /// Unit of `x`; must match the schema exactly.
+    pub x_unit: String,
+    /// Unit of `y`; must match the schema exactly.
+    pub unit: String,
+    /// Where the values come from; "~" means a guess to validate.
+    pub source: String,
+}
+
+impl ParamTable {
+    /// The table at `x`: linear between points, level beyond the ends.
+    #[must_use]
+    pub fn at(&self, x: f64) -> f64 {
+        interpolate(&self.points, x)
+    }
+}
+
+/// Linear interpolation in points `(x, y)` with `x` increasing, level beyond the ends;
+/// 0 for no points.
+#[must_use]
+pub fn interpolate(points: &[(f64, f64)], x: f64) -> f64 {
+    let Some(&(x0, y0)) = points.first() else {
+        return 0.0;
+    };
+    if x <= x0 {
+        return y0;
+    }
+    for w in points.windows(2) {
+        let ((xa, ya), (xb, yb)) = (w[0], w[1]);
+        if x <= xb {
+            return ya + (yb - ya) * (x - xa) / (xb - xa);
+        }
+    }
+    points[points.len() - 1].1
+}
+
+fn check_table(
+    at: &str,
+    x_unit: &'static str,
+    unit: &'static str,
+    t: &ParamTable,
+) -> Result<(), SpeciesError> {
+    let value = |why: String| {
+        Err(SpeciesError::Value {
+            at: at.to_owned(),
+            why,
+        })
+    };
+    if t.x_unit != x_unit {
+        return Err(SpeciesError::Unit {
+            at: format!("{at}.x_unit"),
+            expected: x_unit,
+            found: t.x_unit.clone(),
+        });
+    }
+    if t.unit != unit {
+        return Err(SpeciesError::Unit {
+            at: at.to_owned(),
+            expected: unit,
+            found: t.unit.clone(),
+        });
+    }
+    if t.source.trim().is_empty() {
+        return Err(SpeciesError::MissingSource { at: at.to_owned() });
+    }
+    if t.points.is_empty() {
+        return value("needs at least one point".into());
+    }
+    if t.points
+        .iter()
+        .any(|&(x, y)| !(x.is_finite() && y.is_finite() && y >= 0.0))
+    {
+        return value("points must be finite with y at least 0".into());
+    }
+    if t.points.windows(2).any(|w| w[1].0 <= w[0].0) {
+        return value("x must increase strictly".into());
+    }
+    Ok(())
 }
 
 /// A heritable parameter: species default, bounds, unit and source.
@@ -283,6 +371,9 @@ pub struct RootType {
     pub insertion_angle: Param,
     /// Root diameter.
     pub diameter: Param,
+    /// Secondary growth scaling by distance from the root's base (schema 12, R1a):
+    /// multiplies the species' [`Species::root_secondary_rate`].
+    pub secondary_factor: ParamTable,
     /// Gravitropism weight, dimensionless.
     pub gravitropism: f64,
     /// Hydrotropism weight, dimensionless.
@@ -347,6 +438,11 @@ pub struct Species {
     pub climbing: Climbing,
     /// Non-heritable plant-to-plant variation (schema 7, decision 0027).
     pub variation: Variation,
+    /// Secondary growth (schema 12, R1a, decision 0036).
+    pub thickening: Thickening,
+    /// Root diameter growth rate by root segment age at optimum temperature, before
+    /// each root type's [`RootType::secondary_factor`] (schema 12, R1a).
+    pub root_secondary_rate: ParamTable,
     /// The grass shoot (schema 4, WP23); present exactly when the growth form is
     /// `Grass`.
     #[serde(default)]
@@ -530,7 +626,12 @@ impl Species {
         for (spec, p) in self.variation.entries() {
             check_param(&format!("variation.{}", spec.key), spec.unit, p)?;
         }
+        for (spec, p) in self.thickening.entries() {
+            check_param(&format!("thickening.{}", spec.key), spec.unit, p)?;
+        }
+        self.validate_thickening()?;
         self.validate_development()?;
+        self.validate_energy()?;
         self.validate_climbing()?;
         self.validate_variation()?;
         self.validate_grass()?;
@@ -539,6 +640,49 @@ impl Species {
             for (spec, p) in r.entries() {
                 check_param(&format!("roots[{}].{}", r.name, spec.key), spec.unit, p)?;
             }
+        }
+        Ok(())
+    }
+
+    /// Thickening (R1a): the flag is 0 or 1, the rates and pipe areas are not
+    /// negative, and the tables are well formed.
+    fn validate_thickening(&self) -> Result<(), SpeciesError> {
+        let t = &self.thickening;
+        let flag = t.secondary_growth.value;
+        let off = flag.abs() < f64::EPSILON;
+        let on = (flag - 1.0).abs() < f64::EPSILON;
+        if !(off || on) {
+            return Err(SpeciesError::Value {
+                at: "thickening.secondary_growth".into(),
+                why: "must be 0 or 1".into(),
+            });
+        }
+        for (key, v) in [
+            ("pipe_area_per_leaf_area", t.pipe_area_per_leaf_area.value),
+            ("pipe_area_per_fruit_mass", t.pipe_area_per_fruit_mass.value),
+            ("stem_radial_rate_max", t.stem_radial_rate_max.value),
+        ] {
+            // NaN fails too.
+            if v.is_nan() || v < 0.0 {
+                return Err(SpeciesError::Value {
+                    at: format!("thickening.{key}"),
+                    why: "must be 0 or more".into(),
+                });
+            }
+        }
+        check_table(
+            "root_secondary_rate",
+            "day",
+            "cm/day",
+            &self.root_secondary_rate,
+        )?;
+        for r in &self.roots {
+            check_table(
+                &format!("roots[{}].secondary_factor", r.name),
+                "cm",
+                "-",
+                &r.secondary_factor,
+            )?;
         }
         Ok(())
     }
@@ -571,6 +715,41 @@ impl Species {
                 return Err(SpeciesError::Value {
                     at: format!("constants.{key}"),
                     why: "must be 1 or more".into(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The leaf energy balance keys (WP27, decision 0034): a positive leaf width,
+    /// and absorptance, emissivity and the abaxial conductance share as fractions.
+    fn validate_energy(&self) -> Result<(), SpeciesError> {
+        let c = &self.constants;
+        if c.leaf_width.value.is_nan() || c.leaf_width.value <= 0.0 {
+            return Err(SpeciesError::Value {
+                at: "constants.leaf_width".into(),
+                why: "must be more than 0".into(),
+            });
+        }
+        for (key, v, low_open) in [
+            ("leaf_nir_absorptance", c.leaf_nir_absorptance.value, false),
+            ("leaf_emissivity", c.leaf_emissivity.value, true),
+            (
+                "abaxial_conductance_share",
+                c.abaxial_conductance_share.value,
+                false,
+            ),
+        ] {
+            let below = if low_open { v <= 0.0 } else { v < 0.0 };
+            // NaN fails too.
+            if v.is_nan() || below || v > 1.0 {
+                return Err(SpeciesError::Value {
+                    at: format!("constants.{key}"),
+                    why: if low_open {
+                        "must be in (0, 1]".into()
+                    } else {
+                        "must be in [0, 1]".into()
+                    },
                 });
             }
         }
@@ -932,6 +1111,8 @@ impl Species {
     /// Every numeric parameter as `(path, value, unit, source)`, in file order, for
     /// model cards, the inspector and the provenance check in CI.
     #[must_use]
+    // One flat listing of every group in file order reads best as one function.
+    #[allow(clippy::too_many_lines)]
     pub fn provenance(&self) -> Vec<(String, f64, String, String)> {
         let mut out = Vec::new();
         for (spec, p) in self.constants.entries() {
@@ -1000,6 +1181,25 @@ impl Species {
                 p.source.clone(),
             ));
         }
+        for (spec, p) in self.thickening.entries() {
+            out.push((
+                format!("thickening.{}", spec.key),
+                p.value,
+                p.unit.clone(),
+                p.source.clone(),
+            ));
+        }
+        let table = |out: &mut Vec<(String, f64, String, String)>, at: &str, t: &ParamTable| {
+            for (x, y) in &t.points {
+                out.push((
+                    format!("{at}[{x} {}]", t.x_unit),
+                    *y,
+                    t.unit.clone(),
+                    t.source.clone(),
+                ));
+            }
+        };
+        table(&mut out, "root_secondary_rate", &self.root_secondary_rate);
         if let Some(g) = &self.grass {
             for (spec, p) in g.entries() {
                 out.push((
@@ -1019,6 +1219,11 @@ impl Species {
                     p.source.clone(),
                 ));
             }
+            table(
+                &mut out,
+                &format!("roots[{}].secondary_factor", r.name),
+                &r.secondary_factor,
+            );
         }
         out
     }

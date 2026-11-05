@@ -51,6 +51,11 @@
     clippy::cast_sign_loss
 )]
 
+// mimalloc: the sim's parallel sections allocate per plant, and glibc malloc serializes
+// them (docs/performance.md). The allocator never changes results.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod bench;
 mod capture;
 mod demo_source;

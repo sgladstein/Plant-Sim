@@ -91,6 +91,8 @@ Code: `ps_arch::grass`. Decision 0022.
 - grains per ear and grain mass.
 
 ## Known limits
+- Grasses have no cambium, so stems and roots never thicken (`secondary_growth` 0 in
+  the species file; decision 0036). A culm's width is its primary allometry's.
 - A dense stand stays too short (0.56 m against 0.7 to 1.0) and yields too little. Its
   culms elongate while the plants are short of sugar, and the sim does not yet treat
   the growing stem as the main sink at jointing.

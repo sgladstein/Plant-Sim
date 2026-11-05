@@ -437,6 +437,14 @@ impl AxisSignature {
     /// that fraction of the axis length.
     #[must_use]
     pub fn needs_rebuild(&self, built: &Self, threshold: f32) -> bool {
+        self.needs_rebuild_beyond(built, threshold, 0.0)
+    }
+
+    /// [`Self::needs_rebuild`], but a length change or a node move under `floor` (m) never
+    /// counts. A young lateral root a centimeter long grows several percent an hour, so
+    /// the fraction alone rebuilds every root of a running plot every frame.
+    #[must_use]
+    pub fn needs_rebuild_beyond(&self, built: &Self, threshold: f32, floor: f32) -> bool {
         if self.nodes.len() != built.nodes.len() || self.copies != built.copies {
             return true;
         }
@@ -444,10 +452,11 @@ impl AxisSignature {
             let scale = now.abs().max(then.abs());
             scale > 0.0 && (now - then).abs() > threshold * scale
         };
-        if rel(self.length, built.length) {
+        let length = self.length.max(built.length);
+        if (self.length - built.length).abs() > (threshold * length).max(floor) {
             return true;
         }
-        let tolerance = threshold * self.length.max(built.length);
+        let tolerance = (threshold * length).max(floor);
         self.nodes
             .iter()
             .zip(&built.nodes)

@@ -65,7 +65,7 @@ one at a time, with options and a recommendation.
 | Design plan v3 (complete, kept current with decisions) | [docs/design-plan.md](design-plan.md). §3 model, §3.2 step order, §7 backlog of 36 WPs with done-when, §8 validation, §10 architecture, §11 implementation guide. |
 | Progress, per WP, plus every open follow-up | [docs/STATUS.md](STATUS.md) (read first every session) |
 | Agent rules (non-negotiable sim rules, code style, pre-push checks) | [CLAUDE.md](../CLAUDE.md) |
-| Decision records 0001 to 0032 | [docs/decisions/](decisions/) |
+| Decision records 0001 to 0034 | [docs/decisions/](decisions/) |
 | Model cards, one per process | [docs/models/](models/) |
 | Bevy pin and idioms | [docs/bevy-notes.md](bevy-notes.md) |
 | CLI | [docs/cli.md](cli.md) |
@@ -77,7 +77,7 @@ one at a time, with options and a recommendation.
 
 ## 4. State of the project (2026-11-05, main at the handoff merge)
 
-- **Model version 0.15.0** (`ps_world::MODEL_VERSION`; the research re-tune: development trapezoid, Medlyn g1 5.79, per-organ construction cost keys, decision 0032; before it, the bean genome's 40 loci, decision 0031, grass blades sample light at 3 points, decision 0030, and pole beans find their stake, decision 0029). Species schema 10.
+- **Model version 0.19.0** (`ps_world::MODEL_VERSION`; stem and root thickening, realism plan R1a, decision 0036, species schema 12; before it 0.18.0, the coupled leaf-temperature solve converges to 0.05 K for speed, decision 0034 amendment; before that 0.17.0, the leaf energy balance, WP27, decision 0034, species schema 11; before that, broad leaves cast rays from 5 points, decision 0033; before that, the research re-tune: development trapezoid, Medlyn g1 5.79, per-organ construction cost keys, decision 0032; before it, the bean genome's 40 loci, decision 0031, grass blades sample light at 3 points, decision 0030, and pole beans find their stake, decision 0029). Species schema 12.
 - **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
   a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.
@@ -89,13 +89,13 @@ one at a time, with options and a recommendation.
   done-when is the owner's sun-vs-shade clip sign-off), and the experiment and
   model-card panels of WP17. WP25's viewer side (harvest and cut, garden tools, seed
   library, new-run dialog) is done (#76).
-- **M2 (plot and sandbox, WP21 to WP27): WP21 to WP25 done**; WP26 (save/load UI,
-  replay markers, more lenses, carbon flow arrows) and WP27 (leaf energy balance) open.
+- **M2 (plot and sandbox, WP21 to WP27): WP21 to WP25 and WP27 (leaf energy balance)
+  done**; WP26 (save/load UI, replay markers, more lenses, carbon flow arrows) open.
   Pole bean (twining), spring wheat, nitrogen with nodules, harvest/prune/obstacles,
   weather files, plant-to-plant variation all landed.
 - **M3 (breeding) and M4 (tree, fields): not started.**
-- **Validation (model 0.15.0, mean of four world seeds, decision 0026):** 87 checks,
-  68 pass, every M0 gate passes; the pole bean height targets pass since decision 0029.
+- **Validation (model 0.19.0, mean of four world seeds, decision 0026):** 90 checks,
+  69 pass (0.18.0: 67 of 87; R1a added three stem and root targets, decision 0036), every M0 gate passes; the pole bean height targets pass since decision 0029.
   One bean spans 21 to 39 g by world seed alone, so every target reads the seed mean.
   Don't tune "~" parameters on one seed. Main misses: thermal-time phenology, wheat
   stand height and yield,
@@ -299,7 +299,9 @@ a project folder that no longer exists; from now on put them in the repo: review
 3. WP26: save, load and replay already exist; missing are a non-stopping
    `Session::save_ron`, the plot save/replay done-when test, and lens data (light
    share, organ N, per-organ carbon flux) ([handoff/implementation.md](handoff/implementation.md)
-   step 3); the UI half is the viewer's. Then WP27 (leaf energy balance), then M2 exit: 30 plants at 60 fps and
+   step 3); the UI half is the viewer's. WP27 (leaf energy balance) is done (decision 0034).
+   Then the realism specs R1 carbon sinks, R2 root system, R3 plant hydraulics, in that
+   order (owner, 2026-11-05; `docs/research/realism-plan`), then M2 exit: 30 plants at 60 fps and
    under 20 ms per sim-day, density plateau (still weak: -43% vs -70%).
 4. M3 (WP28 to WP32): genome, pollination, breeding bench, trait discovery,
    challenges. Research round 2 has the genetics. WP28 is bound by decision 0023

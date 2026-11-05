@@ -12,17 +12,21 @@ and falling off is not scripted; it happens this way.
 
 ## Equations
 Per plant, hourly steps 8 to 12 of §3.2, crate `ps-physio::allocation`. Organ `i` has
-reserve `R` (g C), structure `W` (g DM) and concentration `C = R / max(W, 1e-6)`.
+reserve `R` (g C), structure `W` (g DM) and concentration `C = R / max(W_p, 1e-6)`,
+with `W_p = W − W_s` its primary structure: secondary (wood) mass `W_s` from R1a
+thickening holds no phloem sap (decision 0036), so it neither dilutes the sugar
+concentration nor raises the reserve floor.
 
 1. Maintenance (step 8): non-leaf organs pay `Rm` (respiration card) from `R`.
 2. Income (step 9): each leaf adds its net assimilation (negative at night).
    Starvation signal: an organ whose `R < 0` now counts one more starving hour; any
    other organ resets to zero.
 3. Transport (step 10), one backward-Euler diffusion step per hour on the tree of
-   living parent-child edges (decision 0011). Conductance `k = K · π r² / l` of the
-   segment the edge runs through (the child if it is a stem or root segment, else the
+   living parent-child edges (decision 0011). Conductance `k = K · π r_p² / l` of the
+   segment the edge runs through, with `r_p = r √(W_p / W)` its primary radius
+   (thickening widens a segment but not its phloem; decision 0036) (the child if it is a stem or root segment, else the
    parent; at least 0.5 mm radius and 5 mm length). New concentrations solve
-   `W_i C_i' + Σ_j k_ij (C_i' − C_j') = max(R_i, 0)` for every organ, exactly, by one
+   `W_p,i C_i' + Σ_j k_ij (C_i' − C_j') = max(R_i, 0)` for every organ, exactly, by one
    leaf-to-root elimination and one root-to-leaf substitution (the Thomas algorithm on
    a tree, O(n)). Carbon moves as edge fluxes `k (C_p' − C_c')`. The step is
    unconditionally stable and monotone (no concentration leaves its neighbors' range,
@@ -35,10 +39,15 @@ reserve `R` (g C), structure `W` (g DM) and concentration `C = R / max(W, 1e-6)`
    (y(a + da) − y(a))` from the beta curve on the expansion clock `a`, times the
    water stress factor for leaves, internodes, tendrils and cotyledons. Cold slows the
    clock, so it delays expansion instead of cutting the organ short. Demand
-   `D = ΔW · 0.45 · 1.25` g C. Available `A = max(0, R − 0.05 W)`. Spent
+   `D = ΔW · 0.45 · 1.25` g C. Available `A = max(0, R − 0.05 W_p)`. Spent
    `S = min(D, p · A)` with priority `p` (seeds in pods 1.0, pods 0.9, roots
    0.6 + 0.4 (1 − FTSW), everything else 0.7). Unmet `D − S` is booked; `S / 1.25` becomes
    structure and the rest is growth respiration.
+   Then secondary growth (R1a, decision 0036; organ-growth card), in the same hour from
+   what is left: each stem or root organ with a thickening potential `ΔW_s` spends
+   `S_s = min(ΔW_s · 0.45 · cc, 0.4 · max(0, R − 0.05 W_p))` at priority 0.4; `S_s / cc`
+   becomes secondary structure (wider, same length) and the rest growth respiration.
+   Unmet secondary demand is not booked: wood is a sink that takes only surplus.
 6. No catch-up: demand always follows the species potential, and a shortfall is lost, so
    a fully expanded organ ends at `(1 − unmet / potential demand) × potential`.
 7. Starvation (daily step 4): an organ with at least `24 × starvation_window` starving
@@ -71,6 +80,7 @@ reserve `R` (g C), structure `W` (g DM) and concentration `C = R / max(W, 1e-6)`
 | starvation_window | 3 | day | "~" design plan §3.9, §3.16 |
 | phloem_conductance K | 500 | g DM m⁻¹ h⁻¹ | "~" decision 0009 |
 | priorities | 1.0, 0.9, 0.7, 0.6 + 0.4 (1 − FTSW) | 1 | design plan §3.9 step 2 |
+| secondary priority | 0.4 | 1 | design plan §3.9 step 2; decision 0036 |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -97,8 +107,11 @@ late leaves, smaller leaves after a dull week.
 - Priority is the share of an organ's own available reserve it spends per hour, so at
   an hourly step it is a weak lever (decision 0009). If fruit does not starve late
   leaves in WP12, make priority shape the transport to the receiving organ.
-- Secondary thickening and reserve refill sinks (§3.9 priorities 0.4 and 0.2) are not
-  separate sinks yet (WP8).
+- Secondary thickening is a sink at priority 0.4 (decision 0036); the reserve refill
+  sink (§3.9 priority 0.2) is not separate yet (R1b).
+- Secondary mass is phloem-free: thickening raises neither an organ's conductance nor
+  its capacity to hold sugar. Real secondary phloem grows with the cambium, so old
+  stems carry more than the model lets them.
 - Leaf lifespan and shade senescence are daily step 4 too, but arrive with the
   architecture module (WP8).
 

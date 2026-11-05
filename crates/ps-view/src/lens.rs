@@ -207,14 +207,14 @@ impl Lens {
             Self::Temperature => LensInfo {
                 name: "Temperature",
                 colors: "Organs",
-                quantity: "Temperature the organ grew at this hour",
+                quantity: "Organ temperature this hour",
                 unit: "°C",
                 min: 5.0,
                 max: 40.0,
                 scale: Scale::Diverging { center: 25.0 },
-                explanation: "Shoots follow the air and roots the soil layer they sit in, so roots run cooler by day and warmer at night. White is 25 °C, near the bean's optimum; blue is cool and orange is hot.",
-                origin: Origin::Encoded,
-                model_card: "docs/models/thermal-time-and-phenology.md",
+                explanation: "Sunlit leaves run a few degrees above the air and fall below it on clear calm nights, while stems follow the air and roots their soil layer. White is 25 °C, near the bean's optimum; blue is cool and orange is hot.",
+                origin: Origin::Emergent,
+                model_card: "docs/models/leaf-energy-balance.md",
             },
             Self::Nitrogen => LensInfo {
                 name: "Nitrogen",

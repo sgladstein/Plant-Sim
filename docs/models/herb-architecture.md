@@ -61,9 +61,13 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
 - **Sink feedback on gross assimilation:** `A' = f(C) (A + Rd) − Rd`,
   `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (provisional; see gas-exchange).
 - **Leaf death:** at thermal age `expanded + lifespan`, after 5 days below light index
-  0.1, at frost, at starvation, or at maturity. A killing frost also stops every apex
-  and kills buds and flowers, so the plant does not regrow (§7 M0 exit). Pods, seeds,
-  stems and roots are spared: they stop growing only because the leaves are gone.
+  0.1, at frost, at starvation, or at maturity. A leaf freezes when its own lowest
+  temperature of the day (energy balance, WP27) is below `leaf_frost_kill`, so on a
+  clear, calm night exposed leaves can freeze in air just above the threshold while
+  covered ones survive (owner decision 2026-11-05, decision 0034). A killing frost of
+  the air (the day's minimum below the threshold) also stops every apex and kills buds
+  and flowers, so the plant does not regrow (§7 M0 exit). Pods, seeds, stems and roots
+  are spared: they stop growing only because the leaves are gone.
 
 ## Parameters
 All values, units and sources are in `data/species/bush_bean.ron`. The main ones:
@@ -110,9 +114,9 @@ leaves actually absorb), final organ sizes (carbon shortfall), which leaves die 
 shade, and where roots end up.
 
 ## Known limits
-- No secondary thickening of stems or roots yet, so stems are light and the root
-  system is about 4% of dry mass (root:shoot 0.04 at seed fill against 0.08 to 0.30
-  published): a known limit at the M0 exit (WP12).
+- Stems and roots thicken (decision 0036, organ-growth card), but the root system is
+  still short and light: root:shoot is 0.07 at seed fill against 0.08 to 0.30
+  published, and root length is far below measured beans early (R2a).
 - From flowering on the plant is short of sinks: the sink feedback discards about 60%
   of potential gross assimilation, even at half light. So a source stress (shade,
   drought, heat) acts mainly through pod number, which pod set ties to carbon, light,
@@ -126,7 +130,8 @@ shade, and where roots end up.
 - Drought raises root:shoot by 16 to 39%, but from a base 2 to 8 times too low.
 - No phototropism or hydrotropism yet; roots bend only by gravity and noise.
 - Laterals are lumped into cohorts and have no laterals of their own.
-- Leaves do not senesce from the base during seed fill (§3.11; M2 with nitrogen).
+- Leaves senesce from the base during seed fill only through nitrogen mining (nitrogen
+  card); the seeds' own nitrogen demand does not yet strip them at a capped rate (R1b).
 - At maturity all leaves drop at once.
 - Branches carry no axillary buds or racemes except their terminal one.
 
@@ -137,6 +142,7 @@ shade, and where roots end up.
 - `counts_hold_across_world_seeds` takes pods 6 to 20 (the §8.2 range) for seeds 1 to 8.
 - The WP11 validation report (`ps-cli validate`): the §8.3 shade, drought, heat and
   frost responses, gated for M0. `ps-cli/tests/cli.rs::a_frost_night_kills_the_leaves_for_good`.
+  `ps-arch/tests/leaf_energy.rs::a_clear_calm_night_frosts_exposed_leaves_but_not_the_growing_points`.
 - `dry_soil_holds_the_seed`, `same_seed_same_plant` (bit-identical arena),
   `roots_stay_in_the_pot`.
 - Debug builds assert the carbon ledger every hour (WP7) through all of these runs.

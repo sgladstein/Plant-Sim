@@ -411,6 +411,10 @@ Accepted ones get WP numbers and issues when specced.
    to one level, and the fidelity report checks that neither level is systematically
    better, so watching closely can't become a strategy. The recommendation was option 1
    (fixed by scale).
+3. **Next round of specs:** soil extras, then branches on branches, then nitrogen
+   moving along the stem. Specs: [r5-soil-extras.md](r5-soil-extras.md),
+   [r6-branching.md](r6-branching.md) (E2 only; the rest of the R6 row stays to triage
+   after R1) and [r7-nitrogen-transport.md](r7-nitrogen-transport.md).
 
 ---
 

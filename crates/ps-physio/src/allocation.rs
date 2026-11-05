@@ -118,6 +118,9 @@ pub fn priority(kind: OrganKind, ftsw: f64) -> f64 {
     }
 }
 
+/// Sink priority of secondary growth, stem and root thickening (§3.9 step 2, R1a).
+pub const SECONDARY_PRIORITY: f64 = 0.4;
+
 /// True for organs whose growth is expansion and so is limited by water stress.
 #[must_use]
 pub fn is_expanding_kind(kind: OrganKind) -> bool {
@@ -220,8 +223,11 @@ pub struct HourReport {
     pub transported: GramsC,
     /// Carbon spent on growth (structure plus growth respiration).
     pub growth: GramsC,
-    /// Demand not met this hour.
+    /// Demand not met this hour (primary growth).
     pub unmet: GramsC,
+    /// Carbon spent on secondary growth, structure plus growth respiration (part of
+    /// `growth`).
+    pub secondary: GramsC,
 }
 
 /// Per-hour inputs to [`hourly`], all indexed by organ id.
@@ -242,6 +248,9 @@ pub struct HourInputs<'a> {
     /// Nitrogen per dry mass at or below which an organ cannot grow, by
     /// [`kind_index`] (decision 0020); `None` for no nitrogen limit.
     pub n_floor: Option<&'a [f64; ORGAN_KINDS]>,
+    /// Potential secondary growth (thickening) this hour by organ id, g DM of
+    /// structure, from the caller's rules (R1a); empty for none.
+    pub secondary: &'a [GramsDM],
 }
 
 /// Number of organ kinds, for per-kind tables.
@@ -282,7 +291,7 @@ fn segment(arena: &OrganArena, id: OrganId) -> Option<(f64, f64)> {
     )
     .then(|| {
         (
-            arena.size[i].radius.0.max(MIN_RADIUS),
+            arena.primary_radius(id).0.max(MIN_RADIUS),
             arena.size[i].length.0.max(MIN_LENGTH),
         )
     })
@@ -290,6 +299,8 @@ fn segment(arena: &OrganArena, id: OrganId) -> Option<(f64, f64)> {
 
 /// Edge conductance, g DM h⁻¹: `K · π r² / l` of the segment the edge runs through
 /// (the child if it is a stem or root segment, else the parent, else a minimal one).
+/// `r` is the primary radius: secondary growth widens a stem without easing transport
+/// (R1a, decision 0036).
 fn conductance(arena: &OrganArena, p: OrganId, c: OrganId, k: f64) -> f64 {
     let (r, l) = segment(arena, c)
         .or_else(|| segment(arena, p))
@@ -309,8 +320,10 @@ fn pays_maintenance(kind: OrganKind, respiring: bool) -> bool {
 }
 
 /// Whether an organ is diluted to its kind's nitrogen growth floor (decision 0020).
+/// Secondary tissue carries no nitrogen requirement, so the floor applies to the
+/// primary mass (R1a).
 fn nitrogen_gated(arena: &OrganArena, id: OrganId, floor: &[f64; ORGAN_KINDS]) -> bool {
-    let w = arena.structural(id).0;
+    let w = arena.primary(id).0;
     w > 0.0 && arena.nitrogen[id.index()].0 <= floor[kind_index(arena.kind[id.index()])] * w
 }
 
@@ -332,6 +345,92 @@ pub fn hourly(
     ledger: &mut CarbonLedger,
 ) -> Result<HourReport, PhysioError> {
     hourly_recording(arena, allometry, p, temp, inp, ledger, None)
+}
+
+/// What step 12 reads besides the organ: parameters, the hour's inputs, allometry.
+struct GrowCtx<'a, 'b> {
+    p: &'a CarbonParams,
+    inp: &'a HourInputs<'b>,
+    allometry: &'a Allometry,
+}
+
+/// Primary growth of one organ this hour (step 12) along its expansion curve, whose
+/// clock advanced by `dt` this hour, at the organ's priority.
+fn build_primary(
+    arena: &mut OrganArena,
+    id: OrganId,
+    dt: DegreeDays,
+    cost: f64,
+    g: &GrowCtx<'_, '_>,
+    rep: &mut HourReport,
+    ledger: &mut CarbonLedger,
+) -> Result<(), PhysioError> {
+    let (p, inp) = (g.p, g.inp);
+    let i = id.index();
+    let cf = p.carbon_fraction;
+    let age0 = DegreeDays(arena.expansion_age[i].0 - dt.0);
+    let curve = arena.curve[i];
+    if curve.potential.0 <= 0.0 || curve.is_complete(age0) {
+        return Ok(());
+    }
+    // An organ diluted to its final nitrogen concentration cannot build more
+    // tissue until the plant tops it up (decision 0020).
+    if inp.n_floor.is_some_and(|f| nitrogen_gated(arena, id, f)) {
+        return Ok(());
+    }
+    // Demand follows the species potential, not the reduced one: a shortfall
+    // is lost (no catch-up) without compounding (decision 0009). At the end of
+    // expansion the organ's size is `(1 − unmet / potential demand) × potential`.
+    let mut pot = curve.increment(curve.potential, age0, dt).0;
+    if is_expanding_kind(arena.kind[i]) {
+        pot *= inp.stress.clamp(0.0, 1.0);
+    }
+    let demand = pot * cf * cost;
+    if demand <= 0.0 {
+        return Ok(());
+    }
+    let available = (arena.reserve[i].0 - p.reserve_floor * arena.primary(id).0).max(0.0);
+    let spent = demand.min(priority(arena.kind[i], inp.ftsw) * available);
+    let unmet = demand - spent;
+    arena.record_demand(id, GramsC(demand), GramsC(unmet));
+    rep.unmet += GramsC(unmet);
+    if spent > 0.0 {
+        arena.reserve[i] -= GramsC(spent);
+        let (built, resp) = growth_split(GramsC(spent), cost);
+        arena.grow(id, GramsDM(built.0 / cf), g.allometry)?;
+        rep.growth += GramsC(spent);
+        ledger.growth_respiration += resp;
+    }
+    Ok(())
+}
+
+/// Secondary growth of one organ this hour (R1a, decision 0036): the caller's
+/// potential increment `pot`, met at [`SECONDARY_PRIORITY`] of the reserve above the
+/// floor; what is not met is simply not built (no deficit is kept).
+fn build_secondary(
+    arena: &mut OrganArena,
+    id: OrganId,
+    pot: GramsDM,
+    cost: f64,
+    g: &GrowCtx<'_, '_>,
+    rep: &mut HourReport,
+    ledger: &mut CarbonLedger,
+) -> Result<(), PhysioError> {
+    let p = g.p;
+    let i = id.index();
+    let cf = p.carbon_fraction;
+    let demand = pot.0 * cf * cost;
+    let available = (arena.reserve[i].0 - p.reserve_floor * arena.primary(id).0).max(0.0);
+    let spent = demand.min(SECONDARY_PRIORITY * available);
+    if spent > 0.0 {
+        arena.reserve[i] -= GramsC(spent);
+        let (built, resp) = growth_split(GramsC(spent), cost);
+        arena.grow_secondary(id, GramsDM(built.0 / cf), g.allometry)?;
+        rep.growth += GramsC(spent);
+        rep.secondary += GramsC(spent);
+        ledger.growth_respiration += resp;
+    }
+    Ok(())
 }
 
 /// [`hourly`], also recording each organ's phloem import for the hour in `flows`
@@ -423,43 +522,17 @@ pub fn hourly_recording(
         dt_exp[i] = DegreeDays(dt.0 * temp.growth.factor(t_of(id)));
         arena.expansion_age[i] += dt_exp[i];
     }
-    // 12. Growth.
+    // 12. Growth: primary growth along each organ's expansion curve, then secondary
+    // growth (stem and root thickening, R1a) from what is left, at its own priority.
     let cf = p.carbon_fraction;
+    let g = GrowCtx { p, inp, allometry };
     for &id in &ids {
         let i = id.index();
-        let age0 = DegreeDays(arena.expansion_age[i].0 - dt_exp[i].0);
-        let curve = arena.curve[i];
-        if curve.potential.0 <= 0.0 || curve.is_complete(age0) {
-            continue;
-        }
-        // An organ diluted to its final nitrogen concentration cannot build more
-        // tissue until the plant tops it up (decision 0020).
-        if inp.n_floor.is_some_and(|f| nitrogen_gated(arena, id, f)) {
-            continue;
-        }
-        // Demand follows the species potential, not the reduced one: a shortfall is
-        // lost (no catch-up) without compounding (decision 0009). At the end of
-        // expansion the organ's size is `(1 − unmet / potential demand) × potential`.
-        let mut pot = curve.increment(curve.potential, age0, dt_exp[i]).0;
-        if is_expanding_kind(arena.kind[i]) {
-            pot *= inp.stress.clamp(0.0, 1.0);
-        }
         let cost = p.construction_cost.of(arena.kind[i]);
-        let demand = pot * cf * cost;
-        if demand <= 0.0 {
-            continue;
-        }
-        let available = (arena.reserve[i].0 - p.reserve_floor * arena.structural(id).0).max(0.0);
-        let spent = demand.min(priority(arena.kind[i], inp.ftsw) * available);
-        let unmet = demand - spent;
-        arena.record_demand(id, GramsC(demand), GramsC(unmet));
-        rep.unmet += GramsC(unmet);
-        if spent > 0.0 {
-            arena.reserve[i] -= GramsC(spent);
-            let (built, resp) = growth_split(GramsC(spent), cost);
-            arena.grow(id, GramsDM(built.0 / cf), allometry)?;
-            rep.growth += GramsC(spent);
-            ledger.growth_respiration += resp;
+        build_primary(arena, id, dt_exp[i], cost, &g, &mut rep, ledger)?;
+        let pot = inp.secondary.get(i).copied().unwrap_or(GramsDM(0.0));
+        if pot.0 > 0.0 {
+            build_secondary(arena, id, pot, cost, &g, &mut rep, ledger)?;
         }
     }
     ledger.maintenance += rep.maintenance;
@@ -512,7 +585,9 @@ fn transport_recording(
     let mut rhs = vec![0.0; n];
     for id in arena.alive_ids() {
         let i = id.index();
-        diag[i] = arena.structural(id).0.max(MIN_MASS);
+        // Concentration is reserve over primary mass: secondary tissue is a sink, not
+        // part of the phloem's volume (R1a).
+        diag[i] = arena.primary(id).0.max(MIN_MASS);
         rhs[i] = arena.reserve[i].0.max(0.0);
     }
     for &(pa, ch, k) in &edges {

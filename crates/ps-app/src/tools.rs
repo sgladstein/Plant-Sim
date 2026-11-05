@@ -141,6 +141,17 @@ fn to_action(src: &SimSource, a: &PlayerAction) -> Option<ActionKind> {
             plant: src.plant_of_pot(pot)?,
             organ: organ(i)?,
         },
+        PlayerAction::Pollinate {
+            pot,
+            organ: i,
+            pollen,
+        } => ActionKind::Pollinate {
+            plant: src.plant_of_pot(pot)?,
+            organ: organ(i)?,
+            pollen: src.plant_of_pot(pollen)?,
+        },
+        // Handled by `apply_tools`: nothing changes in the sim until the pollen is used.
+        PlayerAction::CollectPollen { .. } => return None,
         PlayerAction::Prune { pot, organ: i } => ActionKind::Prune {
             plant: src.plant_of_pot(pot)?,
             organ: organ(i)?,
@@ -174,16 +185,51 @@ fn to_action(src: &SimSource, a: &PlayerAction) -> Option<ActionKind> {
     })
 }
 
+/// A lot's parents: "selfed", "× Plant 3", or both when some seeds were crossed.
+fn parents(snap: &ps_session::Snapshot, lot: &ps_world::SeedLot) -> String {
+    let mut fathers: Vec<u32> = lot
+        .seed_genotypes
+        .iter()
+        .map(|g| g.father)
+        .filter(|&f| f != lot.plant)
+        .collect();
+    fathers.sort_unstable();
+    fathers.dedup();
+    let selfed = lot.seed_genotypes.iter().any(|g| g.father == lot.plant);
+    let crossed = fathers
+        .iter()
+        .map(|&f| format!("× {}", crate::inspect::plant_name(snap, f)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    match (selfed || lot.seed_genotypes.is_empty(), crossed.is_empty()) {
+        (_, true) => "selfed".to_owned(),
+        (false, false) => crossed,
+        (true, false) => format!("selfed, {crossed}"),
+    }
+}
+
 /// Sends queued player actions to the sim and refreshes the seed library.
 #[allow(clippy::needless_pass_by_value)]
-pub fn apply_tools(src: Res<SimSource>, mut tools: ResMut<Tools>) {
+pub fn apply_tools(
+    src: Res<SimSource>,
+    mut tools: ResMut<Tools>,
+    mut inspector: ResMut<Inspector>,
+) {
     tools.enabled = true;
+    let snap = src.snapshot();
     for a in std::mem::take(&mut tools.queue) {
+        if let PlayerAction::CollectPollen { pot } = a {
+            if let Some(id) = src.plant_of_pot(pot) {
+                tools.pollen = Some((pot, crate::inspect::plant_name(snap, id)));
+                // Offer the cross on the flower now selected.
+                inspector.built_for = None;
+            }
+            continue;
+        }
         if let Some(kind) = to_action(&src, &a) {
             src.act(kind);
         }
     }
-    let snap = src.snapshot();
     if tools.seed_library.len() != snap.seed_library.len() {
         tools.seed_library = snap
             .seed_library
@@ -202,6 +248,7 @@ pub fn apply_tools(src: Res<SimSource>, mut tools: ResMut<Tools>) {
                 seeds: lot.seeds,
                 mass_g: lot.seed_mass_g,
                 mature: lot.mature,
+                parents: parents(snap, lot),
             })
             .collect();
     }

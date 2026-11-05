@@ -106,12 +106,12 @@ fn locus_must_name_a_heritable_trait() {
 
 #[test]
 fn schema_version_checked() {
-    let bad = BEAN.replacen("schema: 10,", "schema: 6,", 1);
+    let bad = BEAN.replacen("schema: 12,", "schema: 6,", 1);
     assert!(matches!(
         Species::from_ron(&bad),
         Err(SpeciesError::Schema {
             found: 6,
-            expected: 10
+            expected: 12
         })
     ));
 }
@@ -222,4 +222,94 @@ fn root_types_are_validated() {
         Species::from_ron(&lateral_at_zero),
         Err(SpeciesError::Roots(_))
     ));
+}
+
+/// WP27: the leaf energy keys must be physical.
+#[test]
+fn energy_keys_are_checked() {
+    let cases = [
+        (
+            "leaf_width: (value: 0.08,",
+            "leaf_width: (value: 0.0,",
+            "leaf_width",
+        ),
+        (
+            "leaf_nir_absorptance: (value: 0.20,",
+            "leaf_nir_absorptance: (value: 1.2,",
+            "leaf_nir_absorptance",
+        ),
+        (
+            "leaf_emissivity: (value: 0.97,",
+            "leaf_emissivity: (value: 0.0,",
+            "leaf_emissivity",
+        ),
+        (
+            "abaxial_conductance_share: (value: 0.875,",
+            "abaxial_conductance_share: (value: -0.1,",
+            "abaxial_conductance_share",
+        ),
+    ];
+    for (from, to, key) in cases {
+        assert!(BEAN.contains(from), "{from}");
+        let e = Species::from_ron(&BEAN.replacen(from, to, 1)).unwrap_err();
+        assert!(
+            e.to_string().starts_with(&format!("constants.{key}:")),
+            "{e}"
+        );
+    }
+}
+
+/// R1a: the thickening keys and tables must be well formed.
+#[test]
+fn thickening_keys_are_checked() {
+    let cases = [
+        (
+            "secondary_growth: (value: 1.0,",
+            "secondary_growth: (value: 0.5,",
+            "thickening.secondary_growth:",
+        ),
+        (
+            "stem_radial_rate_max: (value: 0.1,",
+            "stem_radial_rate_max: (value: -0.1,",
+            "thickening.stem_radial_rate_max:",
+        ),
+        (
+            "(4.0, 0.0005), (5.0, 0.001)",
+            "(5.0, 0.0005), (5.0, 0.001)",
+            "root_secondary_rate:",
+        ),
+        (
+            "points: [(0.0, 4.0), (20.0, 4.0), (40.0, 2.0)], x_unit: \"cm\"",
+            "points: [(0.0, 4.0), (20.0, 4.0), (40.0, 2.0)], x_unit: \"m\"",
+            "roots[tap].secondary_factor.x_unit:",
+        ),
+        (
+            "points: [(0.0, 0.1)]",
+            "points: []",
+            "roots[lateral].secondary_factor:",
+        ),
+    ];
+    for (from, to, at) in cases {
+        assert!(BEAN.contains(from), "{from}");
+        let e = Species::from_ron(&BEAN.replacen(from, to, 1)).unwrap_err();
+        assert!(e.to_string().starts_with(at), "{e}");
+    }
+}
+
+/// Tables interpolate linearly and hold level beyond their ends.
+#[test]
+fn tables_interpolate() {
+    let s = Species::from_ron(BEAN).unwrap();
+    let t = &s.root_secondary_rate;
+    assert!(t.at(-1.0).abs() < 1e-15);
+    assert!((t.at(4.5) - 0.00075).abs() < 1e-15);
+    assert!((t.at(100.0) - 0.003).abs() < 1e-15);
+    let tap = &s.roots[0].secondary_factor;
+    assert!((tap.at(30.0) - 3.0).abs() < 1e-12);
+    assert!((tap.at(80.0) - 2.0).abs() < 1e-15);
+    // The rate is a diameter increment: 0.1 cm in 43 days (OpenSimRoot's note).
+    let n = 43_000;
+    let dx = 43.0 / f64::from(n);
+    let total: f64 = (0..n).map(|k| t.at((f64::from(k) + 0.5) * dx) * dx).sum();
+    assert!((total - 0.1).abs() < 1e-3, "{total}");
 }

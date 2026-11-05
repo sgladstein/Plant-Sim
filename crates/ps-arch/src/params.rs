@@ -2,7 +2,7 @@
 
 use ps_graph::Allometry;
 use ps_physio::allocation::{CarbonParams, Temperature};
-use ps_physio::{Cardinal, GrowthTemperature, LeafParams, Thresholds};
+use ps_physio::{Cardinal, GrowthTemperature, LeafEnergyParams, LeafParams, Thresholds};
 use ps_species::{RootOrigin, Species, Traits};
 use ps_units::{
     Celsius, DegreeDays, GPerM3, GramsDM, KgPerMH, M2, M2PerG, M2PerHour, MPerG, Meters,
@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::grass::GrassParams;
 use crate::nitrogen::NitrogenParams;
+use crate::thicken::ThickeningParams;
 use crate::vine::ClimbingParams;
 
 /// Thermal time per day at the optimum temperature, °C·day, for converting rates given
@@ -65,6 +66,10 @@ pub struct RootParams {
     pub specific_length: MPerG,
     /// Gravitropism weight.
     pub gravitropism: f64,
+    /// Secondary growth factor by distance from the root's base, `(m, factor)`
+    /// (R1a, decision 0036).
+    #[serde(default)]
+    pub secondary_factor: Vec<(f64, f64)>,
 }
 
 /// Non-heritable plant-to-plant variation (decision 0027), in model units.
@@ -132,6 +137,8 @@ pub struct HerbParams {
     pub allometry: Allometry,
     /// PAR absorptance of leaves.
     pub absorptance: f64,
+    /// Leaf energy balance parameters (WP27, decision 0034).
+    pub energy: LeafEnergyParams,
     /// Photosynthetic capacity at the end of leaf life.
     pub capacity_floor: f64,
     /// FTSW below which conductance falls.
@@ -216,7 +223,7 @@ pub struct HerbParams {
     pub shade_pod_set: f64,
     /// Leaf lifespan in thermal age.
     pub leaf_lifespan: DegreeDays,
-    /// Air temperature that kills leaves.
+    /// Leaf temperature that kills a leaf (its own, WP27; air for the growing points).
     pub frost: Celsius,
     /// Flowers per raceme.
     pub flowers_per_raceme: u32,
@@ -259,6 +266,9 @@ pub struct HerbParams {
     pub root_segment: Meters,
     /// Root types, in file order.
     pub roots: Vec<RootParams>,
+    /// Stem and root secondary growth (R1a, decision 0036).
+    #[serde(default)]
+    pub thickening: ThickeningParams,
     /// Leaf reserve concentration where sink feedback on capacity starts, g C per g DM.
     pub feedback_onset: f64,
     /// Leaf reserve concentration where capacity reaches zero, g C per g DM.
@@ -306,6 +316,12 @@ impl HerbParams {
                     insertion: Radians(r.insertion_angle.value.to_radians()),
                     specific_length: MPerG(1.0 / (root_density * area).max(1e-12)),
                     gravitropism: r.gravitropism,
+                    secondary_factor: r
+                        .secondary_factor
+                        .points
+                        .iter()
+                        .map(|&(x, f)| (x * CM, f))
+                        .collect(),
                 }
             })
             .collect();
@@ -326,6 +342,16 @@ impl HerbParams {
                 seed_aspect: c.seed_aspect.value,
             },
             absorptance: c.leaf_absorptance.value,
+            energy: LeafEnergyParams {
+                width: Meters(c.leaf_width.value),
+                // Absorbed near infrared per absorbed PAR energy: the solar NIR per PAR
+                // energy times the ratio of the absorptances.
+                nir_ratio: (1.0 - ps_light::PAR_FRACTION) / ps_light::PAR_FRACTION
+                    * c.leaf_nir_absorptance.value
+                    / c.leaf_absorptance.value,
+                emissivity: c.leaf_emissivity.value,
+                abaxial_share: c.abaxial_conductance_share.value,
+            },
             capacity_floor: c.leaf_capacity_floor.value,
             ftsw_conductance: c.ftsw_threshold.value,
             ftsw_expansion: c.ftsw_expansion_threshold.value,
@@ -401,6 +427,7 @@ impl HerbParams {
             grass: s.grass.as_ref().map(GrassParams::new),
             root_segment: Meters(c.root_segment_length.value * CM),
             roots,
+            thickening: ThickeningParams::new(s),
             feedback_onset: c.reserve_feedback_onset.value,
             feedback_full: c.reserve_feedback_full.value,
             uptake_rate: M2PerHour(c.root_uptake_rate.value),

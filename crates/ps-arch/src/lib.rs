@@ -20,6 +20,7 @@ pub mod nitrogen;
 pub mod params;
 mod roots;
 mod shoot;
+pub mod thicken;
 pub mod vine;
 
 use ps_graph::{
@@ -28,7 +29,9 @@ use ps_graph::{
 };
 use ps_light::SkySector;
 use ps_physio::allocation::{self, CarbonLedger, HourInputs, HourReport};
-use ps_physio::{ClassTable, Events, LeafEnv, Phenology, PhysioError, Stage, leaf_capacity};
+use ps_physio::classes::{REFERENCE_HEIGHT, Reference};
+use ps_physio::energy::{self, Air, Site};
+use ps_physio::{ClassTable, Events, Phenology, PhysioError, Stage, leaf_capacity};
 use ps_rng::{Purpose, RngKey};
 use ps_soil::{RootCells, SoilError, SoilGrid, Uptake, stress_factor};
 use ps_species::{Species, Traits};
@@ -183,6 +186,20 @@ pub struct Meta {
     /// The coil of an internode wound around a support (WP22).
     #[serde(default)]
     pub twine: Option<Twine>,
+    /// The leaf's temperature in the last hour, area-weighted over its sunlit and
+    /// shaded parts (leaves; WP27).
+    #[serde(default)]
+    pub t_leaf: Option<Celsius>,
+    /// The leaf's lowest temperature so far today, for frost (leaves; WP27).
+    #[serde(default)]
+    pub t_leaf_min: Option<Celsius>,
+    /// The most leaf area this internode has carried above it, m² (the pipe model's
+    /// `A_max`, R1a).
+    #[serde(default)]
+    pub supported_area: f64,
+    /// This internode's pipe-model target cross-section, m² (R1a).
+    #[serde(default)]
+    pub pipe_target: f64,
 }
 
 impl Meta {
@@ -201,6 +218,10 @@ impl Meta {
             fixation: 0.0,
             mined: false,
             twine: None,
+            t_leaf: None,
+            t_leaf_min: None,
+            supported_area: 0.0,
+            pipe_target: 0.0,
         }
     }
 }
@@ -361,6 +382,13 @@ pub struct DayStats {
     pub gross_potential: f64,
     /// Gross assimilation lost to the sink feedback, same units.
     pub gross_lost: f64,
+    /// Net leaf assimilation today (after leaf day respiration and the sink feedback),
+    /// g C.
+    #[serde(default)]
+    pub assimilation: f64,
+    /// Water taken from the soil today, which the plant transpires, kg.
+    #[serde(default)]
+    pub transpiration: f64,
 }
 
 fn lowest() -> f64 {
@@ -382,6 +410,8 @@ impl Default for DayStats {
             thermal: 0.0,
             gross_potential: 0.0,
             gross_lost: 0.0,
+            assimilation: 0.0,
+            transpiration: 0.0,
         }
     }
 }
@@ -461,6 +491,20 @@ pub struct DayReport {
     /// Carbon respired to fix nitrogen today, g C.
     #[serde(default)]
     pub fixation_carbon: f64,
+    /// Net leaf assimilation today (after leaf day respiration and the sink feedback),
+    /// g C.
+    #[serde(default)]
+    pub assimilation: f64,
+    /// Diameter of the hypocotyl, the basal stem, m (R1a).
+    #[serde(default)]
+    pub hypocotyl_diameter: f64,
+    /// Diameter of the tap root 5 cm below its base, m (R1a; 0 while it is shorter).
+    #[serde(default)]
+    pub tap_root_diameter: f64,
+    /// Water taken from the soil today, which the plant transpires, kg (the demand less
+    /// the shortfall).
+    #[serde(default)]
+    pub transpiration: f64,
 }
 
 /// What sets one plant apart from its siblings at sowing (decision 0027): the seed it
@@ -617,6 +661,22 @@ pub struct Plant {
     sky: Vec<SkySector>,
 }
 
+/// What a plant's hourly class table depends on besides the hour's weather: leaf
+/// parameter bits, leaf energy parameter bits and the conductance stress factor's bits
+/// ([`Plant::class_table_key`]).
+pub type TableKey = ([u64; 14], [u64; 4], u64);
+
+/// The hour's air for the leaf energy balance.
+fn hour_air(ctx: &HourCtx<'_>) -> Air {
+    let wx = ctx.weather;
+    Air {
+        t_air: wx.t_air,
+        vpd: wx.vpd,
+        patm: ctx.patm,
+        cloud: wx.cloud_fraction,
+    }
+}
+
 /// Inputs to the plant's hourly steps.
 #[derive(Copy, Clone, Debug)]
 pub struct HourCtx<'a> {
@@ -640,8 +700,9 @@ pub struct HourLens {
     /// Carbon moved from each organ's parent into it during the hour (negative: an
     /// export to the parent), indexed by organ id.
     pub phloem_import: Vec<GramsC>,
-    /// The temperature each organ grew at (air for the shoot, soil layer for roots
-    /// and the seed; leaf temperature replaces air for leaves with WP27).
+    /// Each organ's temperature: a leaf's own (WP27, its gas exchange and frost; its
+    /// expansion reads air), air for the rest of the shoot, the soil layer for roots
+    /// and the seed.
     pub temperature: Vec<Celsius>,
 }
 
@@ -935,25 +996,40 @@ impl Plant {
     }
 
     /// What this hour's class table depends on besides the hour's weather: the leaf
-    /// parameters and the conductance stress factor, as bits. Plants of one soil with
-    /// equal keys have identical tables (call after [`Plant::update_water_status`]).
+    /// parameters, the leaf energy parameters and the conductance stress factor, as
+    /// bits. Plants of one soil with equal keys have identical tables (call after
+    /// [`Plant::update_water_status`]).
     #[must_use]
-    pub fn class_table_key(&self) -> ([u64; 14], u64) {
-        (self.params.leaf.bit_key(), self.stress.0.to_bits())
+    pub fn class_table_key(&self) -> TableKey {
+        (
+            self.params.leaf.bit_key(),
+            self.params.energy.bit_key(),
+            self.stress.0.to_bits(),
+        )
     }
 
-    /// This hour's class table (call after [`Plant::update_water_status`]).
+    /// This hour's class table (call after [`Plant::update_water_status`]): gas
+    /// exchange and the leaf energy balance solved together at every node, for a
+    /// horizontal leaf at [`REFERENCE_HEIGHT`] under the open sky in the hour's air and
+    /// wind (WP27, decision 0034).
     #[must_use]
     pub fn class_table(&self, ctx: &HourCtx<'_>) -> ClassTable {
         let wx = ctx.weather;
-        let env = LeafEnv {
-            par: UmolPerM2S(0.0),
-            t_leaf: wx.t_air,
-            vpd: wx.vpd,
+        let reference = Reference {
+            air: hour_air(ctx),
             ca: ctx.co2,
-            patm: ctx.patm,
+            wind: energy::wind_at(wx.wind.0, REFERENCE_HEIGHT),
         };
-        ClassTable::build(&self.params.leaf, &env, self.stress.0)
+        // Without sun or sky light every leaf reads the PAR-0 node.
+        let dark = wx.direct.0 <= 0.0 && wx.diffuse.0 <= 0.0;
+        ClassTable::build_coupled(
+            &self.params.leaf,
+            &self.params.energy,
+            &reference,
+            self.stress.0,
+            dark,
+        )
+        .0
     }
 
     /// The rest of [`Plant::water_demand`] with this hour's class table, which may be
@@ -975,6 +1051,7 @@ impl Plant {
             } else {
                 0.0
             };
+            let air = hour_air(ctx).terms();
             for id in leaves {
                 let i = id.index();
                 let a = ps_light::absorbed_par(
@@ -1008,24 +1085,54 @@ impl Plant {
                 let f = a.sunlit_fraction;
                 let a_net = f * sun.a_net.0 + (1.0 - f) * shade.a_net.0;
                 let rd = f * sun.rd.0 + (1.0 - f) * shade.rd.0;
-                let e0 = f * sun.e.0 + (1.0 - f) * shade.e.0;
                 // Sink feedback (decision 0013, amended in WP9 review) acts on gross
                 // assimilation only, so a sugar-filled leaf still pays its respiration;
                 // conductance and transpiration follow assimilation.
                 let fb = hp.sink_feedback(conc);
                 let gross = (a_net + rd).max(0.0);
                 let a_net = fb * gross - rd;
-                let e = if gross > 0.0 {
-                    e0 * (a_net + rd) / gross
+                // Each part's own temperature and transpiration (decision 0034): its
+                // light, its sky view, the wind at its height inside the plant, and
+                // the conductance it read, which follows assimilation.
+                let ratio = if gross > 0.0 {
+                    (a_net + rd) / gross
                 } else {
-                    e0
+                    1.0
                 };
+                let light = &self.arena.light[i];
+                let z = self
+                    .positions
+                    .get(i)
+                    .map_or(0.0, |p| 0.5 * (p.0[2] + p.1[2]));
+                let part = |par: UmolPerM2S, gs: f64| {
+                    let site = Site {
+                        par,
+                        sky_view: light.diffuse,
+                        wind: energy::leaf_wind(wx.wind.0, z, light.diffuse),
+                    };
+                    energy::leaf_temperature(&hp.energy, &air, &site, gs * ratio)
+                };
+                let shaded = part(a.shaded, shade.gs.0);
+                let (t_leaf, e) = if f > 0.0 {
+                    let sunlit = part(a.sunlit, sun.gs.0);
+                    (
+                        f * sunlit.t_leaf.0 + (1.0 - f) * shaded.t_leaf.0,
+                        f * sunlit.e.0 + (1.0 - f) * shaded.e.0,
+                    )
+                } else {
+                    (shaded.t_leaf.0, shaded.e.0)
+                };
+                // Dew on a leaf does not water the plant.
+                let e = e.max(0.0);
                 let m = &mut self.meta[i];
+                m.t_leaf = Some(Celsius(t_leaf));
+                m.t_leaf_min = Some(Celsius(m.t_leaf_min.map_or(t_leaf, |t| t.0.min(t_leaf))));
                 m.par_today.0 += a.mean().0 * 3600.0 * 1e-6;
                 m.par_hours += 1;
                 self.today.gross_potential += gross * area;
                 self.today.gross_lost += (1.0 - fb) * gross * area;
                 self.income[i] = UmolPerM2S(a_net).carbon_per_hour(ps_units::M2(area));
+                self.today.assimilation += self.income[i].0;
                 water += e * area * 3600.0 * KG_PER_MOL_WATER;
             }
         }
@@ -1132,6 +1239,7 @@ impl Plant {
         let wx = ctx.weather;
         if let Some(u) = uptake {
             self.shortfall += u.shortfall;
+            self.today.transpiration += u.actual.0;
         }
         let seed_t = Self::soil_temperature(soil, self.collar_position[2]);
         // Germination (§3.10): hours with the seed cell above the FTSW threshold and
@@ -1165,6 +1273,8 @@ impl Plant {
         // Nodules pay for the hour's fixation first (decision 0020).
         self.fix_hour();
         let respiring = self.phenology.stage != Stage::Mature;
+        let stress = self.stress.1 * self.nitrogen.status;
+        let secondary = self.secondary_potential(&temps, ctx.tick, stress);
         let (flows, lens_temps) = match lens {
             Some(l) => (Some(&mut l.phloem_import), Some(&mut l.temperature)),
             None => (None, None),
@@ -1178,15 +1288,22 @@ impl Plant {
                 temperature: &temps,
                 income: &self.income,
                 ftsw: self.ftsw,
-                stress: self.stress.1 * self.nitrogen.status,
+                stress,
                 respiring,
                 n_floor: Some(&self.params.nitrogen.growth_floor),
+                secondary: &secondary,
             },
             &mut self.ledger,
             flows,
         )?;
         if let Some(t) = lens_temps {
             t.clone_from(&temps);
+            // Leaves show their own temperature (WP27); their expansion reads air.
+            for id in self.arena.alive_of(OrganKind::Leaf) {
+                if let Some(tl) = self.meta[id.index()].t_leaf {
+                    t[id.index()] = tl;
+                }
+            }
         }
         // Growing organs draw nitrogen for the hour's growth from the pool.
         self.top_up_hour();
@@ -1264,6 +1381,8 @@ impl Plant {
                 self.flowering(now)?;
             }
             self.root_initiation(now, soil)?;
+            // Stem pipe-model targets from the leaf area carried (R1a).
+            self.pipe_targets();
         }
         // 4. Senescence and shedding.
         self.senescence(now)?;
@@ -1383,6 +1502,7 @@ impl Plant {
             }
             m.par_today = MolPerM2Day(0.0);
             m.par_hours = 0;
+            m.t_leaf_min = None;
         }
         if self.sky.is_empty() {
             self.sky = ps_light::sky_sectors().to_vec();
@@ -1669,9 +1789,21 @@ impl Plant {
             n_status: self.nitrogen.status,
             nodule_mass: mass(OrganKind::Nodule),
             fixation_carbon: self.nitrogen.today.fixation_carbon.0,
+            assimilation: self.today.assimilation,
+            hypocotyl_diameter: if a.alive[self.hypocotyl.index()] {
+                2.0 * a.size[self.hypocotyl.index()].radius.0
+            } else {
+                0.0
+            },
+            tap_root_diameter: self.tap_root_diameter(TAP_ROOT_DEPTH),
+            transpiration: self.today.transpiration,
         }
     }
 }
+
+/// Where along the tap root its diameter is reported (shovelomics measure it a few cm
+/// below the hypocotyl; R1 spec §6).
+const TAP_ROOT_DEPTH: f64 = 0.05;
 
 fn zero_coeffs() -> LightCoeffs {
     LightCoeffs {

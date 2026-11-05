@@ -40,13 +40,17 @@ van Genuchten (1980) retention per texture:
 
 The published texture tables (Carsel and Parrish 1988 [K, to verify]) don't put loam's
 −33 kPa point at the sim's field capacity of 0.27. So **anchor the curve on the sim's
-own values**: per texture, keep `θ_s` (saturation, already in the soil params) and a
-literature `n`, and solve `α` and `θ_r` so that `θ(−33 kPa) = FC` and
-`θ(−1500 kPa) = WP`. Water contents and every existing result stay as they are; only
+own values**: per texture, keep `θ_s` (saturation, already in the soil params), set
+`θ_r = 0`, and solve `n` and `α` so that `θ(−33 kPa) = FC` and `θ(−1500 kPa) = WP`.
+Keeping a literature `n` and solving `θ_r` instead fails: clay's `θ_r` comes out
+negative, sand's equals its wilting point, and loam's is above air-dry
+([numbers](numbers/README.md), `numbers/vg_fit.py`) [I]. Results: loam n 1.215, α 0.0305
+cm⁻¹; sand 1.289, 0.088; clay 1.165, 0.0094. Water contents and every existing result stay as they are; only
 ψ is new. Invert the curve per cell when ψ is needed (closed form).
 
 Done when: ψ is −33 kPa at field capacity and −1.5 MPa at wilting point for each
-texture to 1e-9, it is monotone in θ, and the goldens are unchanged.
+texture to 1e-9, it is monotone in θ, `θ_r` is at or below air-dry and ψ is finite down
+to air-dry, and the goldens are unchanged.
 
 ## 4. R3b: the hydraulic network (detailed level)
 
@@ -98,25 +102,27 @@ shortfall is logged, as today. Plant order does not matter.
 
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
-| van Genuchten `n` per texture | loam 1.56, sand 2.68, clay 1.09 | - | Carsel and Parrish 1988 [K, to verify] |
-| `root_radial_conductivity` per root type (`Lp_r`) | ~1e-7 (fine) to ~2e-8 (thickened) | m s⁻¹ MPa⁻¹ | [K, to verify]; thickening (R1a) lowers it |
-| `root_axial_conductance` per root type (`K_x`) | from metaxylem diameter by Hagen–Poiseuille | m⁴ s⁻¹ MPa⁻¹ | Strock et al. 2020 measured bean metaxylem [F]; values to extract |
-| `stem_xylem_conductivity` (`K_s`), `xylem_area_fraction` | to set | kg m⁻¹ s⁻¹ MPa⁻¹, - | [K, to verify] |
-| `leaf_hydraulic_conductance` (`K_leaf`) | about 5 to 15 | mmol m⁻² s⁻¹ MPa⁻¹ | [K, to verify] for bean |
-| Tuzet `s_f`, `ψ_f` | about 3, −1.0 | MPa⁻¹, MPa | [K, to verify] |
-| `turgor_loss_point` (`ψ_tlp`), `ψ_0` | about −1.0, −0.2 | MPa | [K, to verify] for bean |
+| van Genuchten `n`, `α` per texture (`θ_r` 0) | loam 1.215, 0.0305; sand 1.289, 0.088; clay 1.165, 0.0094 | -, cm⁻¹ | fitted to the sim's FC and WP [I]; Carsel and Parrish 1988 texture means differ (1.56, 2.68, 1.09) [F] |
+| `root_radial_conductivity` per root type (`Lp_r`) | 2e-7 young and fine (0.8 to 6e-7), about 5e-8 thickened | m s⁻¹ MPa⁻¹ | Fiscus and Markhart 1979, whole bean root systems [F]; thickened [I] |
+| `root_axial_conductance` per root type (`K_x`) | basal about 1e-10; tap root apex 2e-11, middle 4e-10, base 2e-9 | m⁴ s⁻¹ MPa⁻¹ | Massas 2022 [F]; Barrios-Gómez 2012 metaxylem by Hagen–Poiseuille × 0.4 [I] |
+| `stem_xylem_conductivity` (`K_s`), `xylem_area_fraction` | calibrate `K_s · A_x` to stem k_h 2.9e-5 kg m s⁻¹ MPa⁻¹ | kg m⁻¹ s⁻¹ MPa⁻¹, - | Holste 2006 [F]; stem resistance is about 1000× below leaf, so don't tune it |
+| `leaf_hydraulic_conductance` (`K_leaf`) | about 8.7 (5 to 15); vulnerability P12 −0.72, P50 −1.00 MPa | mmol m⁻² s⁻¹ MPa⁻¹ | Haverroth 2025 [F, back-calculated] |
+| Tuzet `s_f`, `ψ_f` | 4 (3 to 6), −1.0 | MPa⁻¹, MPa | fit to bean closure anchors [F, I]; heritable for M3 (Buckley 2024: half of 12 bean genotypes anisohydric) |
+| `turgor_loss_point` (`ψ_tlp`), `ψ_0` | −0.9 (−0.6 to −1.3), −0.2 | MPa | Zlatev and Stoyanov 2005; Haverroth 2025 [F] |
 
 `root_axial_conductance` and `root_radial_conductivity` become heritable traits for M3
 (Strock et al. 2020: low-conductance bean lines conserved soil water for later in the
 season) [F].
 
 ### 4.5 Done when (R3b)
-- **Diurnal cycle:** on a sunny, well-watered day, predawn leaf ψ is within 0.1 MPa of
-  the root-zone soil ψ, and midday leaf ψ falls to −0.4 to −0.8 MPa [K, to verify].
+- **Diurnal cycle:** on a sunny, well-watered day, predawn leaf ψ is within 0.2 MPa of
+  the root-zone soil ψ (bean transpires at night), and midday leaf ψ falls to −0.4 to
+  −1.1 MPa [F, numbers/README.md].
 - **Wilting and recovery** (`data/scenarios/viewer/wilt_and_recover.ron`, WP20): during
   the dry-down, midday leaf ψ drops below `ψ_tlp` and turgor reaches 0; after watering,
-  turgor is back above 0.5 within 6 sim-hours [K, to verify against bean rewatering
-  data].
+  turgor is back above 0.5 within 6 sim-hours (Kim and Lee-Stadelmann 1984, moderate
+  stress [F]). After severe stress (−1.6 to −2.5 MPa) real stomata take up to 8 days
+  (Trujillo 2013 [F]); R3 has no stomatal lag, and the card says so.
 - **Compensation:** in the R2b split pot, more than half of the uptake comes from the wet
   half once the dry half falls below 30% FTSW.
 - Every M0 gate passes; the water ledger closes at 1e-9 every hour.
@@ -146,8 +152,10 @@ with uniform soil ψ and reduces it to:
 Each hour:
 - `ψ_seq = Σ_c SUF_c ψ_c` (the root zone's effective soil potential);
 - `ψ_collar = ψ_seq − E_total / K_rs`;
-- uptake per cell `U_c = E_total · SUF_c + K_rs · SUF_c · (ψ_c − ψ_seq)` (the
-  compensation term: wet cells give more than their share);
+- uptake per cell `U_c = E_total · SUF_c + K_comp · SUF_c · (ψ_c − ψ_seq)` (the
+  compensation term: wet cells give more than their share; `K_comp` is Couvreur's own
+  compensation conductance, a parameter defaulting to `K_rs` and the knob for the
+  fidelity report's hard cases [F, numbers/README.md]);
 - `ψ_leaf,i = ψ_collar − E_i / K_path,i`.
 
 That is O(cells with roots) per plant per hour, the cost of today's proportional uptake.

@@ -641,11 +641,18 @@ impl Plant {
             )?;
             self.book_dead_nitrogen(&deaths);
         }
+        // Growing points, flowers and pods freeze at air temperature; each leaf at its
+        // own lowest temperature of the day, which a clear night takes below the air's
+        // (WP27; owner decision 2026-11-05). A leaf without one (no area yet) reads air.
         let frost = self.today.hours > 0 && self.today.t_min < hp.frost.0;
         let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
         for id in leaves {
             let i = id.index();
             let m = &mut self.meta[i];
+            let leaf_frost = match m.t_leaf_min {
+                Some(t) => t.0 < hp.frost.0,
+                None => frost,
+            };
             if m.expanded.is_some() && m.light_index < hp.shade_light {
                 m.shade_days += 1;
             } else {
@@ -655,7 +662,7 @@ impl Plant {
             let old = m
                 .expanded
                 .is_some_and(|x| self.arena.thermal_age[i].0 >= x.0 + hp.leaf_lifespan.0);
-            if old || frost || mature || m.shade_days >= hp.shade_days {
+            if old || leaf_frost || mature || m.shade_days >= hp.shade_days {
                 self.shed_organ(id, now)?;
             }
         }

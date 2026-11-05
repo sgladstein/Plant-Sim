@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 
 use bevy::prelude::{Res, ResMut};
 use ps_graph::{OrganId, OrganKind};
-use ps_ui::{Field, Inspector, PlayerAction};
+use ps_ui::{Field, Inspector, PlayerAction, Tools};
 use ps_view::Selection;
 use ps_world::{DayRow, PlantEntry};
 
@@ -21,6 +21,7 @@ const PHENOLOGY: &str = "docs/models/thermal-time-and-phenology.md";
 const WATER: &str = "docs/models/soil-and-water.md";
 const ARCH: &str = "docs/models/herb-architecture.md";
 const VARIATION: &str = "docs/models/plant-variation.md";
+const GENOME: &str = "docs/models/species-and-genome.md";
 
 /// `FirstTrifoliate` to "first trifoliate".
 fn words(debug: &str) -> String {
@@ -43,7 +44,12 @@ fn capitalized(s: &str) -> String {
 
 /// Rebuilds the inspector when the selection or the snapshot changes.
 #[allow(clippy::needless_pass_by_value)]
-pub fn inspect(src: Res<SimSource>, selection: Res<Selection>, mut inspector: ResMut<Inspector>) {
+pub fn inspect(
+    src: Res<SimSource>,
+    selection: Res<Selection>,
+    tools: Res<Tools>,
+    mut inspector: ResMut<Inspector>,
+) {
     let Some(picked) = selection.picked else {
         if inspector.built_for.is_some() {
             *inspector = Inspector::default();
@@ -63,8 +69,11 @@ pub fn inspect(src: Res<SimSource>, selection: Res<Selection>, mut inspector: Re
         return;
     };
     let fraction = src.radiation_fraction(picked.pot);
+    let name = |id: u32| plant_name(snap, id);
     let (title, fields, why) = if let Some(i) = picked.organ {
-        organ(plant, i, src.day_start_hour(), fraction)
+        let (title, mut fields, why) = organ(plant, i, src.day_start_hour(), fraction);
+        fields.extend(parentage(plant, i, name));
+        (title, fields, why)
     } else {
         let row = snap.history.iter().rev().find(|r| r.plant == plant.id);
         let (title, mut fields, why) = whole_plant(
@@ -82,9 +91,10 @@ pub fn inspect(src: Res<SimSource>, selection: Res<Selection>, mut inspector: Re
         }
         (title, fields, why)
     };
+    let pollen = tools.pollen.as_ref().map(|(pot, n)| (*pot, n.as_str()));
     let actions = picked
         .organ
-        .map(|i| actions(plant, picked.pot, i))
+        .map(|i| actions(plant, picked.pot, i, pollen))
         .unwrap_or_default();
     *inspector = Inspector {
         built_for: Some(key),
@@ -95,12 +105,74 @@ pub fn inspect(src: Res<SimSource>, selection: Res<Selection>, mut inspector: Re
     };
 }
 
-/// What the player can do to organ `i` of the plant in pot `pot` (WP25): pick a living
-/// pod or ear, or cut a living shoot organ (the sim refuses the collar and hypocotyl).
+/// "Plant N", numbered as the snapshot lists the plants (the seed library's names).
 #[must_use]
-pub fn actions(p: &PlantEntry, pot: usize, i: usize) -> Vec<(String, PlayerAction)> {
+pub fn plant_name(snap: &ps_session::Snapshot, id: u32) -> String {
+    snap.plants
+        .iter()
+        .position(|p| p.id == id)
+        .map_or_else(|| format!("Plant id {id}"), |i| format!("Plant {}", i + 1))
+}
+
+/// Who pollinated a flower, a pod's flower or a seed (WP29).
+pub fn parentage(p: &PlantEntry, i: usize, name: impl Fn(u32) -> String) -> Vec<Field> {
+    let id = OrganId(u32::try_from(i).unwrap_or(u32::MAX));
+    let father = |pollen: Option<u32>| pollen.map_or_else(|| "itself (selfed)".to_owned(), &name);
+    if let Some(origin) = p.plant.seed_origin(id) {
+        return vec![
+            Field::new("Mother", name(p.id), "", GENOME),
+            Field::new("Father", father(origin.pollen), "", GENOME),
+        ];
+    }
+    if let Some(f) = p.plant.flowers.iter().find(|f| f.id == id) {
+        let by = f
+            .pollen
+            .map_or_else(|| "not yet: it selfs if left".to_owned(), &name);
+        return vec![Field::new("Pollinated by", by, "", GENOME)];
+    }
+    if let Some(pod) = p.plant.pods.iter().find(|x| x.id == id) {
+        return vec![Field::new("Pollen from", father(pod.pollen), "", GENOME)];
+    }
+    Vec::new()
+}
+
+/// What the player can do to organ `i` of the plant in pot `pot` (WP25, WP29): pick a
+/// living pod or ear, cut a living shoot organ (the sim refuses the collar and
+/// hypocotyl), take pollen from an open flower, or put `pollen` (the pot it came from
+/// and its name) on an open flower of another plant.
+#[must_use]
+pub fn actions(
+    p: &PlantEntry,
+    pot: usize,
+    i: usize,
+    pollen: Option<(usize, &str)>,
+) -> Vec<(String, PlayerAction)> {
     let id = OrganId(u32::try_from(i).unwrap_or(u32::MAX));
     let mut out = Vec::new();
+    let open = p
+        .plant
+        .flowers
+        .iter()
+        .any(|f| f.id == id && p.plant.arena.alive.get(i) == Some(&true));
+    if open {
+        out.push((
+            "Collect pollen".to_owned(),
+            PlayerAction::CollectPollen { pot },
+        ));
+    }
+    if let Some((from, name)) = pollen
+        && from != pot
+        && p.plant.check_pollinate(id).is_ok()
+    {
+        out.push((
+            format!("Pollinate with {name}'s pollen"),
+            PlayerAction::Pollinate {
+                pot,
+                organ: i,
+                pollen: from,
+            },
+        ));
+    }
     if p.plant.check_harvest(id).is_ok() {
         let what = if p.plant.params.grass.is_some() {
             "Harvest ear"
@@ -421,6 +493,7 @@ pub fn competition(l: &ps_session::PlantLens) -> Vec<Field> {
 
 /// Title, fields and why line for the whole plant, from its latest daily row.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One line per field.
 pub fn whole_plant(
     p: &PlantEntry,
     row: Option<&DayRow>,
@@ -487,6 +560,18 @@ pub fn whole_plant(
             WATER,
         ),
         Field::new(
+            "Net assimilation",
+            format!("{:.2}", d.assimilation),
+            "g C today",
+            CARBON,
+        ),
+        Field::new(
+            "Water taken up",
+            format!("{:.1}", d.transpiration * 1000.0),
+            "g today",
+            WATER,
+        ),
+        Field::new(
             "Water shortfall",
             format!("{:.1}", d.shortfall * 1000.0),
             "g today",
@@ -547,13 +632,13 @@ mod tests {
         let pod = (0..a.len())
             .find(|&i| a.kind[i] == OrganKind::Pod && a.alive[i])
             .unwrap_or_else(|| unreachable!("no living pod by day 70"));
-        let offered = actions(p, 0, pod);
+        let offered = actions(p, 0, pod, None);
         assert!(
             offered
                 .iter()
                 .any(|(_, x)| *x == PlayerAction::Harvest { pot: 0, organ: pod })
         );
-        assert!(actions(p, 0, p.plant.collar.index()).is_empty());
+        assert!(actions(p, 0, p.plant.collar.index(), None).is_empty());
     }
 
     #[test]
@@ -615,6 +700,61 @@ mod tests {
             shown[0][0].value, shown[1][0].value,
             "two plants, one seed size"
         );
+    }
+
+    #[test]
+    fn an_open_flower_takes_another_plants_pollen() {
+        let data = crate::sim_source::find_data_dir(None).unwrap_or_else(|e| unreachable!("{e}"));
+        let (mut w, _) = crate::sim_source::load_world(
+            &data,
+            std::path::Path::new(crate::sim_source::DEFAULT_SCENARIO),
+        )
+        .unwrap_or_else(|e| unreachable!("{e:#}"));
+        let open = |w: &ps_world::World, k: usize| {
+            let p = &w.state().plants[k];
+            p.plant
+                .flowers
+                .iter()
+                .map(|f| f.id.index())
+                .find(|&i| p.plant.check_pollinate(OrganId(i as u32)).is_ok())
+        };
+        for _ in 0..90 {
+            if open(&w, 0).is_some() && w.state().plants[1].plant.has_open_flower() {
+                break;
+            }
+            w.step_hour().unwrap_or_else(|e| unreachable!("{e}"));
+            for _ in 0..23 {
+                w.step_hour().unwrap_or_else(|e| unreachable!("{e}"));
+            }
+        }
+        let flower = open(&w, 0).unwrap_or_else(|| unreachable!("no open flower"));
+        let name = |id: u32| format!("Plant {}", id + 1);
+        let p = &w.state().plants[0];
+        assert_eq!(
+            parentage(p, flower, name)[0].value,
+            "not yet: it selfs if left"
+        );
+        let offered = actions(p, 0, flower, Some((1, "Plant 2")));
+        let labels: Vec<&str> = offered.iter().map(|(l, _)| l.as_str()).collect();
+        assert!(labels.contains(&"Collect pollen"), "{labels:?}");
+        assert!(
+            labels.contains(&"Pollinate with Plant 2's pollen"),
+            "{labels:?}"
+        );
+        // Its own pollen is not offered back to it.
+        assert!(actions(p, 0, flower, Some((0, "Plant 1"))).len() < offered.len());
+        let pollen = w.state().plants[1].id;
+        w.apply(ps_world::ActionKind::Pollinate {
+            plant: p.id,
+            organ: flower as u32,
+            pollen,
+        })
+        .unwrap_or_else(|e| unreachable!("{e}"));
+        // Logged actions apply as the next hour steps.
+        w.step_hour().unwrap_or_else(|e| unreachable!("{e}"));
+        let p = &w.state().plants[0];
+        assert_eq!(parentage(p, flower, name)[0].value, "Plant 2");
+        all_numbers_have_units(&parentage(p, flower, name));
     }
 
     #[test]

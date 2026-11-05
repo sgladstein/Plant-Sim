@@ -7,10 +7,10 @@ in docs/performance.md, and the STATUS perf line says where each budget stands.
 
 ## Budgets (docs/design-plan.md §7)
 
-| Scope | Budget | State on main, 4-core Xeon, after #75 (leaf-angle light) |
+| Scope | Budget | State after the 2026-11-05 bit-identical pass (4-core Xeon container about 15% slower than earlier ones) |
 | --- | --- | --- |
-| One bush bean in a pot (M0) | under 2 ms per sim-day | 2.2 to 2.3 ms, slightly over |
-| 30-bean plot (M2) | under 20 ms per sim-day | 24.5 to 24.9 ms, over |
+| One bush bean in a pot (M0) | under 2 ms per sim-day | 2.06 to 2.19 ms (main 2.66 in the same container): at the budget, likely under it on the earlier containers |
+| 30-bean plot (M2) | under 20 ms per sim-day | 22.7 ms (main 27.2 to 29.1 in the same container), about 2 ms over after scaling |
 | Viewer frame (M1) | under 16.7 ms on the owner's GTX 1070 at 2560 × 1440 | 6.55 ms mean, p99 9.61 (Vulkan uncapped, 2352 × 1325, real sim, f4bec25); re-time after #72 and #78 |
 
 There are no budgets for the pole beans (about 4 ms per plant per sim-day) or the
@@ -72,10 +72,17 @@ are the check. The workspace golden tests check the same thing in CI.
 | #60 | Root reach and joint uptake after WP24 (nitrogen): dense accumulation instead of sorting |
 | #62 | Hourly soil drainage and lateral exchange (soil step 20.6 to 17.5 µs per hour), and the CI bench summary |
 | #64, #70 | Pole and wheat scenarios added to the CI speed table |
+| this PR | mimalloc in the binaries, ray tails cut by per-direction shadows, per-axis footprints, own-cell index, parallel daily nitrogen with a summed-volume reach, lean soil storage sums: single_pot -20%, plot -17%, wheat_stand -14% |
 
 docs/performance.md has the details of each, including measured floors.
 
 ## Things tried that were slower (don't retry)
+
+- Branchless axis choice in the ray loop (an indexed `t_max` array): 35% slower than
+  the unrolled branches.
+- Per-layer horizontal bounds checked at each z step of a ray: saves 7% of steps on
+  the plot and costs as much. The sheared shadow (done) replaced it.
+- Shadow bins narrower than `cell · (1 + |slope|)`: fewer steps, more build time.
 
 - Overlapping the soil step with the demand pass (`rayon::join`).
 - Parallel class-table builds and parallel water status: a parallel section's
@@ -91,11 +98,15 @@ docs/performance.md has the details of each, including measured floors.
 
 ## Open work, in order
 
-1. **Profile the light fit after #75** (decision 0025). The fit now builds
+1. **Done 2026-11-05: profile the light fit after #75** (decision 0025); see the
+   pass in docs/performance.md. Was: The fit now builds
    footprint depth per direction (sun-up hours plus 16 sky sectors, about 31). It
    costs about 6 to 7% on the single pot and the plot. Look for bit-identical cuts
    in the logs per distinct leaf area density and in the per-direction adds.
-2. **Plot over budget** (24.5 ms against 20). Remaining cost per sim-day: daily
+2. **Plot over budget** (now 22.7 ms in a slower container, about 2 ms over). The
+   biggest bit-identical item left is the hourly growth section's overhead, about
+   2.7 ms per sim-day of wake-up and scheduling across 2,160 short parallel
+   sections (spinner jobs were tried before and did not help). Was 24.5 ms against 20. Remaining cost per sim-day: daily
    light and growth about 9.7 ms, hourly growth about 8.5 ms, demand 1.9, soil 1.7,
    uptake 0.7. The daily hash is a latency-bound chain, about 3.6 ms of serial
    time, and runs overlapped. Going clearly under 20 ms probably needs an owner

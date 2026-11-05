@@ -343,6 +343,11 @@ quantity!(
     "kg"
 );
 quantity!(
+    /// Speed, m s⁻¹ (wind).
+    MetersPerSecond,
+    "m/s"
+);
+quantity!(
     /// Square root of pressure, kPa^0.5 (the Medlyn slope g1).
     SqrtKPa,
     "kPa^0.5"

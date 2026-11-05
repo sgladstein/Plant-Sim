@@ -1,10 +1,10 @@
 //! Allometry: rendered dimensions from structural mass (§3.3, §3.4 secondary growth).
 //!
 //! - Leaves (and cotyledons): area = specific leaf area × mass.
-//! - Internodes and roots: length = specific length × mass; radius from tissue density,
-//!   `r = sqrt(mass / (ρ π L))`, which is constant for a fixed specific length. Herb
-//!   secondary thickening adds mass at fixed length through [`Allometry::thicken`]'s
-//!   caller (ps-arch), which changes the specific length.
+//! - Internodes and roots: length = specific length × primary mass; radius from tissue
+//!   density and the whole mass, `r = sqrt(mass / (ρ π L))` (R1a, decision 0036). With
+//!   no secondary mass the radius is constant for a fixed specific length; secondary
+//!   growth ([`Allometry::size_split`]) widens the organ at fixed length.
 //! - Seeds, flowers, pods and buds: a prolate shape, `L = aspect^(2/3) · (6 m / (π ρ))^(1/3)`,
 //!   radius `L / (2 · aspect)`.
 //!
@@ -86,6 +86,35 @@ impl Allometry {
             OrganKind::Root | OrganKind::Nodule => self.root_density.0,
             OrganKind::Internode | OrganKind::Tendril => self.stem_density.0,
             _ => self.bulk_density.0,
+        }
+    }
+
+    /// Dimensions of a stem or root segment with structural mass `mass`, of which
+    /// `secondary` is secondary growth: `L = SL · (W − W_s)`, `r = sqrt(W / (ρ π L))`
+    /// (R1a). Other shapes ignore `secondary`; with `secondary` zero this is
+    /// [`Allometry::size`].
+    #[must_use]
+    pub fn size_split(
+        &self,
+        kind: OrganKind,
+        specific: SpecificSize,
+        mass: GramsDM,
+        secondary: GramsDM,
+    ) -> OrganSize {
+        let SpecificSize::Length(sl) = specific else {
+            return self.size(kind, specific, mass);
+        };
+        let m = mass.0.max(0.0);
+        let length = sl.0 * (m - secondary.0.max(0.0)).max(0.0);
+        let radius = if length > 0.0 {
+            libm::sqrt(m / (self.density(kind) * core::f64::consts::PI * length))
+        } else {
+            0.0
+        };
+        OrganSize {
+            length: Meters(length),
+            radius: Meters(radius),
+            area: M2(0.0),
         }
     }
 
@@ -171,6 +200,28 @@ mod tests {
         let v = core::f64::consts::PI * s.length.0 * d * d / 6.0;
         assert!((v * 4.0e5 - 1.2).abs() < 1e-9);
         assert!((s.length.0 / d - 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn secondary_mass_widens_at_fixed_length() {
+        let a = Allometry::generic_herb();
+        let sp = SpecificSize::Length(MPerG(0.4));
+        let p = a.size(OrganKind::Internode, sp, GramsDM(0.1));
+        // No secondary mass: the same bits as the one-mass rule.
+        assert_eq!(
+            a.size_split(OrganKind::Internode, sp, GramsDM(0.1), GramsDM(0.0)),
+            p
+        );
+        // Tripling the mass with secondary growth keeps the length, widens by √3.
+        let s = a.size_split(OrganKind::Internode, sp, GramsDM(0.3), GramsDM(0.2));
+        assert!((s.length.0 - p.length.0).abs() < 1e-15);
+        assert!((s.radius.0 / p.radius.0 - libm::sqrt(3.0)).abs() < 1e-12);
+        // Leaves and bulk organs ignore it.
+        let leaf = SpecificSize::Area(M2PerG(0.02));
+        assert_eq!(
+            a.size_split(OrganKind::Leaf, leaf, GramsDM(0.1), GramsDM(0.05)),
+            a.size(OrganKind::Leaf, leaf, GramsDM(0.1))
+        );
     }
 
     #[test]
