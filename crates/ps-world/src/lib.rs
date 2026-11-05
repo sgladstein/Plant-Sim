@@ -224,6 +224,22 @@ pub struct SeedLot {
     pub seed_mass_g: f64,
     /// Whether the plant had reached maturity (seeds picked earlier are green).
     pub mature: bool,
+    /// Each seed with its parents and genotype, in organ order (WP29).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seed_genotypes: Vec<SeedGenotype>,
+}
+
+/// One seed's parents and genotype (WP29).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SeedGenotype {
+    /// The seed's organ id within its mother.
+    pub organ: u32,
+    /// Seed parent: the plant that bore it.
+    pub mother: u32,
+    /// Pollen parent: the mother itself when the flower selfed.
+    pub father: u32,
+    /// Its genotype, in the mother's species' locus order.
+    pub genotype: Genotype,
 }
 
 /// The world's complete state: what snapshots store and the hash covers.
@@ -888,6 +904,15 @@ impl World {
                     }
                 }
             }
+            ActionKind::Pollinate {
+                plant,
+                organ,
+                pollen,
+            } => {
+                if now && let Err(why) = self.check_pollinate(*plant, *organ, *pollen) {
+                    return err(why);
+                }
+            }
             ActionKind::PlaceObstacle(o) => {
                 if !soil_known(o.soil) {
                     return err(format!("unknown soil {}", o.soil));
@@ -1116,6 +1141,111 @@ impl World {
         Ok(())
     }
 
+    /// The parents and genotype of a living seed still in its pod or ear (WP29), or
+    /// `None` for anything else. The same record a harvest puts in the seed library.
+    #[must_use]
+    pub fn seed_genotype(&self, plant: u32, organ: u32) -> Option<SeedGenotype> {
+        let p = self.state.plants.get(plant as usize)?;
+        let origin = p.plant.seed_origin(ps_graph::OrganId(organ))?;
+        self.seed_genotype_of(plant, &origin).ok()
+    }
+
+    /// A seed's genotype: the mother's egg and the father's pollen, each from its own
+    /// meiosis keyed by (world seed, `(mother << 32) | seed organ`, the tick the seed
+    /// was made), as decision 0031 item 7 sets. A selfed seed has the mother as father.
+    fn seed_genotype_of(
+        &self,
+        mother: u32,
+        origin: &ps_arch::SeedOrigin,
+    ) -> Result<SeedGenotype, WorldError> {
+        let father = origin.pollen.unwrap_or(mother);
+        let entry =
+            |id: u32| {
+                let e = self.state.plants.get(id as usize).ok_or_else(|| {
+                    WorldError::Scenario(format!("seed parent {id} is not a plant"))
+                })?;
+                let sp = self.state.catalog.species.get(&e.species).ok_or_else(|| {
+                    WorldError::Species(format!("{} not in the catalog", e.species))
+                })?;
+                Ok::<_, WorldError>((e, sp))
+            };
+        let (m, m_species) = entry(mother)?;
+        let (f, f_species) = entry(father)?;
+        let genotype = m_species.cross_genotype(
+            &m.genotype,
+            f_species,
+            &f.genotype,
+            self.state.scenario.world_seed,
+            (u64::from(mother) << 32) | u64::from(origin.organ.0),
+            origin.born.0,
+        );
+        Ok(SeedGenotype {
+            organ: origin.organ.0,
+            mother,
+            father,
+            genotype,
+        })
+    }
+
+    /// Checks a hand-pollination against the world now (WP29): the flower is open and
+    /// not yet crossed, and the pollen plant has an open flower and a genome that
+    /// crosses with the seed parent's.
+    fn check_pollinate(&self, plant: u32, organ: u32, pollen: u32) -> Result<(), String> {
+        let plants = &self.state.plants;
+        let m = plants
+            .get(plant as usize)
+            .ok_or_else(|| format!("unknown plant {plant}"))?;
+        m.plant
+            .check_pollinate(ps_graph::OrganId(organ))
+            .map_err(|e| e.to_string())?;
+        let f = plants
+            .get(pollen as usize)
+            .ok_or_else(|| format!("unknown pollen plant {pollen}"))?;
+        if !f.plant.has_open_flower() {
+            return Err(format!("pollen plant {pollen} has no open flower"));
+        }
+        let species = |e: &PlantEntry| self.state.catalog.species.get(&e.species);
+        match (species(m), species(f)) {
+            (Some(a), Some(b)) if a.can_cross(b) => Ok(()),
+            _ => Err(format!(
+                "{} (plant {plant}) does not cross with {} (plant {pollen})",
+                m.species, f.species
+            )),
+        }
+    }
+
+    /// Picks a pod or ear into the seed library, each seed with its parents and
+    /// genotype (WP25, WP29).
+    fn harvest(&mut self, tick: u64, plant: u32, organ: u32) -> Result<(), WorldError> {
+        let err = |why: String| WorldError::Action { tick, why };
+        let p = self
+            .state
+            .plants
+            .get_mut(plant as usize)
+            .ok_or_else(|| err(format!("unknown plant {plant}")))?;
+        let got = p
+            .plant
+            .harvest(ps_graph::OrganId(organ), Hours(tick))
+            .map_err(|e| err(e.to_string()))?;
+        let (day, species) = (p.plant.day, p.species.clone());
+        let seed_genotypes = got
+            .origins
+            .iter()
+            .map(|o| self.seed_genotype_of(plant, o))
+            .collect::<Result<_, _>>()?;
+        self.state.seed_library.push(SeedLot {
+            day,
+            plant,
+            species,
+            organ,
+            seeds: got.seeds,
+            seed_mass_g: got.seed_mass.0,
+            mature: got.mature,
+            seed_genotypes,
+        });
+        Ok(())
+    }
+
     fn apply_due(&mut self) -> Result<(), WorldError> {
         let now = self.state.tick;
         while let Some(a) = self.state.scenario.events.get(self.state.scripted).cloned() {
@@ -1188,26 +1318,18 @@ impl World {
                     .prune(ps_graph::OrganId(organ), Hours(tick))
                     .map_err(|e| err(e.to_string()))?;
             }
-            ActionKind::Harvest { plant, organ } => {
-                let p = self
-                    .state
-                    .plants
-                    .get_mut(plant as usize)
-                    .ok_or_else(|| err(format!("unknown plant {plant}")))?;
-                let got = p
-                    .plant
-                    .harvest(ps_graph::OrganId(organ), Hours(tick))
-                    .map_err(|e| err(e.to_string()))?;
-                let lot = SeedLot {
-                    day: p.plant.day,
-                    plant,
-                    species: p.species.clone(),
-                    organ,
-                    seeds: got.seeds,
-                    seed_mass_g: got.seed_mass.0,
-                    mature: got.mature,
-                };
-                self.state.seed_library.push(lot);
+            ActionKind::Harvest { plant, organ } => self.harvest(tick, plant, organ)?,
+            ActionKind::Pollinate {
+                plant,
+                organ,
+                pollen,
+            } => {
+                self.check_pollinate(plant, organ, pollen).map_err(err)?;
+                if let Some(p) = self.state.plants.get_mut(plant as usize) {
+                    p.plant
+                        .pollinate(ps_graph::OrganId(organ), pollen)
+                        .map_err(|e| err(e.to_string()))?;
+                }
             }
             ActionKind::PlaceObstacle(o) => {
                 let i = self

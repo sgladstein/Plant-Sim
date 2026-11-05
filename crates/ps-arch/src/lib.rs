@@ -69,10 +69,16 @@ pub enum ArchError {
     /// Only a pod or an ear can be harvested.
     #[error("organ {0:?} is not a pod or an ear")]
     NotHarvestable(OrganId),
+    /// Only an open flower can be hand-pollinated (WP29).
+    #[error("organ {0:?} is not an open flower")]
+    NotOpenFlower(OrganId),
+    /// A flower takes one hand-pollination (WP29).
+    #[error("flower {0:?} is already hand-pollinated")]
+    AlreadyPollinated(OrganId),
 }
 
 /// What a harvest took off a plant (WP25): the seeds of one pod or ear.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Harvested {
     /// Seeds (grains) the pod or ear carried.
     pub seeds: u32,
@@ -80,6 +86,19 @@ pub struct Harvested {
     pub seed_mass: GramsDM,
     /// Whether the plant had reached maturity: seeds from an earlier harvest are green.
     pub mature: bool,
+    /// Each seed's origin, in organ order (WP29).
+    pub origins: Vec<SeedOrigin>,
+}
+
+/// Where a seed in a pod or ear comes from (WP29): what its genotype is keyed by.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeedOrigin {
+    /// The seed organ.
+    pub organ: OrganId,
+    /// Tick the seed organ was made at seed set, when its genotype is fixed.
+    pub born: Hours,
+    /// Pollen parent from a hand-pollination (a plant id); `None` when selfed.
+    pub pollen: Option<u32>,
 }
 
 /// What an organ is in the architecture (finer than [`OrganKind`]).
@@ -281,6 +300,10 @@ pub struct Flower {
     pub pre_anthesis: f64,
     /// Lowest daily FTSW while open.
     pub min_ftsw: f64,
+    /// Pollen parent of a hand-pollination (a plant id; WP29). `None`: the flower
+    /// pollinates itself, as bean flowers do before they open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pollen: Option<u32>,
 }
 
 /// A pod.
@@ -294,6 +317,9 @@ pub struct Pod {
     /// that can still set after heat (decision 0018).
     #[serde(default = "one")]
     pub fertility: f64,
+    /// Pollen parent from its flower's hand-pollination (WP29); `None` when selfed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pollen: Option<u32>,
 }
 
 /// One root axis (a sequence of segments) or one lateral cohort.
@@ -1511,9 +1537,67 @@ impl Plant {
             seeds: u32::try_from(seeds.len()).unwrap_or(u32::MAX),
             seed_mass: GramsDM(seed_mass),
             mature: self.phenology.stage >= Stage::Mature,
+            origins: seeds.iter().filter_map(|&c| self.seed_origin(c)).collect(),
         };
         self.prune(id, now)?;
         Ok(out)
+    }
+
+    /// Where a living seed in a pod or ear comes from (WP29); `None` for any other
+    /// organ.
+    #[must_use]
+    pub fn seed_origin(&self, id: OrganId) -> Option<SeedOrigin> {
+        let a = &self.arena;
+        let i = id.index();
+        if i >= a.len() || !a.alive[i] || a.kind[i] != OrganKind::SeedInPod {
+            return None;
+        }
+        let pod = a.parent[i]?;
+        let pollen = self
+            .pods
+            .iter()
+            .find(|p| p.id == pod)
+            .and_then(|p| p.pollen);
+        Some(SeedOrigin {
+            organ: id,
+            born: a.birth[i],
+            pollen,
+        })
+    }
+
+    /// Checks that `id` is an open flower without a hand-pollination yet (WP29).
+    ///
+    /// # Errors
+    /// [`ArchError::Graph`] for a missing or dead organ, [`ArchError::NotOpenFlower`]
+    /// for anything but an open flower, [`ArchError::AlreadyPollinated`] for a flower
+    /// already crossed.
+    pub fn check_pollinate(&self, id: OrganId) -> Result<(), ArchError> {
+        self.check_prune(id)?;
+        match self.flowers.iter().find(|f| f.id == id) {
+            None => Err(ArchError::NotOpenFlower(id)),
+            Some(f) if f.pollen.is_some() => Err(ArchError::AlreadyPollinated(id)),
+            Some(_) => Ok(()),
+        }
+    }
+
+    /// Hand-pollinates an open flower with plant `pollen`'s pollen (WP29): the flower
+    /// is taken as emasculated before it could self, so every seed of its pod has
+    /// `pollen` as its father. Pod set follows the usual rule.
+    ///
+    /// # Errors
+    /// As [`Plant::check_pollinate`].
+    pub fn pollinate(&mut self, id: OrganId, pollen: u32) -> Result<(), ArchError> {
+        self.check_pollinate(id)?;
+        if let Some(f) = self.flowers.iter_mut().find(|f| f.id == id) {
+            f.pollen = Some(pollen);
+        }
+        Ok(())
+    }
+
+    /// Whether the plant has an open flower to give pollen (WP29).
+    #[must_use]
+    pub fn has_open_flower(&self) -> bool {
+        self.flowers.iter().any(|f| self.arena.alive[f.id.index()])
     }
 
     /// Counts and totals now.
