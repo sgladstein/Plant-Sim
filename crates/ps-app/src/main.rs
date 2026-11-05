@@ -13,8 +13,8 @@
 //!
 //! The default present mode is mailbox with a frame cap at the monitor's refresh rate
 //! (`--fps-cap N` overrides it, 0 turns it off; FIFO and auto vsync are never capped).
-//! `--window` sets the logical window size (default 1600x900); the window shrinks to fit
-//! the monitor either way.
+//! `--window` sets the logical window size and keeps it; without it the 1600x900 default
+//! shrinks to fit the monitor.
 //!
 //! `--day` starts the view that many days in (the sim steps there as fast as it can).
 //! `--scenario` is a path, or relative to the data directory (default
@@ -66,6 +66,7 @@ struct Options {
     data: Option<PathBuf>,
     fps_cap: Option<f64>,
     window: (u32, u32),
+    window_explicit: bool,
 }
 
 fn parse_present(name: &str) -> Result<PresentMode> {
@@ -110,6 +111,7 @@ fn parse_args() -> Result<Options> {
         data: None,
         fps_cap: None,
         window: (1600, 900),
+        window_explicit: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -148,6 +150,7 @@ fn parse_args() -> Result<Options> {
                 o.window = anyhow::Context::with_context(parsed, || {
                     format!("--window wants WxH, at least 320x240, got {v:?}")
                 })?;
+                o.window_explicit = true;
             }
             "--scenario" => o.scenario = PathBuf::from(value()?),
             "--data" => o.data = Some(PathBuf::from(value()?)),
@@ -208,6 +211,9 @@ fn main() -> Result<()> {
     }
     let vsync = matches!(options.present, PresentMode::Fifo | PresentMode::AutoVsync);
     let cap_off = vsync || options.fps_cap.is_some_and(|f| f <= 0.0);
+    if options.window_explicit {
+        app.insert_resource(display::ExplicitWindowSize);
+    }
     app.insert_resource(display::FrameCap::new(options.fps_cap, cap_off))
         .add_systems(Update, display::fit_to_monitor)
         .add_systems(Last, display::limit_frame);

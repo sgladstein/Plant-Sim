@@ -28,6 +28,8 @@ pub struct Axis {
     pub axis_order: u8,
     /// Organs from base to tip. The first one's id names the axis for its whole life.
     pub organs: Vec<OrganId>,
+    /// Identical copies drawn (a root cohort), spread around the parent axis.
+    pub copies: u16,
 }
 
 impl Axis {
@@ -81,6 +83,7 @@ pub fn axes(skeleton: &Skeleton, alive_only: bool) -> Vec<Axis> {
                 kind,
                 axis_order: p.axis_order,
                 organs: vec![id],
+                copies: p.copies.max(1),
             });
         }
     }
@@ -144,7 +147,32 @@ pub fn axis_nodes(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> Vec<Tub
     nodes
 }
 
-/// Builds the tube mesh of one axis.
+/// The golden angle, rad: successive copies never line up.
+pub const GOLDEN_ANGLE: f32 = 2.399_963;
+
+/// Rotations that place the copies of a cohort axis: copy `k` turns `k` golden angles
+/// about the parent organ's direction, through the axis base (identity for copy 0).
+#[must_use]
+pub fn copy_transforms(skeleton: &Skeleton, axis: &Axis) -> Vec<glam::Affine3A> {
+    let first = skeleton.get(axis.key());
+    let pivot = first.map_or(Vec3::ZERO, |p| p.base);
+    let about = first
+        .and_then(|p| p.parent)
+        .and_then(|pid| skeleton.get(pid))
+        .map_or(Vec3::Z, |p| p.direction)
+        .normalize_or(Vec3::Z);
+    (0..axis.copies.max(1))
+        .map(|k| {
+            let r = glam::Quat::from_axis_angle(about, f32::from(k) * GOLDEN_ANGLE);
+            glam::Affine3A::from_translation(pivot)
+                * glam::Affine3A::from_quat(r)
+                * glam::Affine3A::from_translation(-pivot)
+        })
+        .collect()
+}
+
+/// Builds the tube mesh of one axis, repeated for each copy of a root cohort. Vertices
+/// come copy by copy, each copy laid out like a single tube.
 #[must_use]
 pub fn axis_mesh(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> MeshData {
     let nodes = axis_nodes(skeleton, axis, style);
@@ -152,8 +180,15 @@ pub fn axis_mesh(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> MeshData
         AxisKind::Shoot => Vec3::Z,
         AxisKind::Root => Vec3::NEG_Z,
     };
+    let mut one = MeshData::new();
+    tube(&nodes, style.sides, false, fallback, &mut one);
+    if axis.copies <= 1 {
+        return one;
+    }
     let mut mesh = MeshData::new();
-    tube(&nodes, style.sides, false, fallback, &mut mesh);
+    for t in copy_transforms(skeleton, axis) {
+        mesh.append_transformed(&one, t);
+    }
     mesh
 }
 
@@ -166,6 +201,7 @@ pub fn axis_mesh(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> MeshData
 pub struct AxisSignature {
     nodes: Vec<TubeNode>,
     length: f32,
+    copies: u16,
 }
 
 impl AxisSignature {
@@ -177,7 +213,11 @@ impl AxisSignature {
             .windows(2)
             .map(|w| (w[1].position - w[0].position).length())
             .sum();
-        Self { nodes, length }
+        Self {
+            nodes,
+            length,
+            copies: axis.copies,
+        }
     }
 
     /// True when `self` (the current state) differs from `built` (the state the mesh was
@@ -186,7 +226,7 @@ impl AxisSignature {
     /// that fraction of the axis length.
     #[must_use]
     pub fn needs_rebuild(&self, built: &Self, threshold: f32) -> bool {
-        if self.nodes.len() != built.nodes.len() {
+        if self.nodes.len() != built.nodes.len() || self.copies != built.copies {
             return true;
         }
         let rel = |now: f32, then: f32| {

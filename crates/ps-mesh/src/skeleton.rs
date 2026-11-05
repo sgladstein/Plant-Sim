@@ -49,7 +49,14 @@ pub struct Placement {
     /// Where along an axis parent the organ attaches, 0 (its base) to 1 (its tip).
     /// Lateral root cohorts attach partway along their parent.
     pub attach: f32,
+    /// How many identical roots this organ is drawn as (a lateral root cohort), at most
+    /// [`MAX_COPIES`]; 1 for everything else.
+    pub copies: u16,
 }
+
+/// Most copies drawn for one root cohort: enough to read as a cluster in the cutaway
+/// without multiplying the root mesh budget.
+pub const MAX_COPIES: u16 = 8;
 
 impl Placement {
     /// True for organs that extend along their direction (internodes, roots, tendrils).
@@ -125,6 +132,7 @@ impl Skeleton {
     /// id; missing entries mean 1). An axis organ standing for `m` identical roots is drawn
     /// as one root of `length / m`, as ps-arch's layout places it.
     #[must_use]
+    #[allow(clippy::cast_sign_loss)] // copies are clamped to 1..=MAX_COPIES first
     pub fn from_arena_with(
         arena: &OrganArena,
         origin: [f64; 3],
@@ -178,6 +186,11 @@ impl Skeleton {
                     area: finite_or_zero(size.area.0),
                     thermal_age: finite_or_zero(arena.thermal_age[i].0),
                     attach: a as f32,
+                    copies: if kind == OrganKind::Root {
+                        m.round().clamp(1.0, f64::from(MAX_COPIES)) as u16
+                    } else {
+                        1
+                    },
                 }
             })
             .collect();

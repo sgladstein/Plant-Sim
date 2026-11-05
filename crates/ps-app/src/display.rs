@@ -108,8 +108,9 @@ pub(crate) fn limit_frame(
     let next = cap.next.unwrap_or(now);
     if next > now {
         let wait = next - now;
-        // Sleep most of the wait; spin the last ~1 ms, since sleep overshoots on Windows.
-        if let Some(sleep) = wait.checked_sub(Duration::from_millis(1)) {
+        // Sleep most of the wait; spin the last 2 ms, since sleep can overshoot by a
+        // millisecond or more on Windows and miss the slot.
+        if let Some(sleep) = wait.checked_sub(Duration::from_millis(2)) {
             std::thread::sleep(sleep);
         }
         while Instant::now() < next {
@@ -119,13 +120,19 @@ pub(crate) fn limit_frame(
     cap.next = Some(next_slot(next, Instant::now(), interval));
 }
 
+/// Present when the user chose the window size with `--window`; the size is then kept.
+#[derive(Debug, Resource)]
+pub struct ExplicitWindowSize;
+
 /// Shrinks the window to fit the primary monitor, once the monitor is known.
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn fit_to_monitor(
+    explicit: Option<Res<ExplicitWindowSize>>,
     mut done: Local<bool>,
     monitors: Query<&Monitor, With<PrimaryMonitor>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    if *done {
+    if *done || explicit.is_some() {
         return;
     }
     let (Some(m), Ok(mut w)) = (monitors.iter().next(), windows.single_mut()) else {
