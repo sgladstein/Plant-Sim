@@ -18,7 +18,7 @@ use crate::scene::sim_to_bevy;
 /// What the user clicked.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Picked {
-    /// Index of the pot in [`Garden::pots`].
+    /// Index of the pot in [`Garden::pots`] (one per plant; plants in a plot share a bed).
     pub pot: usize,
     /// Organ index in the pot's skeleton, or `None` for the plant as a whole.
     pub organ: Option<usize>,
@@ -115,6 +115,7 @@ pub fn pick(pots: &[PotView], origin: Vec3, dir: Vec3) -> Option<Picked> {
     // No organ: the pot whose soil the ray passes through first.
     pots.iter()
         .enumerate()
+        .filter(|(_, pot)| pot.container)
         .filter_map(|(pi, pot)| {
             let shift = Vec3::new(pot.center[0], pot.center[1], 0.0);
             let half = Vec3::new(pot.size.width / 2.0, pot.size.depth / 2.0, 0.0);
@@ -254,6 +255,7 @@ mod tests {
             water_stress: 1.0,
             organ_values: std::collections::BTreeMap::new(),
             soil_water: crate::garden::SoilFace::default(),
+            container: true,
         }
     }
 

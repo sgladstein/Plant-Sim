@@ -90,6 +90,8 @@ struct PotInfo {
     size: PotSize,
     /// Share of open-sky radiation reaching the pot.
     radiation_fraction: f64,
+    /// A plot: many plants share this soil, and only the first draws the bed and label.
+    shared: bool,
 }
 
 /// One plant's skeletons: the hour before the current tick and the current tick.
@@ -240,6 +242,15 @@ fn pot_infos(
         .iter()
         .map(|s| (s.id(), s.position_m()))
         .collect();
+    let plots: BTreeMap<u32, usize> = scenario
+        .soils
+        .iter()
+        .filter(|s| s.shared_light())
+        .map(|s| {
+            let id = s.id();
+            (id, scenario.sowings.iter().filter(|w| w.soil == id).count())
+        })
+        .collect();
     let n = positions.len().max(1) as f64;
     let mean_x = positions.values().map(|p| p.0).sum::<f64>() / n;
     let mean_y = positions.values().map(|p| p.1).sum::<f64>() / n;
@@ -255,14 +266,25 @@ fn pot_infos(
             } else {
                 format!("{:.0}% shade", (1.0 - f) * 100.0)
             };
+            let plot = plots.get(&e.id).copied();
+            let label = match plot {
+                Some(n) => format!("Plot {}: {n} plants, {light}", e.id),
+                None => format!("Pot {}: {light}", e.id),
+            };
             (
                 e.id,
                 PotInfo {
-                    label: format!("Pot {}: {light}", e.id),
+                    label,
                     center: [(p.0 - mean_x) as f32, (p.1 - mean_y) as f32],
+                    shared: plot.is_some(),
                     size: PotSize {
-                        // Every container is a cylindrical pot for now (`SoilSpec::Pot`).
-                        shape: PotShape::Round,
+                        // Pots are cylinders (`SoilSpec::Pot`); plots are rectangular
+                        // beds with a glass front (`SoilSpec::Plot`).
+                        shape: if plot.is_some() {
+                            PotShape::Box
+                        } else {
+                            PotShape::Round
+                        },
                         width: nx as f32 * cell,
                         depth: ny as f32 * cell,
                         soil_depth: nz as f32 * cell,
@@ -563,6 +585,7 @@ pub fn drive(
 
     let mut pots = Vec::with_capacity(snap.plants.len());
     let mut on_screen = Vec::with_capacity(snap.plants.len());
+    let mut drawn = std::collections::BTreeSet::new();
     for p in &snap.plants {
         let Some(soil) = snap.soils.get(p.soil) else {
             continue;
@@ -572,8 +595,13 @@ pub fn drive(
         };
         let skeleton = Skeleton::lerp(&frames.previous, &frames.current, frac);
         on_screen.push((p.id, soil.id));
+        let container = drawn.insert(soil.id);
         pots.push(PotView {
-            label: info.label.clone(),
+            label: if container || !info.shared {
+                info.label.clone()
+            } else {
+                String::new()
+            },
             center: info.center,
             size: info.size,
             skeleton,
@@ -587,6 +615,7 @@ pub fn drive(
                 high_speed,
             ),
             soil_water: soil_slice(soil, p.plant.collar_position[1]),
+            container,
         });
     }
     garden.pots = pots;
@@ -601,7 +630,17 @@ pub fn drive(
             .map(|(i, p)| (p.id, i))
             .collect();
         charts.charts = charts_from(&snap.history, &pot_of);
-        charts.pots = garden.pots.iter().map(|p| p.label.clone()).collect();
+        // Plants in a plot are told apart by number; pots by their label.
+        charts.pots = src
+            .on_screen
+            .iter()
+            .zip(&garden.pots)
+            .enumerate()
+            .map(|(i, ((_, soil), view))| match src.pots.get(soil) {
+                Some(info) if info.shared => format!("Plant {}", i + 1),
+                _ => view.label.clone(),
+            })
+            .collect();
         charts.day_start_hour = src.day_start_hour;
         charts.rows = snap.history.len();
     }

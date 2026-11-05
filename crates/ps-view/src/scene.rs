@@ -149,6 +149,8 @@ struct PotScene {
     entity: Entity,
     haze: Entity,
     size: PotSize,
+    /// Whether this scene draws the container (see `PotView::container`).
+    container: bool,
     axes: BTreeMap<OrganId, AxisEntity>,
     instances: BTreeMap<OrganId, InstanceEntity>,
     overlay: Entity,
@@ -305,6 +307,23 @@ fn spawn_pot(
         ))
         .id();
     let size = pot.size;
+    let overlay_mesh = meshes.add(colored(&ColoredMesh::default()));
+    if !pot.container {
+        // A plant sharing a plot's bed: the first plant's view draws the bed.
+        let haze = commands.spawn((Transform::default(), ChildOf(entity))).id();
+        let overlay = commands.spawn((Transform::default(), ChildOf(entity))).id();
+        return PotScene {
+            entity,
+            haze,
+            size,
+            container: false,
+            axes: BTreeMap::new(),
+            instances: BTreeMap::new(),
+            overlay,
+            overlay_mesh,
+            overlay_state: None,
+        };
+    }
     commands.spawn((
         Mesh3d(meshes.add(colored(&diorama::soil(size)))),
         MeshMaterial3d(assets.soil.clone()),
@@ -331,7 +350,6 @@ fn spawn_pot(
             ChildOf(entity),
         ))
         .id();
-    let overlay_mesh = meshes.add(colored(&ColoredMesh::default()));
     let overlay = commands
         .spawn((
             Mesh3d(overlay_mesh.clone()),
@@ -345,6 +363,7 @@ fn spawn_pot(
         entity,
         haze,
         size,
+        container: true,
         axes: BTreeMap::new(),
         instances: BTreeMap::new(),
         overlay,
@@ -429,7 +448,7 @@ pub(crate) fn sync_scene(
             .pots
             .iter()
             .zip(&garden.pots)
-            .any(|(s, p)| s.size != p.size);
+            .any(|(s, p)| s.size != p.size || s.container != p.container);
     if layout_changed {
         for p in index.pots.drain(..) {
             commands.entity(p.entity).despawn();
@@ -633,7 +652,7 @@ pub(crate) fn sync_scene(
         });
 
         // Soil water overlay on the glass.
-        let show = lens == Lens::SoilWater;
+        let show = lens == Lens::SoilWater && scene.container;
         commands.entity(scene.overlay).insert(if show {
             Visibility::Inherited
         } else {

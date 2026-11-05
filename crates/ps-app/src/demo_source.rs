@@ -414,6 +414,7 @@ pub fn drive(
             water_stress,
             organ_values,
             soil_water,
+            container: true,
         });
     }
     garden.pots = pots;

@@ -110,6 +110,9 @@ fn color32(rgb: [f32; 3]) -> egui::Color32 {
     egui::Color32::from(egui::Rgba::from_rgb(rgb[0], rgb[1], rgb[2]))
 }
 
+/// Most lines a chart's hover tooltip lists (a plot has dozens of plants).
+const TOOLTIP_LINES: usize = 12;
+
 /// Pot line styles: solid, dashed, dotted.
 fn line(painter: &egui::Painter, points: &[egui::Pos2], stroke: egui::Stroke, pot: usize) {
     if points.len() < 2 {
@@ -134,7 +137,13 @@ pub(crate) fn panel(ui: &mut egui::Ui, charts: &Charts, time: &mut TimeControl) 
     ui.horizontal(|ui| {
         ui.strong("Charts");
         ui.weak("per day; click a chart to jump the replay to that day");
-        for (i, label) in charts.pots.iter().enumerate() {
+        // Many plants (a plot): legend the two named line styles and the rest as one.
+        let shown = if charts.pots.len() > 3 {
+            2
+        } else {
+            charts.pots.len()
+        };
+        for (i, label) in charts.pots.iter().enumerate().take(shown) {
             ui.separator();
             let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 12.0), egui::Sense::hover());
             let y = rect.center().y;
@@ -144,7 +153,23 @@ pub(crate) fn panel(ui: &mut egui::Ui, charts: &Charts, time: &mut TimeControl) 
                 egui::Stroke::new(1.6, egui::Color32::from_gray(220)),
                 i,
             );
-            ui.label(label);
+            ui.label(if label.is_empty() {
+                format!("Plant {}", i + 1)
+            } else {
+                label.clone()
+            });
+        }
+        if charts.pots.len() > shown {
+            ui.separator();
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 12.0), egui::Sense::hover());
+            let y = rect.center().y;
+            line(
+                ui.painter(),
+                &[egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                egui::Stroke::new(1.6, egui::Color32::from_gray(220)),
+                2,
+            );
+            ui.label(format!("{} more plants", charts.pots.len() - shown));
         }
     });
     if charts.charts.is_empty() {
@@ -256,14 +281,25 @@ fn one_chart(
         }
         response.on_hover_ui_at_pointer(|ui| {
             ui.strong(format!("Day {day:.0}"));
+            let mut lines = 0;
             for s in &chart.series {
                 if let Some(p) = nearest(&s.points, day).filter(|p| (p[0] - day).abs() < 0.5) {
-                    let pot = charts.pots.get(s.pot).map_or("", String::as_str);
+                    lines += 1;
+                    if lines > TOOLTIP_LINES {
+                        continue;
+                    }
+                    let pot = match charts.pots.get(s.pot) {
+                        Some(l) if !l.is_empty() => l.clone(),
+                        _ => format!("Plant {}", s.pot + 1),
+                    };
                     ui.colored_label(
                         color32(s.color),
                         format!("{} {}: {} {}", pot, s.label, short(p[1]), chart.unit),
                     );
                 }
+            }
+            if lines > TOOLTIP_LINES {
+                ui.weak(format!("and {} more", lines - TOOLTIP_LINES));
             }
         });
     }

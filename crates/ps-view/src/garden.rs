@@ -84,6 +84,10 @@ pub struct PotView {
     pub organ_values: BTreeMap<Lens, Vec<f32>>,
     /// Soil water on the cut face.
     pub soil_water: SoilFace,
+    /// Whether this view draws the container (soil, frame, glass). A plot holds many
+    /// plants in one soil; only its first plant's view draws the bed, the others share
+    /// its center and size and draw just their plant.
+    pub container: bool,
 }
 
 impl PotView {
