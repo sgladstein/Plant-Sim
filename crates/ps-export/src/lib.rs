@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use ps_world::{DayRow, WorldState};
 
 /// Columns of [`daily_csv`], in order.
-pub const DAILY_COLUMNS: [&str; 32] = [
+pub const DAILY_COLUMNS: [&str; 41] = [
     "day",
     "plant",
     "soil",
@@ -41,10 +41,19 @@ pub const DAILY_COLUMNS: [&str; 32] = [
     "rain_mm",
     "ftsw",
     "soil_water_kg",
+    "soil_mineral_n_g",
+    "plant_n_g",
+    "n_uptake_g",
+    "n_fixed_g",
+    "n_mined_g",
+    "n_unmet_g",
+    "n_status",
+    "nodule_mass_g",
+    "fixation_c_g",
 ];
 
 /// Columns of [`organs_csv`], in order.
-pub const ORGAN_COLUMNS: [&str; 22] = [
+pub const ORGAN_COLUMNS: [&str; 23] = [
     "plant",
     "organ",
     "kind",
@@ -67,6 +76,7 @@ pub const ORGAN_COLUMNS: [&str; 22] = [
     "tip_z",
     "multiplicity",
     "light_index",
+    "nitrogen_g",
 ];
 
 fn header(cols: &[&str]) -> String {
@@ -90,7 +100,7 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
     // Writing to a String cannot fail.
     let _ = writeln!(
         out,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         row.day,
         row.plant,
         soil_id(state, row.plant),
@@ -123,6 +133,15 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
         e.rain_mm,
         e.ftsw,
         e.soil_water_kg,
+        e.soil_mineral_n_g,
+        r.nitrogen,
+        r.n_uptake,
+        r.n_fixed,
+        r.n_mined,
+        r.n_unmet,
+        r.n_status,
+        r.nodule_mass,
+        r.fixation_carbon,
     );
 }
 
@@ -152,7 +171,7 @@ pub fn organs_csv(state: &WorldState) -> String {
             let role = meta.map_or_else(String::new, |m| format!("{:?}", m.role));
             let _ = writeln!(
                 out,
-                "{},{},{:?},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{:?},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 p.id,
                 i,
                 a.kind[i],
@@ -175,6 +194,7 @@ pub fn organs_csv(state: &WorldState) -> String {
                 tip[2],
                 meta.map_or(1.0, |m| m.multiplicity),
                 meta.map_or(1.0, |m| m.light_index),
+                a.nitrogen[i].0,
             );
         }
     }
@@ -230,6 +250,15 @@ pub fn daily_number(state: &WorldState, row: &DayRow, column: &str) -> Option<f6
         "rain_mm" => e.rain_mm,
         "ftsw" => e.ftsw,
         "soil_water_kg" => e.soil_water_kg,
+        "soil_mineral_n_g" => e.soil_mineral_n_g,
+        "plant_n_g" => r.nitrogen,
+        "n_uptake_g" => r.n_uptake,
+        "n_fixed_g" => r.n_fixed,
+        "n_mined_g" => r.n_mined,
+        "n_unmet_g" => r.n_unmet,
+        "n_status" => r.n_status,
+        "nodule_mass_g" => r.nodule_mass,
+        "fixation_c_g" => r.fixation_carbon,
         _ => return None,
     })
 }

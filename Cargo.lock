@@ -5118,6 +5118,7 @@ dependencies = [
  "libm",
  "ps-arch",
  "ps-export",
+ "ps-graph",
  "ps-physio",
  "ps-world",
  "ron 0.10.1",

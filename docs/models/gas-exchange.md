@@ -35,7 +35,10 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
   `gs = g0`.
 - Water: `gs = 1.57 gc` (mol m⁻² s⁻¹ water vapor), `E = gs D / P`.
 - Leaf capacity: `c = 1` until the leaf is fully expanded, then linear to the floor (0.4)
-  at the end of its lifespan, which counts from full expansion (§3.8 leaf aging).
+  at the end of its lifespan, which counts from full expansion (§3.8 leaf aging). Since
+  WP24 it is multiplied by the leaf's nitrogen factor
+  `clamp((Na − 0.3) / (Na_ref − 0.3), 0, 1)`, with `Na` its N per area (g N m⁻²) and
+  `Na_ref` a new leaf's at the species SLA (docs/models/nitrogen.md, decision 0020).
 - Sink feedback (decision 0013, provisional; amended after the WP8 review): with
   `f(C) = clamp(1 − (C − C_on)/(C_full − C_on), 0, 1)`, where `C = R / W` is the
   leaf's own reserve concentration (g C per g DM), net assimilation becomes
@@ -46,7 +49,7 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
   (`feedback_loss`); above about 0.2 the plant lacks sinks, and WP12 adds sinks
   before changing the thresholds.
 - Light classes: each hour a table of 17 PAR nodes (0, then 16 log-spaced from 1 to
-  2000 µmol m⁻² s⁻¹) × 4 capacity nodes (1.0, 0.8, 0.6, 0.4) is solved (68 solves per
+  2000 µmol m⁻² s⁻¹) × 4 capacity nodes (1.0, 0.7, 0.4, 0.1; decision 0020) is solved (68 solves per
   plant-hour). A leaf part reads it linearly in PAR between neighboring nodes and
   linearly in capacity. Sunlit and shaded parts read the same table at their own PAR.
 - Carbon: `g C per hour = A · area · 3600 · 12e-6`.
@@ -92,8 +95,8 @@ old leaves.
 - Leaf temperature equals air temperature (no energy balance until M2).
 - No mesophyll conductance, no triose-phosphate limit, no boundary layer.
 - Water stress acts on the stomatal slope only, not on photosynthetic capacity.
-- The light-class table costs up to 3.0% in A between nodes (measured at 333 µmol m⁻² s⁻¹
-  and capacity 0.7).
+- The light-class table costs up to 4.6% in A between nodes since the nodes were spread
+  to 0.1 for nitrogen-poor leaves (decision 0020; it was 3.0% with nodes down to 0.4).
 - Bean temperature responses are "~" values in the Medlyn 2002 form, not bean
   measurements (WP12).
 

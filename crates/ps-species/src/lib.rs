@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use ps_rng::{Purpose, RngKey};
 use serde::{Deserialize, Serialize};
 
-pub use schema::{Constants, Phenology, SCHEMA, Spec};
+pub use schema::{Constants, Nitrogen, Phenology, SCHEMA, Spec};
 pub use traits::{TRAIT_KEYS, Traits};
 
 /// A numeric parameter with provenance.
@@ -183,6 +183,8 @@ pub struct Species {
     pub genome: Genome,
     /// Phenology.
     pub phenology: Phenology,
+    /// Plant nitrogen (schema 2, WP24).
+    pub nitrogen: Nitrogen,
     /// Root types, by order.
     pub roots: Vec<RootType>,
     /// Appearance.
@@ -355,6 +357,9 @@ impl Species {
         for (spec, p) in self.phenology.entries() {
             check_param(&format!("phenology.{}", spec.key), spec.unit, p)?;
         }
+        for (spec, p) in self.nitrogen.entries() {
+            check_param(&format!("nitrogen.{}", spec.key), spec.unit, p)?;
+        }
         self.validate_roots()?;
         for r in &self.roots {
             for (spec, p) in r.entries() {
@@ -477,6 +482,14 @@ impl Species {
         for (spec, p) in self.phenology.entries() {
             out.push((
                 format!("phenology.{}", spec.key),
+                p.value,
+                p.unit.clone(),
+                p.source.clone(),
+            ));
+        }
+        for (spec, p) in self.nitrogen.entries() {
+            out.push((
+                format!("nitrogen.{}", spec.key),
                 p.value,
                 p.unit.clone(),
                 p.source.clone(),

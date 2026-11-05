@@ -26,7 +26,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.3.0";
+pub const MODEL_VERSION: &str = "0.4.0";
 
 /// Air pressure used for gas exchange, kPa (sea level; no site elevation in M0).
 const PATM_KPA: f64 = 101.325;
@@ -192,6 +192,9 @@ pub struct DayEnv {
     pub ftsw: f64,
     /// Water in the plant's soil, kg.
     pub soil_water_kg: f64,
+    /// Mineral (nitrate plus ammonium) nitrogen in the plant's soil, g N (WP24).
+    #[serde(default)]
+    pub soil_mineral_n_g: f64,
 }
 
 /// The world's complete state: what snapshots store and the hash covers.
@@ -373,9 +376,11 @@ impl World {
         let mut soils = Vec::new();
         for spec in &scenario.soils {
             let id = spec.id();
+            let mut grid = soil_grid(spec)?;
+            grid.set_nitrogen(&scenario.nitrogen.get(&id).copied().unwrap_or_default());
             soils.push(SoilEntry {
                 id,
-                grid: soil_grid(spec)?,
+                grid,
                 shared_light: spec.shared_light(),
                 radiation_fraction: scenario.radiation_fraction.get(&id).copied().unwrap_or(1.0),
                 rain_fraction: scenario.rain_fraction.get(&id).copied().unwrap_or(1.0),
@@ -559,6 +564,14 @@ impl World {
                     return err(format!("unknown soil {soil}"));
                 }
             }
+            ActionKind::Fertilize { soil, g_per_m2, .. } => {
+                if !soil_known(*soil) {
+                    return err(format!("unknown soil {soil}"));
+                }
+                if !(g_per_m2.is_finite() && *g_per_m2 >= 0.0) {
+                    return err(format!("fertilizer {g_per_m2} g N per m2"));
+                }
+            }
             ActionKind::Prune { plant, organ } => {
                 if now {
                     let Some(p) = self.state.plants.get(*plant as usize) else {
@@ -726,6 +739,19 @@ impl World {
                     .ok_or_else(|| err(format!("unknown soil {soil}")))?;
                 self.state.soils[i].irrigation = irrigation;
             }
+            ActionKind::Fertilize {
+                soil,
+                form,
+                g_per_m2,
+            } => {
+                let i = self
+                    .soil_index(soil)
+                    .ok_or_else(|| err(format!("unknown soil {soil}")))?;
+                if !(g_per_m2.is_finite() && g_per_m2 >= 0.0) {
+                    return Err(err(format!("fertilizer {g_per_m2} g N per m2")));
+                }
+                self.state.soils[i].grid.fertilize(form, g_per_m2);
+            }
             ActionKind::Prune { plant, organ } => {
                 let p = self
                     .state
@@ -874,6 +900,7 @@ impl World {
                 rain += h.rain.0;
             }
         }
+        self.daily_nitrogen(Hours(now))?;
         let reports = self.daily_plant_steps(&path, Hours(now))?;
         for (p, report) in reports.into_iter().enumerate() {
             let si = self.state.plants[p].soil;
@@ -896,6 +923,7 @@ impl World {
                 rain_mm: rain,
                 ftsw,
                 soil_water_kg: soil.total_water().0,
+                soil_mineral_n_g: soil.mineral_nitrogen().0,
             };
             let plant = self.state.plants[p].id;
             self.state.history.push(DayRow {
@@ -917,6 +945,29 @@ impl World {
     /// itself and its soil). A pot plant builds its own light grid; the plants of a
     /// plot share one grid, built from all their leaves once their geometry is updated
     /// (decision 0019). Returns the reports in plant order.
+    /// Daily step 0 (decision 0020): each soil's joint nitrogen uptake from the same
+    /// state, then each plant's nitrogen step, in plant order.
+    fn daily_nitrogen(&mut self, now: Hours) -> Result<(), WorldError> {
+        let WorldState { plants, soils, .. } = &mut self.state;
+        for (si, entry) in soils.iter_mut().enumerate() {
+            let members: Vec<usize> = (0..plants.len())
+                .filter(|&p| plants[p].soil == si)
+                .collect();
+            if members.is_empty() {
+                continue;
+            }
+            let requests: Vec<ps_soil::NitrogenRequest<'_>> = members
+                .iter()
+                .map(|&p| plants[p].plant.nitrogen_request())
+                .collect();
+            let got = entry.grid.take_up_nitrogen(&requests)?;
+            for (&p, u) in members.iter().zip(got) {
+                plants[p].plant.nitrogen_day(u.total(), &entry.grid, now)?;
+            }
+        }
+        Ok(())
+    }
+
     fn daily_plant_steps(
         &mut self,
         path: &[Option<[f64; 3]>; 24],
@@ -936,6 +987,8 @@ impl World {
                     e.plant.day(soil, path, now).map(Some)
                 }
             })
+            // Values keep plant order (indexed collect). If two plants fail in one step,
+            // which error comes back depends on the schedule; either aborts the run.
             .collect::<Result<_, ArchError>>()?;
         let sky = ps_light::sky_sectors();
         for (si, entry) in soils.iter().enumerate() {

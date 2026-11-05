@@ -92,12 +92,13 @@ fn class_table_matches_direct_solves() {
         assert!((r.a_net.0 - g.a_net.0).abs() < 1e-12, "node {k}");
     }
     assert!((classes::par_node(16) - 2000.0).abs() < 1e-9);
-    // Between nodes and capacities: interpolation error on A for PAR 50 to 2000.
-    // Measured 3.0% (at 333 µmol m⁻² s⁻¹ and capacity 0.7, where the light response
-    // bends most); the bound pins it (decision 0009).
+    // Between nodes and capacities: interpolation error on A for PAR 50 to 2000 and
+    // capacity 0.45 to 1. Measured 4.6% (at 333 µmol m⁻² s⁻¹ and capacity 0.55, where
+    // the light response bends most; decisions 0009, 0020). Below capacity 0.4, a leaf
+    // mined of its nitrogen, the table underestimates A by up to 15% at low light.
     let mut worst = 0.0_f64;
     for &par in &[50.0, 77.0, 130.0, 333.0, 640.0, 1111.0, 1750.0] {
-        for &cap in &[1.0, 0.9, 0.7, 0.45] {
+        for &cap in &[1.0, 0.9, 0.85, 0.7, 0.55, 0.45] {
             let r = table.lookup(UmolPerM2S(par), cap);
             let g = gas::solve(
                 &p,
@@ -109,10 +110,10 @@ fn class_table_matches_direct_solves() {
                 1.0,
             );
             worst = worst.max((r.a_net.0 / g.a_net.0 - 1.0).abs());
-            assert!((r.e.0 / g.e.0 - 1.0).abs() < 0.03);
+            assert!((r.e.0 / g.e.0 - 1.0).abs() < 0.045);
         }
     }
-    assert!(worst < 0.035, "worst interpolation error {worst}");
+    assert!(worst < 0.05, "worst interpolation error {worst}");
 }
 
 // ---------------------------------------------------------------- thermal time
