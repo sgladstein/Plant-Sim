@@ -73,7 +73,7 @@ impl Verdict {
 pub struct Outcome {
     /// Target or response id.
     pub id: String,
-    /// "target", "response" or "curve".
+    /// "target", "response" or "parameter".
     pub kind: &'static str,
     /// Scenario (for a response, `scenario vs baseline`).
     pub scenario: String,
@@ -494,10 +494,10 @@ pub fn report_markdown(outcomes: &[Outcome], curves: &[CurveComparison]) -> Stri
         let _ = write!(
             s,
             "## {}s\n\n| Verdict | Id | Scenario | Variable | At | Expected | Sim | Gate | Source | Note |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n",
-            if kind == "target" {
-                "Target"
-            } else {
-                "Response"
+            match kind {
+                "target" => "Target",
+                "response" => "Response",
+                _ => "Parameter",
             }
         );
         for o in rows {
@@ -545,4 +545,36 @@ pub fn report_markdown(outcomes: &[Outcome], curves: &[CurveComparison]) -> Stri
         s.push('\n');
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn outcome(kind: &'static str) -> Outcome {
+        Outcome {
+            id: format!("{kind}_1"),
+            kind,
+            scenario: "single_pot".into(),
+            variable: "pods".into(),
+            at: "final".into(),
+            expected: "1 to 2".into(),
+            got: Some(1.5),
+            verdict: Verdict::Pass,
+            gate: Gate::Info,
+            source: "s".into(),
+            note: String::new(),
+        }
+    }
+
+    #[test]
+    fn the_report_has_one_section_per_kind() {
+        let md = report_markdown(
+            &[outcome("target"), outcome("response"), outcome("parameter")],
+            &[],
+        );
+        for title in ["## Targets", "## Responses", "## Parameters"] {
+            assert_eq!(md.matches(title).count(), 1, "{title} in\n{md}");
+        }
+    }
 }
