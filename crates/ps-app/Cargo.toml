@@ -25,6 +25,7 @@ ps-export.workspace = true
 ps-session.workspace = true
 bevy.workspace = true
 anyhow.workspace = true
+mimalloc.workspace = true
 serde.workspace = true
 ron.workspace = true
 

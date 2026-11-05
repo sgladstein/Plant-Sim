@@ -16,7 +16,7 @@ use std::sync::Arc;
 use ps_arch::{ArchError, DayReport, HourCtx, HourLens, Plant};
 use ps_soil::{SoilError, SoilGrid, SoilHour, WaterLedger};
 use ps_species::{Genotype, Species};
-use ps_units::{Celsius, Degrees, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
+use ps_units::{Celsius, Degrees, GramsN, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
 use ps_weather::{DateHour, HourWeather, Preset, WeatherSeries};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -1353,7 +1353,8 @@ impl World {
             let lai = leaf_area / entry.grid.surface_area().max(1e-12);
             let water_in = wx.rain.0 * entry.rain_fraction + irr + entry.pending_mm;
             entry.pending_mm = 0.0;
-            let led = entry.grid.step_hour(&SoilHour {
+            // Lean: the soil entry keeps only the fluxes and the storage after uptake.
+            let led = entry.grid.step_hour_lean(&SoilHour {
                 water_in: Millimeters(water_in),
                 surface_radiation: WPerM2(local.global.0 * libm::exp(-SOIL_EXTINCTION * lai)),
                 t_air: wx.t_air,
@@ -1365,7 +1366,7 @@ impl World {
                 .zip(&demand)
                 .map(|(e, d)| e.plant.uptake_request(*d))
                 .collect();
-            let joint = soils[si].grid.take_up(&requests)?;
+            let joint = soils[si].grid.take_up_lean(&requests)?;
             soils[si].ledger.accumulate(&joint.ledger);
             // 8 to 12. Carbon.
             let soil = &soils[si].grid;
@@ -1531,9 +1532,17 @@ impl World {
                 .map(|&p| plants[p].plant.nitrogen_request())
                 .collect();
             let got = entry.grid.take_up_nitrogen(&requests)?;
+            // Each plant's daily nitrogen step depends only on itself and the soil.
+            let mut got_of: Vec<Option<GramsN>> = vec![None; plants.len()];
             for (&p, u) in members.iter().zip(got) {
-                plants[p].plant.nitrogen_day(u.total(), &entry.grid, now)?;
+                got_of[p] = Some(u.total());
             }
+            let grid = &entry.grid;
+            plants
+                .par_iter_mut()
+                .zip(&got_of)
+                .filter_map(|(e, u)| u.map(|u| (e, u)))
+                .try_for_each(|(e, u)| e.plant.nitrogen_day(u, grid, now))?;
         }
         Ok(())
     }

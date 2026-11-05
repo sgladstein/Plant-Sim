@@ -5,6 +5,11 @@
 //! `cargo run --release -p ps-bench --example sim_days [RUNS]` (default 3 runs; the
 //! table shows the fastest and the median).
 
+// mimalloc: the sim's parallel sections allocate per plant, and glibc malloc serializes
+// them (docs/performance.md). The allocator never changes results.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
