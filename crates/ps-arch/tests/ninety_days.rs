@@ -82,7 +82,7 @@ fn ninety_day_counts_are_in_the_bean_ranges() {
     let (plant, reports) = run(DAYS, 7);
     for r in reports.iter().step_by(5) {
         println!(
-            "day {:>3} {:?} nodes {} branches {} leaves {} area {:.0} cm2 racemes {} flowers {} pods {} seeds {} roots {}+{} {:.1} m {:.2} g dm {:.2} g fruit {:.2} g h {:.0} cm",
+            "day {:>3} {:?} nodes {} branches {} leaves {} area {:.0} cm2 racemes {} flowers {} pods {} seeds {} roots {}+{} {:.1} m {:.2} g dm {:.2} g fruit {:.2} g h {:.0} cm fb {:.2}",
             r.day,
             r.stage,
             r.main_nodes,
@@ -99,7 +99,8 @@ fn ninety_day_counts_are_in_the_bean_ranges() {
             r.root_mass,
             r.dry_mass,
             r.fruit_mass,
-            r.height * 100.0
+            r.height * 100.0,
+            r.feedback_loss
         );
     }
     let last = reports.last().unwrap();
@@ -135,17 +136,19 @@ fn counts_hold_across_world_seeds() {
         let last = reports.last().unwrap();
         let reserve: f64 = plant.arena.reserve.iter().map(|r| r.0).sum();
         println!(
-            "seed {seed}: nodes {} branches {} pods {} seeds {} flowers {} dm {:.1} fruit {:.1} root {:.2} g {:.0} m h {:.0} cm reserve {reserve:.2} g C, mature day {:?}",
+            "seed {seed}: nodes {} branches {} pods {} seeds {} flowers {} dm {:.1} total {:.1} fruit {:.1} root {:.2} g {:.0} m h {:.0} cm reserve {reserve:.2} g C, peak feedback loss {:.2}, mature day {:?}",
             last.main_nodes,
             last.branches,
             last.pods,
             last.seeds,
             last.flowers,
             last.dry_mass,
+            last.total_dry_mass,
             last.fruit_mass,
             last.root_mass,
             last.root_length,
             last.height * 100.0,
+            reports.iter().map(|r| r.feedback_loss).fold(0.0, f64::max),
             reports
                 .iter()
                 .find(|r| r.stage == Some(ps_physio::Stage::Mature))

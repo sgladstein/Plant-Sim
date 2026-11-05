@@ -2,9 +2,10 @@
 //! Model card: docs/models/thermal-time-and-phenology.md.
 
 use ps_units::{Celsius, DegreeDays};
+use serde::{Deserialize, Serialize};
 
 /// Cardinal temperatures of development.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Cardinal {
     /// Base: no development at or below.
     pub base: Celsius,
@@ -39,7 +40,7 @@ impl Cardinal {
 
 /// Temperature multiplier on expansion growth (§3.11): zero at or below `min`, rising
 /// linearly to one at `opt_low`, one to `opt_high`, falling linearly to zero at `max`.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GrowthTemperature {
     /// Zero at or below.
     pub min: Celsius,

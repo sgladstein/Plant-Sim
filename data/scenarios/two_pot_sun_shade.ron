@@ -1,0 +1,18 @@
+// Two bush beans in 20 cm pots, one under 50% shade cloth, both watered 10 mm every two
+// days (design plan §6.2).
+Scenario(
+  schema: 1,
+  model_version: "0.1.0",
+  world_seed: 42,
+  latitude_deg: 45.0,
+  start: (year: 2000, month: 5, day: 15, hour: 6),
+  weather: Preset("temperate_summer"),
+  soils: [ Pot(id: 0, diameter_cm: 20.0, depth_cm: 20.0, texture: Loam, position_m: (0.0, 0.0)),
+           Pot(id: 1, diameter_cm: 20.0, depth_cm: 20.0, texture: Loam, position_m: (0.6, 0.0)) ],
+  radiation_fraction: { 0: 1.0, 1: 0.5 },
+  irrigation: { 0: Schedule(every_days: 2, mm: 10.0), 1: Schedule(every_days: 2, mm: 10.0) },
+  co2_ppm: 420.0,
+  sowings: [ (soil: 0, species: "bush_bean", seed: Default, depth_cm: 3.0),
+             (soil: 1, species: "bush_bean", seed: Default, depth_cm: 3.0) ],
+  duration_days: 90,
+)

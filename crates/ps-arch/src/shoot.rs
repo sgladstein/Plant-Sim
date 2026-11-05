@@ -522,7 +522,10 @@ impl Plant {
             } else {
                 m.shade_days = 0;
             }
-            let old = self.arena.thermal_age[i].0 >= hp.leaf_lifespan.0;
+            // Lifespan counts from full expansion (species schema; WP8 review).
+            let old = m
+                .expanded
+                .is_some_and(|x| self.arena.thermal_age[i].0 >= x.0 + hp.leaf_lifespan.0);
             if old || frost || mature || m.shade_days >= hp.shade_days {
                 self.shed_organ(id, now)?;
             }

@@ -30,6 +30,8 @@ pub struct Rates {
     pub gs: MolPerM2S,
     /// Transpiration.
     pub e: MolPerM2S,
+    /// Day respiration (included in `a_net`).
+    pub rd: UmolPerM2S,
 }
 
 impl Rates {
@@ -38,6 +40,7 @@ impl Rates {
             a_net: g.a_net,
             gs: g.gs,
             e: g.e,
+            rd: g.rd,
         }
     }
 
@@ -47,6 +50,7 @@ impl Rates {
             a_net: UmolPerM2S(l(a.a_net.0, b.a_net.0)),
             gs: MolPerM2S(l(a.gs.0, b.gs.0)),
             e: MolPerM2S(l(a.e.0, b.e.0)),
+            rd: UmolPerM2S(l(a.rd.0, b.rd.0)),
         }
     }
 }
