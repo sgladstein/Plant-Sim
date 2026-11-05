@@ -56,7 +56,7 @@ for whatever you pick up.
 | Design plan v3 (complete, kept current with decisions) | [docs/design-plan.md](design-plan.md). §3 model, §3.2 step order, §7 backlog of 36 WPs with done-when, §8 validation, §10 architecture, §11 implementation guide. |
 | Progress, per WP, plus every open follow-up | [docs/STATUS.md](STATUS.md) (read first every session) |
 | Agent rules (non-negotiable sim rules, code style, pre-push checks) | [CLAUDE.md](../CLAUDE.md) |
-| Decision records 0001 to 0027 (0028 comes with #87) | [docs/decisions/](decisions/) |
+| Decision records 0001 to 0028 | [docs/decisions/](decisions/) |
 | Model cards, one per process | [docs/models/](models/) |
 | Bevy pin and idioms | [docs/bevy-notes.md](bevy-notes.md) |
 | CLI | [docs/cli.md](cli.md) |
@@ -68,7 +68,7 @@ for whatever you pick up.
 
 ## 4. State of the project (2026-11-05, main at the handoff merge)
 
-- **Model version 0.10.0** at handoff (`ps_world::MODEL_VERSION`); 0.11.0 once #87 (lateral roots, decision 0028) merges. Species schema 7.
+- **Model version 0.11.0** (`ps_world::MODEL_VERSION`; lateral roots stay in the soil, decision 0028, #87). Species schema 7.
 - **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
   a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.
@@ -85,7 +85,7 @@ for whatever you pick up.
   Pole bean (twining), spring wheat, nitrogen with nodules, harvest/prune/obstacles,
   weather files, plant-to-plant variation all landed.
 - **M3 (breeding) and M4 (tree, fields): not started.**
-- **Validation (model 0.10.0, mean of four world seeds, decision 0026):** 87 checks,
+- **Validation (models 0.10.0 and 0.11.0 alike, mean of four world seeds, decision 0026):** 87 checks,
   65 pass, every M0 gate passes. One bean spans 21 to 39 g by world seed alone, so
   every target now reads the seed mean. Don't tune "~" parameters on one seed. Main
   misses: thermal-time phenology, pole bean height, wheat stand height and yield,
@@ -99,11 +99,11 @@ for whatever you pick up.
 
 | PR | What | State |
 | --- | --- | --- |
-| #87 | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; merging on green |
 | #79 | Viewer look option B painterly | **Parked**, owner decides; do not merge |
 | this PR | This handoff and the archive | |
 
-Merged during the handoff: #81 (multi-seed validation, decision 0026), #82 (perf
+Merged during the handoff: #81 (multi-seed validation, decision 0026), #87 (lateral
+roots stay in the soil, decision 0028, model 0.11.0; validation unchanged), #82 (perf
 handoff), #83 (plant visuals research), #84 (viewer root-copy fix and viewer
 handoff; #86 was a duplicate fix and was closed). Open issue #58: scale nitrogen
 uptake capacity with root mass.
@@ -272,13 +272,11 @@ a project folder that no longer exists; from now on put them in the repo: review
 ## 9. Next steps, in order
 
 **Implementation (sim):**
-1. Make sure #87 (lateral roots, decision 0028) merged; if it moved validation,
-   record it in decision 0028 and STATUS.
-2. Vine capture sweep first: capture sweeps a fixed 6 cm, so with sowing scatter about
+1. Vine capture sweep: capture sweeps a fixed 6 cm, so with sowing scatter about
    1 pole bean in 16 never finds its stake, and the seed-mean pole height partly
    measures those misses. Batch the other variation-review items into the same model
    bump ([handoff/implementation.md](handoff/implementation.md) step 2).
-3. Revisit the transport/priority rule first (STATUS: WP22 and WP23 follow-ups, the
+2. Revisit the transport/priority rule first (STATUS: WP22 and WP23 follow-ups, the
    WP7 sink-limitation question); re-tuning phloem conductance per species before that
    gets undone by it. Then re-tune "~" parameters on the four-seed mean; pole_height_day60,
    drought_shoot_mass and others sit at band edges since the leaf-angle fix. Fold
@@ -288,16 +286,16 @@ a project folder that no longer exists; from now on put them in the repo: review
    Validation follow-ups from #81: sort validate jobs by plant count × days,
    descending, and give each job a one-thread rayon pool when several run at once.
    (Roots through the pot wall: decision 0028. Roots drawn upward: viewer fix, #84.)
-4. WP26: save, load and replay already exist; missing are a non-stopping
+3. WP26: save, load and replay already exist; missing are a non-stopping
    `Session::save_ron`, the plot save/replay done-when test, and lens data (light
    share, organ N, per-organ carbon flux) ([handoff/implementation.md](handoff/implementation.md)
    step 3); the UI half is the viewer's. Then WP27 (leaf energy balance), then M2 exit: 30 plants at 60 fps and
    under 20 ms per sim-day, density plateau (still weak: -43% vs -70%).
-5. M3 (WP28 to WP32): genome, pollination, breeding bench, trait discovery,
+4. M3 (WP28 to WP32): genome, pollination, breeding bench, trait discovery,
    challenges. Research round 2 has the genetics. WP28 is bound by decision 0023
    items 4 to 6 (light linkage, two-tier mutation 1e-3 QTL / 1e-5 named, a seed-colour
    rule table); the review workstream checks WP28 against them.
-6. Smaller open follow-ups are listed in STATUS "Review follow-ups" (self-shading
+5. Smaller open follow-ups are listed in STATUS "Review follow-ups" (self-shading
    within a light cell, transport vs priority, wheat stand too short, pod set reading
    N, uptake scaling, issue #58).
 

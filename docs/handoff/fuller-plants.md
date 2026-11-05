@@ -58,7 +58,7 @@ The changes:
 - The 1070 timing of the plot scene had not been done at handoff.
 
 ## Open and next steps
-1. ~~Merge PR #86~~ Done: the same fix landed as #84.
+1. Done: root copies keep their depth and stay in the pot (#84); the sim-side wall rule for laterals is model 0.11.0 (#87).
 2. **Leaf angle variety belongs in the sim.** The visuals research (`research/plant-visuals-review.md` items 1–2) wants two things:
    - age-dependent petiole elevation: about 1.15 rad young to −0.35 old, replacing `PETIOLE_ELEVATION = 0.5` in `ps-arch/src/shoot.rs`
    - larger per-leaf yaw, about ±0.55 rad, because 180° phyllotaxis puts every leaf in one plane
