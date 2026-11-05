@@ -114,6 +114,14 @@ over the M2 budget. Where a single-pot hour goes now (wall time, instrumented):
 soil step 20%, growth 20%, the class table 12%, uptake 6%, and the daily step
 (light rebuild and growth) 36%.
 
+After WP22 (pole bean, model 0.6.0), medians of 5 runs on the same machine: single_pot
+2.12 ms, two pots 3.38, plot 23.8 (within noise of the numbers above; callgrind
+instructions are slightly lower). The pole scenarios are heavier per plant:
+m2/pole_trellis (4 pots, 110 days) 16.4 ms per sim-day, about 4 ms per plant, and
+m2/pole_row_trellis (8 plants on one 1.5 × 1 m plot) 12.2 ms. A 30-plant pole plot
+at that rate would be about 45 ms, so pole beans need their own look before a large
+pole plot is a target.
+
 CI prints the same table into the summary of the linux workflow's `bench-summary`
 job. That job only reports: shared runners are too noisy to gate on wall time, so it
 cannot fail the build.
