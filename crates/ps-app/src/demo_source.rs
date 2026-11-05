@@ -407,6 +407,7 @@ pub fn drive(
             size,
             skeleton,
             water_stress,
+            wilt: ps_mesh::wilt_of_stress(water_stress),
             first_flower: None,
             organ_values: std::sync::Arc::new(organ_values),
             soil_water,

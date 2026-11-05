@@ -44,9 +44,10 @@ pub use axes::{
 pub use instances::{
     BLADE_TILT, COTYLEDON_SCALE, FLOWER_LENGTH, Instance, InstanceOptions, LEAF_JITTER,
     droop_level, flower_length, instances, jitter, leaf_form, pulvinus, unfold_level,
+    wilt_droop_level,
 };
 pub use mesh::MeshData;
-pub use moments::{Pose, lean_from_light, pose, wilt_of_stress};
+pub use moments::{Pose, lean_from_light, pose, turgor_step, wilt_of_stress};
 pub use skeleton::{Coil, Container, Hook, MAX_COPIES, Placement, Skeleton};
 pub use templates::{
     DROOP_LEVELS, Template, TemplateKey, UNFOLD_LEVELS, build_template, build_template_shaded,

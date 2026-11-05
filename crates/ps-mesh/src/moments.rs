@@ -69,6 +69,36 @@ pub fn wilt_of_stress(water_stress_factor: f32) -> f32 {
     1.0 - smoothstep(0.45, 0.92, water_stress_factor)
 }
 
+/// Hours over which drawn wilting follows the sim's stress: leaves lose turgor over about
+/// half a day, so the hour-to-hour and day-night swings of the stress factor do not make
+/// them twitch.
+pub const TURGOR_HOURS: f32 = 12.0;
+
+/// Hours over which leaves regain turgor once water arrives: a watered plant perks up
+/// within a few hours.
+pub const RECOVERY_HOURS: f32 = 2.0;
+
+/// A drop in target wilt larger than this is a recovery (watering), followed at
+/// [`RECOVERY_HOURS`]; smaller ones (the night's partial recovery) at [`TURGOR_HOURS`].
+pub const RECOVERY_STEP: f32 = 0.25;
+
+/// The drawn wilt `hours` sim hours after it was `shown`, moving toward `target` (both
+/// 0 to 1, from [`wilt_of_stress`]): a first-order lag, fast when the target drops by more
+/// than [`RECOVERY_STEP`].
+#[must_use]
+pub fn turgor_step(shown: f32, target: f32, hours: f32) -> f32 {
+    if !shown.is_finite() || !target.is_finite() {
+        return if target.is_finite() { target } else { 0.0 };
+    }
+    let tau = if shown - target > RECOVERY_STEP {
+        RECOVERY_HOURS
+    } else {
+        TURGOR_HOURS
+    };
+    let k = 1.0 - (-hours.max(0.0) / tau).exp();
+    (shown + (target - shown) * k).clamp(0.0, 1.0)
+}
+
 /// The lean toward the light, rad, from one entry per leaf: its horizontal offset from
 /// the stem's base, m, its area, m², and the light it absorbs (any unit, per area).
 ///
@@ -344,6 +374,18 @@ mod tests {
         assert!((wilt_of_stress(0.4) - 1.0).abs() < 1e-6);
         assert!(wilt_of_stress(f32::NAN).abs() < 1e-6);
         assert!(crate::droop_level(1.0) == 0 && crate::droop_level(0.3) == crate::DROOP_LEVELS - 1);
+    }
+
+    #[test]
+    fn drawn_wilting_lags_the_stress_and_recovers_fast_after_watering() {
+        // Wilting comes on over about half a day.
+        let after_hour = turgor_step(0.0, 1.0, 1.0);
+        assert!(after_hour > 0.0 && after_hour < 0.15);
+        assert!(turgor_step(0.0, 1.0, 36.0) > 0.9);
+        // A night's small recovery barely moves it; watering brings it back in hours.
+        assert!(turgor_step(0.9, 0.8, 1.0) > 0.89);
+        assert!(turgor_step(0.9, 0.0, 4.0) < 0.15);
+        assert!((turgor_step(0.5, 0.5, 3.0) - 0.5).abs() < 1e-6);
     }
 
     #[test]

@@ -6,8 +6,8 @@ use ps_units::{GramsC, GramsDM, GramsN, Hours, MPerG, Radians};
 
 use crate::demo::{DemoParams, demo_bean, demo_origin};
 use crate::{
-    Axis, AxisKind, AxisSignature, AxisStyle, InstanceOptions, MeshData, Skeleton, Template,
-    TemplateKey, TubeNode, axes, axis_mesh, build_template, droop_level, instances, tube,
+    Axis, AxisKind, AxisSignature, AxisStyle, DROOP_LEVELS, InstanceOptions, MeshData, Skeleton,
+    Template, TemplateKey, TubeNode, axes, axis_mesh, build_template, droop_level, instances, tube,
 };
 
 fn organ(kind: OrganKind, parent: Option<OrganId>, order: u8, mass: f64, d: [f64; 3]) -> NewOrgan {
@@ -255,7 +255,8 @@ fn every_template_is_sound() {
         assert_winding_matches_normals(&m);
     }
     // Two leaf forms × droop × unfolding, the grass blade × droop, seven others.
-    assert_eq!(TemplateKey::all().len(), 2 * 5 * 4 + 5 + 7);
+    let d = usize::from(DROOP_LEVELS);
+    assert_eq!(TemplateKey::all().len(), 2 * d * 4 + d + 7);
 }
 
 #[test]
@@ -294,9 +295,10 @@ fn droop_lowers_the_blade() {
         .0
         .z
     };
-    assert!(low(4) < low(0) - 0.2);
+    let top = DROOP_LEVELS - 1;
+    assert!(low(top) < low(0) - 0.2);
     assert_eq!(droop_level(1.0), 0);
-    assert_eq!(droop_level(0.0), 4);
+    assert_eq!(droop_level(0.0), top);
     assert_eq!(droop_level(f32::NAN), 0);
 }
 

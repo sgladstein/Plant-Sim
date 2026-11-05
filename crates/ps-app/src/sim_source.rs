@@ -125,12 +125,18 @@ fn obstacle_view(o: &ObstacleSpec) -> ObstacleView {
     }
 }
 
+/// Longest gap, sim hours, over which drawn wilting carries on from its last value
+/// rather than restarting from the stress (a time-lapse skips the night's 10 hours).
+const TURGOR_MEMORY_HOURS: u64 = 48;
+
 /// One plant at one tick: its skeleton and what poses it (WP20).
 #[derive(Clone)]
 struct Frame {
     skeleton: Skeleton,
     /// Water stress factor on conductance, 1 = unstressed.
     stress: f32,
+    /// Drawn wilting, 0 to 1, lagging the stress ([`ps_mesh::turgor_step`]).
+    wilt: f32,
     /// Lean toward the light, rad (see [`ps_mesh::lean_from_light`]).
     lean: bevy::math::Vec2,
 }
@@ -149,6 +155,9 @@ pub struct SimSource {
     weather: WeatherSeries,
     pots: BTreeMap<u32, PotInfo>,
     plants: BTreeMap<u32, PlantFrames>,
+    /// Each plant's drawn wilting and the tick it was computed for, carried across the
+    /// jumps a time-lapse makes over the night (WP20).
+    turgor: BTreeMap<u32, (u64, f32)>,
     /// Each plant's lens values and the (snapshot sequence, high-speed flag) they were
     /// computed for: they do not change between sim hours, so frames that only
     /// interpolate reuse them.
@@ -222,6 +231,7 @@ impl SimSource {
             weather,
             pots,
             plants: BTreeMap::new(),
+            turgor: BTreeMap::new(),
             lens_values: BTreeMap::new(),
             seq: 0,
             snapshot,
@@ -702,11 +712,12 @@ fn show(
         let (a, b) = (&frames.previous, &frames.current);
         let mut skeleton = Skeleton::lerp(&a.skeleton, &b.skeleton, frac);
         let stress = a.stress + (b.stress - a.stress) * frac;
+        let wilt = a.wilt + (b.wilt - a.wilt) * frac;
         ps_mesh::pose(
             &mut skeleton,
             Pose {
                 lean: a.lean.lerp(b.lean, frac),
-                wilt: ps_mesh::wilt_of_stress(stress),
+                wilt,
             },
         );
         on_screen.push((p.id, soil.id));
@@ -721,6 +732,7 @@ fn show(
             size: info.size,
             skeleton,
             water_stress: stress,
+            wilt,
             first_flower: first_flower(p),
             organ_values: {
                 let key = (snap.seq, high_speed);
@@ -916,9 +928,22 @@ pub fn drive(
                 continue;
             };
             let skeleton = skeleton_of(p, size);
+            let stress = p.plant.stress.0 as f32;
+            let target = ps_mesh::wilt_of_stress(stress);
+            let wilt = match src.turgor.get(&p.id) {
+                Some(&(t0, w0)) if t0 == tick => w0,
+                // Follow the stress forward in time; a seek back or a long jump starts
+                // from the stress itself.
+                Some(&(t0, w0)) if t0 < tick && tick - t0 <= TURGOR_MEMORY_HOURS => {
+                    ps_mesh::turgor_step(w0, target, (tick - t0) as f32)
+                }
+                _ => target,
+            };
+            src.turgor.insert(p.id, (tick, wilt));
             let new = Frame {
                 lean: lean_of(p, &skeleton, &day_weather),
-                stress: p.plant.stress.0 as f32,
+                stress,
+                wilt,
                 skeleton,
             };
             match src.plants.get_mut(&p.id) {
