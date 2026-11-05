@@ -523,13 +523,14 @@ impl Plant {
                 self.arena.reserve[p.index()] += GramsC(r);
             }
         }
-        allocation::shed(
+        let deaths = allocation::shed(
             &mut self.arena,
             &self.params.carbon,
             id,
             now,
             &mut self.ledger,
         )?;
+        self.book_dead_nitrogen(&deaths);
         Ok(())
     }
 
@@ -541,12 +542,13 @@ impl Plant {
         // At maturity the annual's life ends: tissues dry and stop respiring
         // (`update_nitrogen`), so the harvest no longer starves (decision 0013).
         if !mature {
-            allocation::starvation_deaths(
+            let deaths = allocation::starvation_deaths(
                 &mut self.arena,
                 &self.params.carbon,
                 now,
                 &mut self.ledger,
             )?;
+            self.book_dead_nitrogen(&deaths);
         }
         let frost = self.today.hours > 0 && self.today.t_min < hp.frost.0;
         let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();

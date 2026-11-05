@@ -100,6 +100,9 @@ pub struct CarbonLedger {
     /// Carbon cut off and taken away (pruning, harvest).
     #[serde(default)]
     pub removed: GramsC,
+    /// Carbon respired by nodules to fix nitrogen (WP24, decision 0020).
+    #[serde(default)]
+    pub fixation: GramsC,
 }
 
 impl CarbonLedger {
@@ -120,7 +123,8 @@ impl CarbonLedger {
                 - self.maintenance.0
                 - self.growth_respiration.0
                 - self.litter.0
-                - self.removed.0,
+                - self.removed.0
+                - self.fixation.0,
         )
     }
 
@@ -137,6 +141,7 @@ impl CarbonLedger {
             self.growth_respiration.0,
             self.litter.0.abs(),
             self.removed.0.abs(),
+            self.fixation.0,
             1e-12,
         ]
         .into_iter()
@@ -181,8 +186,36 @@ pub struct HourInputs<'a> {
     pub income: &'a [GramsC],
     /// Plant FTSW, for the root priority.
     pub ftsw: f64,
-    /// Plant water stress factor, for expansion.
+    /// Plant water stress factor, for expansion (the caller multiplies in the
+    /// nitrogen factor; decision 0020).
     pub stress: f64,
+    /// Whether organs pay maintenance (false once the annual has matured and its
+    /// tissue is dry; decision 0013).
+    pub respiring: bool,
+    /// Nitrogen per dry mass at or below which an organ cannot grow, by
+    /// [`kind_index`] (decision 0020); `None` for no nitrogen limit.
+    pub n_floor: Option<&'a [f64; ORGAN_KINDS]>,
+}
+
+/// Number of organ kinds, for per-kind tables.
+pub const ORGAN_KINDS: usize = 11;
+
+/// Index of an organ kind into per-kind tables.
+#[must_use]
+pub fn kind_index(kind: OrganKind) -> usize {
+    match kind {
+        OrganKind::Seed => 0,
+        OrganKind::Cotyledon => 1,
+        OrganKind::Internode => 2,
+        OrganKind::Bud => 3,
+        OrganKind::Leaf => 4,
+        OrganKind::Root => 5,
+        OrganKind::Flower => 6,
+        OrganKind::Pod => 7,
+        OrganKind::SeedInPod => 8,
+        OrganKind::Nodule => 9,
+        OrganKind::Tendril => 10,
+    }
 }
 
 /// Temperature responses used by growth.
@@ -215,6 +248,23 @@ fn conductance(arena: &OrganArena, p: OrganId, c: OrganId, k: f64) -> f64 {
         .or_else(|| segment(arena, p))
         .unwrap_or((MIN_RADIUS, MIN_LENGTH));
     k * core::f64::consts::PI * r * r / l
+}
+
+/// Whether an organ of `kind` pays maintenance this hour: leaves pay it as day
+/// respiration, the sown seed and cotyledons respire little (decision 0013), and nothing
+/// does once the annual has matured (decision 0020).
+fn pays_maintenance(kind: OrganKind, respiring: bool) -> bool {
+    respiring
+        && !matches!(
+            kind,
+            OrganKind::Leaf | OrganKind::Seed | OrganKind::Cotyledon
+        )
+}
+
+/// Whether an organ is diluted to its kind's nitrogen growth floor (decision 0020).
+fn nitrogen_gated(arena: &OrganArena, id: OrganId, floor: &[f64; ORGAN_KINDS]) -> bool {
+    let w = arena.structural(id).0;
+    w > 0.0 && arena.nitrogen[id.index()].0 <= floor[kind_index(arena.kind[id.index()])] * w
 }
 
 /// Hourly steps 8 to 12 of §3.2 for one plant.
@@ -252,10 +302,11 @@ pub fn hourly(
 
     // (temperature bits, factor) for each temperature seen this hour, in first-seen order.
     let mut q10_cache: Vec<(u64, f64)> = Vec::new();
-    // 8. Maintenance from each organ's own reserve (leaves pay it as day respiration).
+    // 8. Maintenance from each organ's own reserve (leaves pay it as day respiration;
+    // seed tissues respire little, decision 0013).
     for &id in &ids {
         let i = id.index();
-        if arena.kind[i] == OrganKind::Leaf {
+        if !pays_maintenance(arena.kind[i], inp.respiring) {
             continue;
         }
         // Organs at one temperature (the shoot in air, roots in one soil layer) share
@@ -309,6 +360,11 @@ pub fn hourly(
         let age0 = DegreeDays(arena.expansion_age[i].0 - dt_exp[i].0);
         let curve = arena.curve[i];
         if curve.potential.0 <= 0.0 || curve.is_complete(age0) {
+            continue;
+        }
+        // An organ diluted to its final nitrogen concentration cannot build more
+        // tissue until the plant tops it up (decision 0020).
+        if inp.n_floor.is_some_and(|f| nitrogen_gated(arena, id, f)) {
             continue;
         }
         // Demand follows the species potential, not the reduced one: a shortfall is

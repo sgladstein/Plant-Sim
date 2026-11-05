@@ -11,7 +11,9 @@
 //!    layer's excess leaves the grid;
 //! 3. lateral redistribution: 10% of the water difference to each horizontal neighbor;
 //! 4. evaporation from the top layer only, reduced as it dries;
-//! 5. soil temperature by layer from lagged, damped air temperature.
+//! 5. soil temperature by layer from lagged, damped air temperature;
+//! 6. nitrogen: mineralization and nitrification ([`nitrogen`]; nitrate also moves with
+//!    the drainage and lateral water of steps 2 and 3).
 //!
 //! Uptake (step 7) is [`SoilGrid::take_up`], one call per hour for every plant in the
 //! grid; FTSW and the stress factor (step 5) are [`SoilGrid::ftsw`] and
@@ -20,7 +22,10 @@
 //!
 //! Model card: docs/models/soil-and-water.md.
 
-use ps_units::{Celsius, KgPerMH, KgWater, M2PerHour, Meters, Millimeters, WPerM2};
+use ps_units::{Celsius, GramsN, KgPerMH, KgWater, M2PerHour, Meters, Millimeters, WPerM2};
+
+pub mod nitrogen;
+pub use nitrogen::{NitrogenForm, NitrogenLedger, NitrogenRequest, NitrogenUptake, SoilNitrogen};
 use serde::{Deserialize, Serialize};
 
 /// Latent heat of vaporization, J kg⁻¹ (at about 20 °C).
@@ -63,11 +68,14 @@ pub struct Hydraulics {
     pub wilting_point: f64,
     /// Air-dry content: evaporation stops here.
     pub air_dry: f64,
+    /// Dry bulk density, kg m⁻³ (for nitrogen concentrations; WP24).
+    pub bulk_density: f64,
 }
 
 impl Texture {
     /// Hydraulic constants. Field capacity and wilting point from design plan §3.6;
-    /// saturation and air-dry are "~" (typical textbook values, Saxton and Rawls 2006 ranges).
+    /// saturation, air-dry and bulk density are "~" (typical textbook values, Saxton and
+    /// Rawls 2006 ranges).
     #[must_use]
     pub const fn hydraulics(self) -> Hydraulics {
         match self {
@@ -76,18 +84,21 @@ impl Texture {
                 field_capacity: 0.27,
                 wilting_point: 0.12,
                 air_dry: 0.05,
+                bulk_density: 1300.0,
             },
             Texture::Sand => Hydraulics {
                 saturation: 0.40,
                 field_capacity: 0.15,
                 wilting_point: 0.05,
                 air_dry: 0.02,
+                bulk_density: 1550.0,
             },
             Texture::Clay => Hydraulics {
                 saturation: 0.50,
                 field_capacity: 0.40,
                 wilting_point: 0.22,
                 air_dry: 0.10,
+                bulk_density: 1250.0,
             },
         }
     }
@@ -276,6 +287,16 @@ pub struct SoilGrid {
     layer_temperature: Vec<Celsius>,
     /// Last 24 hourly air temperatures, oldest first; drives soil temperature.
     air_history: Vec<Celsius>,
+    /// Nitrate N per cell (WP24).
+    no3: Vec<GramsN>,
+    /// Ammonium N per cell.
+    nh4: Vec<GramsN>,
+    /// Humus N per cell.
+    organic_n: Vec<GramsN>,
+    /// Rhizobia present.
+    rhizobia: bool,
+    /// Nitrogen fluxes since the nitrogen was set.
+    n_ledger: NitrogenLedger,
 }
 
 /// Water stress factor from FTSW: 1 above `threshold`, linear to 0 at FTSW 0 (§3.6).
@@ -369,6 +390,11 @@ impl SoilGrid {
             water: vec![KgWater(0.0); n],
             layer_temperature: vec![t_initial; nz],
             air_history: vec![t_initial; 24],
+            no3: vec![GramsN(0.0); n],
+            nh4: vec![GramsN(0.0); n],
+            organic_n: vec![GramsN(0.0); n],
+            rhizobia: false,
+            n_ledger: NitrogenLedger::default(),
         };
         g.fill_to(texture.hydraulics().field_capacity);
         Ok(g)
@@ -487,6 +513,8 @@ impl SoilGrid {
         self.redistribute_laterally();
         self.evaporate(h.surface_radiation, &mut ledger);
         self.update_temperature(h.t_air);
+        self.transform_nitrogen();
+        self.assert_nitrogen_closes();
         ledger.storage_after = self.total_water();
         debug_assert!(
             ledger.relative_residual() < CLOSURE_TOLERANCE,
@@ -540,6 +568,7 @@ impl SoilGrid {
                 }
             })
             .collect();
+        self.drain_nitrate(&excess);
         for (i, e) in excess.iter().enumerate() {
             if e.0 <= 0.0 {
                 continue;
@@ -593,6 +622,7 @@ impl SoilGrid {
         for (w, d) in self.water.iter_mut().zip(delta) {
             *w += d;
         }
+        self.spread_nitrate(fraction);
     }
 
     fn evaporate(&mut self, radiation: WPerM2, ledger: &mut WaterLedger) {
@@ -794,6 +824,12 @@ impl SoilGrid {
         for t in &self.air_history {
             f(t.to_bits());
         }
+        for i in 0..self.water.len() {
+            f(self.no3[i].to_bits());
+            f(self.nh4[i].to_bits());
+            f(self.organic_n[i].to_bits());
+        }
+        f(u64::from(self.rhizobia));
     }
 }
 

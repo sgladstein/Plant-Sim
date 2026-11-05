@@ -40,6 +40,7 @@ fn run_watered(days: u32, seed: u64, theta: f64) -> (Plant, Vec<DayReport>) {
     )
     .unwrap();
     soil.fill_to(theta);
+    soil.set_nitrogen(&ps_soil::SoilNitrogen::GARDEN);
     let (nx, ny, _) = soil.dims();
     #[allow(clippy::cast_precision_loss)]
     let center = [nx as f64 * cell * 0.5, ny as f64 * cell * 0.5, -0.03];
@@ -69,6 +70,7 @@ fn run_watered(days: u32, seed: u64, theta: f64) -> (Plant, Vec<DayReport>) {
                 let next = wx.at(Hours(tick + 1 + k as u64)).unwrap_or(h);
                 *s = next.sun.is_up().then(|| next.sun.direction());
             }
+            plant.nitrogen_alone(&mut soil, Hours(tick + 1)).unwrap();
             let rep = plant.day(&soil, &sun, Hours(tick + 1)).unwrap();
             reports.push(rep);
             soil.fill_to(theta);
@@ -82,7 +84,7 @@ fn ninety_day_counts_are_in_the_bean_ranges() {
     let (plant, reports) = run(DAYS, 7);
     for r in reports.iter().step_by(5) {
         println!(
-            "day {:>3} {:?} nodes {} branches {} leaves {} area {:.0} cm2 racemes {} flowers {} pods {} seeds {} roots {}+{} {:.1} m {:.2} g dm {:.2} g fruit {:.2} g h {:.0} cm fb {:.2}",
+            "day {:>3} {:?} nodes {} branches {} leaves {} area {:.0} cm2 racemes {} flowers {} pods {} seeds {} roots {}+{} {:.1} m {:.2} g dm {:.2} g fruit {:.2} g h {:.0} cm fb {:.2} N {:.0} mg up {:.1} fix {:.1} mine {:.1} unmet {:.1} st {:.2} nod {:.0} mg",
             r.day,
             r.stage,
             r.main_nodes,
@@ -100,7 +102,14 @@ fn ninety_day_counts_are_in_the_bean_ranges() {
             r.dry_mass,
             r.fruit_mass,
             r.height * 100.0,
-            r.feedback_loss
+            r.feedback_loss,
+            r.nitrogen * 1e3,
+            r.n_uptake * 1e3,
+            r.n_fixed * 1e3,
+            r.n_mined * 1e3,
+            r.n_unmet * 1e3,
+            r.n_status,
+            r.nodule_mass * 1e3
         );
     }
     let last = reports.last().unwrap();
@@ -236,4 +245,56 @@ fn export_leaves_for_ray_tracer() {
     }
     let path = std::env::var("PS_LEAVES_OUT").unwrap_or_else(|_| "plant_leaves.csv".into());
     std::fs::write(&path, out).unwrap();
+}
+
+/// WP24 done-when: bottom-up senescence is emergent (decision 0020). In the garden
+/// pot, the main-stem leaves the plant mines and drops during seed fill sit lower on
+/// the stem than the ones still green when it matures.
+#[test]
+fn seed_fill_drops_leaves_from_the_bottom_up() {
+    use ps_graph::OrganKind;
+    use ps_physio::Stage;
+    let (plant, reports) = run(DAYS, 7);
+    let hour_of = |stage: Stage| {
+        let r = reports
+            .iter()
+            .find(|r| r.stage.is_some_and(|s| s >= stage))
+            .unwrap();
+        u64::from(r.day) * 24
+    };
+    let (fill, mature) = (hour_of(Stage::SeedFill), hour_of(Stage::Mature));
+    let a = &plant.arena;
+    // A leaf's node: the internodes below it.
+    let node = |id: ps_graph::OrganId| {
+        let mut n = 0_u32;
+        let mut cur = a.parent[id.index()];
+        while let Some(p) = cur {
+            n += u32::from(a.kind[p.index()] == OrganKind::Internode);
+            cur = a.parent[p.index()];
+        }
+        f64::from(n)
+    };
+    let (mut dropped, mut kept) = (Vec::new(), Vec::new());
+    for id in a.ids() {
+        let i = id.index();
+        if a.kind[i] != OrganKind::Leaf || a.axis_order[i] != 0 || a.birth[i].0 > fill {
+            continue;
+        }
+        match a.death[i] {
+            Some(d) if d.0 <= fill => {}
+            Some(d) if d.0 < mature => {
+                assert!(plant.meta[i].mined, "leaf {i} dropped unmined");
+                dropped.push(node(id));
+            }
+            _ => kept.push(node(id)),
+        }
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+    println!("dropped at nodes {dropped:?}, kept {kept:?}");
+    assert!(!dropped.is_empty() && !kept.is_empty());
+    assert!(
+        mean(&dropped) < mean(&kept),
+        "dropped {dropped:?} kept {kept:?}"
+    );
 }
