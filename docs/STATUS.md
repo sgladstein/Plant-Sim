@@ -31,7 +31,7 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 17 UI | started: ps-ui top bar (speeds, steps, replay scrubber) and lens panel with legends |
 | 18 Lenses | framework and all seven M1 lenses, all on sim data since WP16: absorbed PAR from each leaf's light coefficients under the hour's weather and shade cloth, R:FR, reserve concentration, thermal age, root age, the stress factor, FTSW on the soil slice through the plant |
 
-The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.rs` fills them from `ps_session::Snapshot`. Lateral root cohorts are drawn as up to 8 copies at golden-angle turns about the parent root. Still to do: pots render as boxes the size of the soil grid.
+The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.rs` fills them from `ps_session::Snapshot`. Lateral root cohorts are drawn as up to 8 copies at golden-angle turns about the parent root. Pots are drawn round (`PotShape::Round`): a terracotta back half lined with soil, a curved glass front half, and a saucer; the soil-water slice wraps onto the glass. The rhizobox shape remains for the demo scene.
 
 ## Last validation report
 `cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11).

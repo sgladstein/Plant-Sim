@@ -24,7 +24,7 @@ use ps_mesh::Skeleton;
 use ps_session::{Session, SessionOptions, Snapshot, TimeCommand as SimCommand};
 use ps_ui::{TimeCommand, TimeControl};
 use ps_units::{Hours, WPerM2};
-use ps_view::{Garden, Lens, PotSize, PotView, SkyState, SoilFace};
+use ps_view::{Garden, Lens, PotShape, PotSize, PotView, SkyState, SoilFace};
 use ps_weather::{HourWeather, WeatherSeries};
 use ps_world::{Catalog, PlantEntry, Scenario, SoilEntry, SoilSpec, World};
 
@@ -202,6 +202,8 @@ fn pot_infos(
                     label: format!("Pot {}: {light}", e.id),
                     center: [(p.0 - mean_x) as f32, (p.1 - mean_y) as f32],
                     size: PotSize {
+                        // Every container is a cylindrical pot for now (`SoilSpec::Pot`).
+                        shape: PotShape::Round,
                         width: nx as f32 * cell,
                         depth: ny as f32 * cell,
                         soil_depth: nz as f32 * cell,
@@ -498,6 +500,7 @@ mod tests {
         w.run_days(20).unwrap_or_else(|e| unreachable!("{e}"));
         for p in &w.state().plants {
             let size = PotSize {
+                shape: PotShape::Round,
                 width: 0.2,
                 depth: 0.2,
                 soil_depth: 0.2,

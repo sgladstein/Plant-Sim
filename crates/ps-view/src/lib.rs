@@ -28,7 +28,7 @@ pub mod sky;
 use bevy::prelude::*;
 
 pub use camera::CameraRig;
-pub use garden::{Garden, PotSize, PotView, SoilFace};
+pub use garden::{Garden, PotShape, PotSize, PotView, SoilFace};
 pub use lens::{Lens, LensInfo, Origin, Scale};
 pub use ready::Ready;
 pub use sky::SkyState;
