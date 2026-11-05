@@ -3,7 +3,7 @@
 // not regrow (decision 0018).
 Scenario(
   schema: 1,
-  model_version: "0.12.0",
+  model_version: "0.13.0",
   world_seed: 7,
   latitude_deg: 45.0,
   start: (year: 2026, month: 5, day: 15, hour: 0),

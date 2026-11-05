@@ -113,6 +113,13 @@ docs/performance.md has the details of each, including measured floors.
    points cuts the stand's ray work by about 4/7, about a quarter of total run time.
    Either option changes results, so it needs a decision record, new golden hashes,
    and a re-run of the wheat validation targets.
+
+   **Done (owner chose (a), decision 0030, model 0.13.0):** each grass strip casts
+   rays from 3 points along it instead of 7. One run each in the cloud container
+   (4 cores, 140 days): 141 → 124 ms per sim-day, -12%, about half the estimate;
+   rays are 43% of instructions but run in parallel, so their wall-clock share is
+   smaller. Please re-time on your reference machine. The stand still can't play
+   live; option (b) or a cheaper grid and footprint build is next.
 4. **Viewer on the 1070:** time single_pot, plot_30_beans and m2/wheat_stand
    after the fuller-plants look (#78, the owner's pick). Use 2560 × 1440, Vulkan
    Mailbox, vsync off, and 1,200 frames, and report mean and p99 frame time and GPU

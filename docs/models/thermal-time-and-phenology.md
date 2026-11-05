@@ -53,6 +53,9 @@ under each weather preset; slower development in cold springs; heat stalling gro
 - Water stress does not change the pace of development yet (the plan's "and stress"
   is open, decision 0009).
 - No photoperiod response (common bean is mostly day-neutral in temperate cultivars).
+- A sown seed never loses germination progress when its cell dries (decision 0029),
+  and it does not die in dry soil, so a seed hovering near the moisture threshold
+  eventually germinates (review of decision 0029).
 
 ## Validation
 `ps_physio::tests::three_point_thermal_time`, `growth_temperature_trapezoid`,
