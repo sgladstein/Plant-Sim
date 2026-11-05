@@ -128,6 +128,12 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
   blocks a whole display interval when frames are paced at exactly 60. The default cap is
   now twice the refresh rate, and the bench CSV has a `limiter_ms` column (how long the
   limiter held each frame) to tell limiter time from render/present time on a spike.
+- Result on 7e9f872 (Vulkan, 2353×1324, 3000 frames): the default 120 cap is clean
+  (mean 8.65, p99 12.0, max 16.2 ms, 0 spikes). `--fps-cap 60` still spikes (p99 28.5,
+  31 spikes); on spike rows the limiter held 10.7 ms (13.2 normally) and the time outside
+  it was 18.8 ms (3.3 normally), so the extra refresh is spent in present/acquire. At 120
+  about half the frames are never shown; a physical-monitor check is still to do. For
+  the real cause, time present/acquire per frame.
 - `--window WxH` is in physical pixels and clamped to the monitor (it was logical, so
   2353×1324 became 4118×2317 at 175%).
 - DX12 baseline without DXC (#40 build): cold start about 175 s on every launch (no
