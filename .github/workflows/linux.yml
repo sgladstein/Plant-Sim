@@ -42,6 +42,29 @@ jobs:
         run: python3 scripts/check_determinism.py
 
 
+  # Sim speed per sim-day for the committed scenarios, printed into the job summary
+  # (docs/performance.md). Report only: shared runners are too noisy to gate on wall
+  # time, so neither a slow run nor a failure here can fail the build.
+  bench-summary:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: sim speed (report only)
+        continue-on-error: true
+        run: |
+          cargo build --release --locked -q -p ps-bench --example sim_days
+          {
+            echo "## Sim speed (report only, shared runner)"
+            echo
+            target/release/examples/sim_days 3
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # WP11: the validation report (design plan §8). Fails on a missed M0 target that is
   # not in validation/known_misses.ron; the plots are uploaded either way.
   validation:
