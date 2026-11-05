@@ -1,0 +1,445 @@
+From 87c47b4bd82c17a963a1774a6ad32c57f58560b4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 5 Nov 2026 07:24:04 +0000
+Subject: [PATCH] Speed up light traversal, class tables and Q10 lookups
+ without changing results
+
+Unroll the Amanatides-Woo axes in path_sum_b, locate a ray's start once,
+reuse each leaf's footprint from the daily grid fit, compute the class
+table's temperature terms once per table, and cache every Q10 factor of
+the hour. All bit-identical: golden hashes unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PYHSSvnop11Bd1JLmA2mJz
+---
+ crates/ps-light/src/lib.rs         | 180 +++++++++++++++++++++--------
+ crates/ps-physio/src/allocation.rs |  19 +--
+ crates/ps-physio/src/classes.rs    |  16 +--
+ crates/ps-physio/src/gas.rs        |  59 ++++++++--
+ 4 files changed, 198 insertions(+), 76 deletions(-)
+
+diff --git a/crates/ps-light/src/lib.rs b/crates/ps-light/src/lib.rs
+index 33b64ca..156e334 100644
+--- a/crates/ps-light/src/lib.rs
++++ b/crates/ps-light/src/lib.rs
+@@ -54,6 +54,16 @@ pub struct LeafPoint {
+     pub normal: [f64; 3],
+ }
+ 
++/// A leaf's footprint on a grid and its optical depth there (see
++/// [`LightGrid::footprint`] and [`LightGrid::own_depth`]).
++#[derive(Clone, Debug, PartialEq)]
++pub struct Footprint {
++    /// `(flat cell index, leaf area density)`, sorted by index.
++    pub cells: Vec<(usize, f64)>,
++    /// `(flat cell index, optical depth density)`, matching `cells`.
++    pub depth: Vec<(usize, f64)>,
++}
++
+ /// Radius of a disc with the leaf's area.
+ #[must_use]
+ pub fn leaf_radius(area: M2) -> f64 {
+@@ -103,6 +113,13 @@ impl LightGrid {
+     /// Returns `None` when there are no leaves. `g` is the G-function value.
+     #[must_use]
+     pub fn fit(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
++        let mut grid = Self::fit_geometry(leaves, extra, g)?;
++        grid.add_leaves(leaves);
++        Some(grid)
++    }
++
++    /// The empty grid [`LightGrid::fit`] places around `leaves` and `extra`.
++    fn fit_geometry(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
+         let mut lo = [f64::INFINITY; 3];
+         let mut hi = [f64::NEG_INFINITY; 3];
+         for l in leaves {
+@@ -136,9 +153,35 @@ impl LightGrid {
+             let mid = 0.5 * (lo[a] + hi[a]);
+             origin[a] = mid - 0.5 * as_f64(cells) * cell;
+         }
+-        let mut grid = Self::with_geometry(origin, Meters(cell), n, g);
+-        grid.add_leaves(leaves);
+-        Some(grid)
++        Some(Self::with_geometry(origin, Meters(cell), n, g))
++    }
++
++    /// [`LightGrid::fit`] that also returns each leaf's footprint and its
++    /// [`LightGrid::own_depth`], in input order, so [`rebuild_daily`] does not compute
++    /// them twice. The grid is identical to `fit`'s.
++    #[must_use]
++    pub fn fit_with_footprints(
++        leaves: &[LeafPoint],
++        extra: &[[f64; 3]],
++        g: f64,
++    ) -> Option<(Self, Vec<Footprint>)> {
++        let mut grid = Self::fit_geometry(leaves, extra, g)?;
++        let feet = leaves
++            .iter()
++            .map(|l| {
++                let cells = grid.footprint(l);
++                let depth = grid.own_depth(&cells);
++                Footprint { cells, depth }
++            })
++            .collect::<Vec<_>>();
++        // Same additions in the same order as `add_leaves`.
++        for f in &feet {
++            for (&(i, v), &(_, d)) in f.cells.iter().zip(&f.depth) {
++                grid.lad[i] += v;
++                grid.depth[i] += d;
++            }
++        }
++        Some((grid, feet))
+     }
+ 
+     /// Cell volume, m³.
+@@ -156,8 +199,9 @@ impl LightGrid {
+             if !(u >= 0.0 && u < as_f64(self.n[a])) {
+                 return None;
+             }
++            // `u` is finite and nonnegative here, so truncation is `floor`.
+             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+-            let i = libm::floor(u) as usize;
++            let i = u as usize;
+             c[a] = i.min(self.n[a] - 1);
+         }
+         Some(c)
+@@ -346,15 +390,16 @@ impl LightGrid {
+     ) -> f64 {
+         // A ray that starts outside the grid (a ring point of a tilted blade can lie
+         // just above or below the box) is advanced to where it enters the box.
+-        let from = match self.locate(from) {
+-            Some(_) => from,
+-            None => match self.entry_point(from, dir) {
+-                Some(p) => p,
+-                None => return 0.0,
+-            },
+-        };
+-        let Some(mut c) = self.locate(from) else {
+-            return 0.0;
++        let (from, c) = if let Some(c) = self.locate(from) {
++            (from, c)
++        } else {
++            let Some(p) = self.entry_point(from, dir) else {
++                return 0.0;
++            };
++            let Some(c) = self.locate(p) else {
++                return 0.0;
++            };
++            (p, c)
+         };
+         let s = self.cell.0;
+         let mut step = [0isize; 3];
+@@ -383,43 +428,58 @@ impl LightGrid {
+             _ => (1, 0),
+         };
+         let stride = [1, self.n[0], self.n[0] * self.n[1]];
++        // Per axis: cells left before the ray leaves the bounds, and the index step.
++        // (A zero direction component takes the negative branch, as before; its
++        // `t_max` is infinite, so it is only chosen when the ray ends.)
++        let mut left = [0usize; 3];
++        let mut dstep = [0isize; 3];
++        for a in 0..3 {
++            #[allow(clippy::cast_possible_wrap)]
++            let st = stride[a] as isize;
++            if step[a] > 0 {
++                left[a] = hi[a].saturating_sub(c[a]);
++                dstep[a] = st;
++            } else {
++                left[a] = c[a].saturating_sub(lo[a]);
++                dstep[a] = -st;
++            }
++        }
++        let [mut tx, mut ty, mut tz] = t_max;
++        let [dx, dy, dz] = t_delta;
+         let mut idx = self.flat(c);
+         let mut t = 0.0;
+         let mut sum = 0.0;
+-        loop {
+-            let a = if t_max[0] <= t_max[1] && t_max[0] <= t_max[2] {
+-                0
+-            } else if t_max[1] <= t_max[2] {
+-                1
+-            } else {
+-                2
+-            };
+-            let t_next = t_max[a];
+-            let mut v = field[idx];
+-            if (own_lo..=own_hi).contains(&idx)
+-                && let Ok(k) = own.binary_search_by_key(&idx, |o| o.0)
+-            {
+-                v = (v - own[k].1).max(0.0);
+-            }
+-            sum += v * (t_next - t);
+-            t = t_next;
+-            // Advance along axis a; stop on leaving the grid or the bounds.
+-            if step[a] > 0 {
+-                if c[a] >= hi[a] {
++        // Amanatides–Woo with the axes unrolled: the same comparisons, sums and
++        // `t_max` updates, in the same order, as the indexed form.
++        macro_rules! cross {
++            ($tm:ident, $d:ident, $a:literal) => {{
++                let t_next = $tm;
++                let mut v = field[idx];
++                if (own_lo..=own_hi).contains(&idx)
++                    && let Ok(k) = own.binary_search_by_key(&idx, |o| o.0)
++                {
++                    v = (v - own[k].1).max(0.0);
++                }
++                sum += v * (t_next - t);
++                t = t_next;
++                if left[$a] == 0 {
+                     break;
+                 }
+-                c[a] += 1;
+-                idx += stride[a];
+-            } else {
+-                if c[a] <= lo[a] {
++                left[$a] -= 1;
++                idx = idx.wrapping_add_signed(dstep[$a]);
++                $tm += $d;
++                if !t_next.is_finite() {
+                     break;
+                 }
+-                c[a] -= 1;
+-                idx -= stride[a];
+-            }
+-            t_max[a] += t_delta[a];
+-            if !t_next.is_finite() {
+-                break;
++            }};
++        }
++        loop {
++            if tx <= ty && tx <= tz {
++                cross!(tx, dx, 0);
++            } else if ty <= tz {
++                cross!(ty, dy, 1);
++            } else {
++                cross!(tz, dz, 2);
+             }
+         }
+         sum
+@@ -498,10 +558,10 @@ pub fn rebuild_daily(
+     sky: &[SkySector],
+     g: f64,
+ ) -> (Option<LightGrid>, Vec<LightCoeffs>) {
+-    let Some(grid) = LightGrid::fit(leaves, extra_bounds, g) else {
++    let Some((grid, feet)) = LightGrid::fit_with_footprints(leaves, extra_bounds, g) else {
+         return (None, Vec::new());
+     };
+-    let coeffs = coefficients(&grid, leaves, sun_path, sky);
++    let coeffs = coefficients_with(&grid, leaves, &feet, sun_path, sky);
+     (Some(grid), coeffs)
+ }
+ 
+@@ -513,6 +573,25 @@ pub fn coefficients(
+     leaves: &[LeafPoint],
+     sun_path: &[Option<[f64; 3]>; 24],
+     sky: &[SkySector],
++) -> Vec<LightCoeffs> {
++    let feet: Vec<Footprint> = leaves
++        .iter()
++        .map(|l| {
++            let cells = grid.footprint(l);
++            let depth = grid.own_depth(&cells);
++            Footprint { cells, depth }
++        })
++        .collect();
++    coefficients_with(grid, leaves, &feet, sun_path, sky)
++}
++
++/// [`coefficients`] with each leaf's footprint already computed on `grid`.
++fn coefficients_with(
++    grid: &LightGrid,
++    leaves: &[LeafPoint],
++    feet: &[Footprint],
++    sun_path: &[Option<[f64; 3]>; 24],
++    sky: &[SkySector],
+ ) -> Vec<LightCoeffs> {
+     use rayon::prelude::*;
+     let bounds = grid.occupied_bounds();
+@@ -520,14 +599,15 @@ pub fn coefficients(
+     // depend on the thread count.
+     leaves
+         .par_iter()
+-        .map(|l| {
+-            let own = grid.footprint(l);
+-            let own_depth = grid.own_depth(&own);
++        .zip(feet)
++        .map(|(l, f)| {
++            let own = &f.cells;
++            let own_depth = &f.depth;
+             let pts = sample_points(l);
+             // Mean transmittance over the leaf's sample points (decision 0008).
+             let trans = |d: [f64; 3]| {
+                 pts.iter()
+-                    .map(|p| libm::exp(-grid.path_depth_bounded(*p, d, &own_depth, &bounds)))
++                    .map(|p| libm::exp(-grid.path_depth_bounded(*p, d, own_depth, &bounds)))
+                     .fold(0.0, |a, b| a + b)
+                     / as_f64(pts.len())
+             };
+@@ -549,7 +629,7 @@ pub fn coefficients(
+                     .zip(&sky_t)
+                     .map(|(s, t)| s.absorb_weight * t)
+                     .fold(0.0, |a, b| a + b);
+-            let lai_above = grid.path_lad(l.center, [0.0, 0.0, 1.0], &own);
++            let lai_above = grid.path_lad(l.center, [0.0, 0.0, 1.0], own);
+             LightCoeffs {
+                 direct,
+                 diffuse,
+diff --git a/crates/ps-physio/src/allocation.rs b/crates/ps-physio/src/allocation.rs
+index 8cce3a5..4239f32 100644
+--- a/crates/ps-physio/src/allocation.rs
++++ b/crates/ps-physio/src/allocation.rs
+@@ -250,7 +250,8 @@ pub fn hourly(
+     let ids: Vec<OrganId> = arena.alive_ids().collect();
+     let t_of = |id: OrganId| inp.temperature[id.index()];
+ 
+-    let mut q10_cache: Option<(u64, f64)> = None;
++    // (temperature bits, factor) for each temperature seen this hour, in first-seen order.
++    let mut q10_cache: Vec<(u64, f64)> = Vec::new();
+     // 8. Maintenance from each organ's own reserve (leaves pay it as day respiration).
+     for &id in &ids {
+         let i = id.index();
+@@ -258,15 +259,15 @@ pub fn hourly(
+             continue;
+         }
+         // Organs at one temperature (the shoot in air, roots in one soil layer) share
+-        // one Q10 factor: cache the last one instead of calling pow per organ.
++        // one Q10 factor: cache each one instead of calling pow per organ.
+         let t = t_of(id);
+-        let factor = match q10_cache {
+-            Some((bits, f)) if bits == t.0.to_bits() => f,
+-            _ => {
+-                let f = q10_factor(p.maintenance_q10, t);
+-                q10_cache = Some((t.0.to_bits(), f));
+-                f
+-            }
++        let bits = t.0.to_bits();
++        let factor = if let Some(&(_, f)) = q10_cache.iter().find(|c| c.0 == bits) {
++            f
++        } else {
++            let f = q10_factor(p.maintenance_q10, t);
++            q10_cache.push((bits, f));
++            f
+         };
+         let m = maintenance_with_factor(p.maintenance_rate_20c, arena.nitrogen[i], factor);
+         arena.reserve[i] -= m;
+diff --git a/crates/ps-physio/src/classes.rs b/crates/ps-physio/src/classes.rs
+index 9f4e96a..b912be7 100644
+--- a/crates/ps-physio/src/classes.rs
++++ b/crates/ps-physio/src/classes.rs
+@@ -81,25 +81,27 @@ impl ClassTable {
+     /// plant's water stress factor. 68 solves.
+     #[must_use]
+     pub fn build(p: &LeafParams, env: &LeafEnv, stress: f64) -> Self {
++        let mut nodes = [0.0; PAR_CLASSES + 1];
++        for (i, n) in nodes.iter_mut().enumerate() {
++            *n = par_node(i);
++        }
++        // Temperature and pressure are the same for every node.
++        let tt = gas::TemperatureTerms::new(p, env);
+         let mut rates = [[Rates::default(); PAR_CLASSES + 1]; 4];
+-        let mut full = [gas::solve(p, env, 1.0, stress); PAR_CLASSES + 1];
++        let mut full = [gas::solve_with(p, env, 1.0, stress, &tt); PAR_CLASSES + 1];
+         for (c, cap) in CAPACITY_NODES.iter().enumerate() {
+             for (k, slot) in rates[c].iter_mut().enumerate() {
+                 let e = LeafEnv {
+-                    par: UmolPerM2S(par_node(k)),
++                    par: UmolPerM2S(nodes[k]),
+                     ..*env
+                 };
+-                let g = gas::solve(p, &e, *cap, stress);
++                let g = gas::solve_with(p, &e, *cap, stress, &tt);
+                 if c == 0 {
+                     full[k] = g;
+                 }
+                 *slot = Rates::of(&g);
+             }
+         }
+-        let mut nodes = [0.0; PAR_CLASSES + 1];
+-        for (i, n) in nodes.iter_mut().enumerate() {
+-            *n = par_node(i);
+-        }
+         Self { rates, full, nodes }
+     }
+ 
+diff --git a/crates/ps-physio/src/gas.rs b/crates/ps-physio/src/gas.rs
+index d81a8b1..c95cf43 100644
+--- a/crates/ps-physio/src/gas.rs
++++ b/crates/ps-physio/src/gas.rs
+@@ -150,15 +150,42 @@ struct Kinetics {
+     rd: f64,
+ }
+ 
+-fn kinetics(p: &LeafParams, env: &LeafEnv, capacity: f64) -> Kinetics {
+-    let t = env.t_leaf;
+-    let pscale = env.patm.0 / 100.0;
+-    let gamma_star = GAMMA_STAR25 * arrhenius(t, GAMMA_STAR_EA) * pscale;
+-    let ko = KO25 * arrhenius(t, KO_EA);
+-    let km = KC25 * arrhenius(t, KC_EA) * (1.0 + O2 * pscale / ko);
+-    let vcmax = capacity * p.vcmax25.0 * p.vcmax_t.factor(t);
+-    let jmax = capacity * p.jmax25.0 * p.jmax_t.factor(t);
+-    let rd = capacity * p.rd25.0 * libm::pow(p.rd_q10, (t.0 - 25.0) / 10.0);
++/// The temperature and pressure terms of [`kinetics`], which depend only on the
++/// leaf's temperature and the air pressure, not on PAR or capacity. A class table
++/// computes them once for its 68 solves.
++#[derive(Copy, Clone, Debug, PartialEq)]
++pub struct TemperatureTerms {
++    gamma_star: f64,
++    km: f64,
++    vcmax_factor: f64,
++    jmax_factor: f64,
++    rd_factor: f64,
++}
++
++impl TemperatureTerms {
++    /// The terms for parameters `p` at the leaf temperature and air pressure of `env`.
++    #[must_use]
++    pub fn new(p: &LeafParams, env: &LeafEnv) -> Self {
++        let t = env.t_leaf;
++        let pscale = env.patm.0 / 100.0;
++        let gamma_star = GAMMA_STAR25 * arrhenius(t, GAMMA_STAR_EA) * pscale;
++        let ko = KO25 * arrhenius(t, KO_EA);
++        let km = KC25 * arrhenius(t, KC_EA) * (1.0 + O2 * pscale / ko);
++        Self {
++            gamma_star,
++            km,
++            vcmax_factor: p.vcmax_t.factor(t),
++            jmax_factor: p.jmax_t.factor(t),
++            rd_factor: libm::pow(p.rd_q10, (t.0 - 25.0) / 10.0),
++        }
++    }
++}
++
++fn kinetics(p: &LeafParams, env: &LeafEnv, capacity: f64, tt: &TemperatureTerms) -> Kinetics {
++    let (gamma_star, km) = (tt.gamma_star, tt.km);
++    let vcmax = capacity * p.vcmax25.0 * tt.vcmax_factor;
++    let jmax = capacity * p.jmax25.0 * tt.jmax_factor;
++    let rd = capacity * p.rd25.0 * tt.rd_factor;
+     // Non-rectangular hyperbola of absorbed PAR.
+     let (a, th) = (p.quantum_yield, p.curvature);
+     let q = env.par.0.max(0.0);
+@@ -265,7 +292,19 @@ fn solve_limitation(d: &Demand, ca: f64, m: f64, g0c: f64) -> Option<(f64, f64,
+ /// Ci; net assimilation is the smaller of the two.
+ #[must_use]
+ pub fn solve(p: &LeafParams, env: &LeafEnv, capacity: f64, stress: f64) -> GasExchange {
+-    let k = kinetics(p, env, capacity.clamp(0.0, 1.0));
++    solve_with(p, env, capacity, stress, &TemperatureTerms::new(p, env))
++}
++
++/// [`solve`] with the temperature terms already computed for `env` (bit-identical).
++#[must_use]
++pub fn solve_with(
++    p: &LeafParams,
++    env: &LeafEnv,
++    capacity: f64,
++    stress: f64,
++    tt: &TemperatureTerms,
++) -> GasExchange {
++    let k = kinetics(p, env, capacity.clamp(0.0, 1.0), tt);
+     let ca = env.ca.0.max(1.0);
+     let vpd = env.vpd.0.max(VPD_MIN);
+     let g0c = p.g0.0 / H2O_PER_CO2;
+-- 
+2.43.0
+

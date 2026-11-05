@@ -1,0 +1,9 @@
+# GPU desktop (owner's Windows PC) — section from the GPU desktop thread, relayed verbatim
+
+Hardware check machine (owner's Windows desktop): GTX 1070 8 GB, driver 582.66, i5-6600K, 8 GB RAM, Windows 10 19045, ~10 GB free on C: (build uses ~6 GB). Clone C:\Users\Scott\Code\Plant-Sim, local branch wp13-check reset to origin/main per run. Full release build ~19 min, incremental ~1 min. Rust 1.97.1 + VS Build Tools 2022 installed; gh and VS ATL component not, so --features static-dxc doesn't build locally; use the CI plant-sim-windows artifact. Primary display is a 2560x1600 virtual display at 175% (Virtual Display Driver). Built-in browser not signed in to GitHub; CI artifacts need sign-in, release assets don't. Owner approvals don't carry over: cargo build, plant-sim.exe, and the CI download each needed explicit owner approval; expect to ask again.
+
+Results: Vulkan, 120 cap, main 7e9f872: p99 12.00 ms, no spikes >=28 ms in 3000 frames. DX12 static DXC d5ab169: start 5-9 s (~176 s without), p99 10.95 ms, no spikes in 2000 frames. At a 60 fps cap ~1% of frames spike up to 30 ms; the extra ~16 ms is outside the limiter, cause unknown.
+
+Open: 1) nothing checked on a physical monitor, all numbers are app-side timing on the virtual display; owner needs to look. 2) 60-cap spike root cause unresolved. 3) pre-release v0.1.0-pre.1 still public, owner to decide. 4) shipped Windows builds must use --features static-dxc; Vulkan is the default backend there. 5) numbers predate later viewer changes incl. #78; re-run on final main for WP13 sign-off.
+
+Re-run: WGPU_BACKEND=vulkan|dx12 plant-sim --day 45.5 --window 2353x1324 --bench-frames 3000 --bench-out X.csv (CSV ends with a # summary line; count rows >=28 ms). Screenshot: --screenshot FILE.png. Always check the build exit code is 0; a failed build leaves the old exe and silently tests that (happened once).
