@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use ps_weather::{DateHour, HourWeather};
-use ps_world::{Action, DayRow, PlantEntry, SoilEntry};
+use ps_world::{Action, DayRow, ObstacleSpec, PlantEntry, SeedLot, SoilEntry, SupportSpec};
 
 /// One published view of the world: everything the renderer and the UI read.
 ///
@@ -47,6 +47,12 @@ pub struct Snapshot {
     /// The action log: every action in the timeline being shown, applied or pending
     /// (the scrubber's markers).
     pub actions: Arc<[Action]>,
+    /// Harvested seed lots, in harvest order (WP25).
+    pub seed_library: Vec<SeedLot>,
+    /// Supports stood by actions so far, in action order (not the scenario's own).
+    pub added_supports: Vec<SupportSpec>,
+    /// Obstacles placed by actions so far, in action order.
+    pub added_obstacles: Vec<ObstacleSpec>,
     /// The chained daily hash of the last full day, if a day has ended.
     pub day_hash: Option<u64>,
     /// Why the last action was rejected, until the next action is accepted.

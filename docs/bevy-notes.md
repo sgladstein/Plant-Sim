@@ -111,12 +111,15 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
   rebuilds) before blaming pacing.
 - DX12's slow cold start is FXC, the old shader compiler wgpu uses when DXC is missing.
   The opt-in ps-app feature `static-dxc` links DXC statically (Bevy feature
-  `statically-linked-dxc`), so DX12 compiles shaders far faster; to be measured on the
-  1070. It is opt-in because it needs the Visual Studio "C++ ATL for latest build tools"
+  `statically-linked-dxc`), so DX12 compiles shaders far faster. Measured on the 1070
+  with pre-release v0.1.0-pre.1 (d5ab169, DX12): cold start fell from about 176 s to
+  8.7 s, then 5.5 s on the second launch; bench at 2353x1324 mean 8.33 ms, p99 10.95 ms,
+  no spikes. Every Windows build we ship must use it. It is opt-in because it needs the Visual Studio "C++ ATL for latest build tools"
   component (`atls.lib`); a default Build Tools 2022 install fails with
   `LNK1104: cannot open file 'atls.lib'`. Install ATL with the Visual Studio Installer
   (Modify > Individual components), then `cargo build -p ps-app --release --features
-  static-dxc`. The CI release artifact (`plant-sim-windows`) is built with it.
+  static-dxc`. The CI release artifact (`plant-sim-windows`, render.yml) is built with
+  it, and the manual `prerelease` workflow publishes that artifact unchanged.
 - Vulkan spikes traced on the 1070 (f4bec25, 2352×1325, 3000 frames each, no present
   fallback logged): mailbox uncapped p99 9.6 ms with 0 spikes; immediate capped 25 spikes;
   FIFO uncapped a spike every ~14 frames (a ~64 Hz virtual display); mailbox latency 1
