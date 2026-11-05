@@ -27,9 +27,13 @@ use ps_mesh::{Coil, Skeleton};
 use ps_session::{Session, SessionOptions, Snapshot, TimeCommand as SimCommand};
 use ps_ui::{Chart, Charts, Series, TimeCommand, TimeControl};
 use ps_units::{Hours, WPerM2};
-use ps_view::{Garden, Lens, PotShape, PotSize, PotView, SkyState, SoilFace, SupportView};
+use ps_view::{
+    Garden, Lens, ObstacleView, PotShape, PotSize, PotView, SkyState, SoilFace, SupportView,
+};
 use ps_weather::{HourWeather, WeatherSeries};
-use ps_world::{Catalog, DayRow, PlantEntry, Scenario, SoilEntry, World};
+use ps_world::{
+    ActionKind, Catalog, DayRow, ObstacleSpec, PlantEntry, Scenario, SoilEntry, SupportSpec, World,
+};
 
 /// The scenario the app runs when none is given.
 pub const DEFAULT_SCENARIO: &str = "scenarios/two_pot_sun_shade.ron";
@@ -92,8 +96,33 @@ struct PotInfo {
     radiation_fraction: f64,
     /// A plot: many plants share this soil, and only the first draws the bed and label.
     shared: bool,
-    /// Stakes and strings in this soil, relative to its center.
+    /// Stakes and strings in this soil from the scenario, relative to its center.
     supports: Vec<SupportView>,
+    /// Walls and cloths shading this soil from the scenario, relative to its center.
+    obstacles: Vec<ObstacleView>,
+}
+
+fn support_view(s: &SupportSpec) -> SupportView {
+    SupportView {
+        base: [(s.offset_cm.0 * 0.01) as f32, (s.offset_cm.1 * 0.01) as f32],
+        height: (s.height_cm * 0.01) as f32,
+        diameter: (s.diameter_cm * 0.01) as f32,
+    }
+}
+
+fn obstacle_view(o: &ObstacleSpec) -> ObstacleView {
+    let m = |v: (f64, f64, f64)| {
+        [
+            (v.0 * 0.01) as f32,
+            (v.1 * 0.01) as f32,
+            (v.2 * 0.01) as f32,
+        ]
+    };
+    ObstacleView {
+        min: m(o.min_cm),
+        max: m(o.max_cm),
+        transmittance: o.transmittance as f32,
+    }
 }
 
 /// One plant's skeletons: the hour before the current tick and the current tick.
@@ -197,6 +226,17 @@ impl SimSource {
         self.on_screen.get(pot).map(|(plant, _)| *plant)
     }
 
+    /// The soil id of the pot at garden index `pot`.
+    #[must_use]
+    pub fn soil_of_pot(&self, pot: usize) -> Option<u32> {
+        self.on_screen.get(pot).map(|(_, soil)| *soil)
+    }
+
+    /// Queues an action for the tick on screen; a rejection shows in the weather line.
+    pub fn act(&self, kind: ActionKind) {
+        self.session.act(kind);
+    }
+
     /// Share of open-sky radiation reaching the pot at garden index `pot`.
     #[must_use]
     pub fn radiation_fraction(&self, pot: usize) -> f64 {
@@ -283,11 +323,13 @@ fn pot_infos(
                         .supports
                         .iter()
                         .filter(|s| s.soil == e.id)
-                        .map(|s| SupportView {
-                            base: [(s.offset_cm.0 * 0.01) as f32, (s.offset_cm.1 * 0.01) as f32],
-                            height: (s.height_cm * 0.01) as f32,
-                            diameter: (s.diameter_cm * 0.01) as f32,
-                        })
+                        .map(support_view)
+                        .collect(),
+                    obstacles: scenario
+                        .obstacles
+                        .iter()
+                        .filter(|o| o.soil == e.id)
+                        .map(obstacle_view)
                         .collect(),
                     size: PotSize {
                         // Pots are cylinders (`SoilSpec::Pot`); plots are rectangular
@@ -650,7 +692,22 @@ pub fn drive(
                 },
             ),
             supports: if container {
-                info.supports.clone()
+                let added = snap.added_supports.iter().filter(|s| s.soil == soil.id);
+                info.supports
+                    .iter()
+                    .copied()
+                    .chain(added.map(support_view))
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            obstacles: if container {
+                let added = snap.added_obstacles.iter().filter(|o| o.soil == soil.id);
+                info.obstacles
+                    .iter()
+                    .copied()
+                    .chain(added.map(obstacle_view))
+                    .collect()
             } else {
                 Vec::new()
             },

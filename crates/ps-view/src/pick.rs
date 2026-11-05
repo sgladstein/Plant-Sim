@@ -259,6 +259,7 @@ mod tests {
             soil_water: crate::garden::SoilFace::default(),
             container: true,
             supports: Vec::new(),
+            obstacles: Vec::new(),
         }
     }
 

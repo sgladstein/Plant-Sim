@@ -413,6 +413,7 @@ pub fn drive(
             soil_water,
             container: true,
             supports: Vec::new(),
+            obstacles: Vec::new(),
         });
     }
     garden.pots = pots;
