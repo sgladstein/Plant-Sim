@@ -234,13 +234,15 @@ fn cmd_hash(a: &Args) -> Result<()> {
             let p = Path::new(dir)
                 .join(platform())
                 .join(format!("{}.csv", l.stem));
+            // Compare lines, so a checkout that turned LF into CRLF still matches.
+            let same = |g: &str| g.lines().map(str::trim_end).eq(csv.lines());
             match std::fs::read_to_string(&p) {
-                Ok(golden) if golden == csv => println!("{}: matches {}", l.stem, p.display()),
+                Ok(golden) if same(&golden) => println!("{}: matches {}", l.stem, p.display()),
                 Ok(golden) => {
                     let day = golden
                         .lines()
                         .zip(csv.lines())
-                        .position(|(g, c)| g != c)
+                        .position(|(g, c)| g.trim_end() != c)
                         .map_or_else(|| "length".into(), |i| format!("line {}", i + 1));
                     eprintln!("{}: differs from {} at {day}", l.stem, p.display());
                     bad.push(l.stem.clone());
