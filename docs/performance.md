@@ -48,10 +48,9 @@ should be within a factor of about 1.5 either way.
    sectors), about 217 rays per leaf, at about 140 cells per ray on a 48-cell grid: 16×
    the §3.5 estimate. Exact speedups (same bits) and model options are in the perf
    review.
-2. **Dense root arrays in soil.** `ftsw` and `take_up` take one root length per grid cell
-   per plant and walk the whole grid (and sum it twice for the ledger). A plant's roots
-   occupy a few percent of a plot. A sparse sorted `(cell, length)` list, and one joint
-   uptake call per hour for all plants, removes almost all of this cost.
+2. **Dense root arrays in soil.** Fixed by decision 0012: `ftsw` and `take_up` take
+   sparse sorted `(cell, length)` lists, and `take_up` is one joint call per hour for
+   all plants (two whole-grid sums per hour for its ledger, not per plant).
 3. **Physiology at plot scale.** One class table per plant and per-hour `Vec`s in
    allocation. Dedup tables by (leaf parameters, stress) and reuse scratch buffers
    before WP21.

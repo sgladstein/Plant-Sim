@@ -1,11 +1,26 @@
 //! Soil benches: one sim-day (24 hourly steps) at pot and plot scale (docs/performance.md).
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use ps_bench::{PLOT_PLANTS, dense_roots, plot, pot, summer_hour};
-use ps_units::KgWater;
+use ps_bench::{PLOT_PLANTS, plant_roots, plot, pot, summer_hour};
+use ps_soil::PlantUptake;
+use ps_units::{KgPerMH, KgWater, M2PerHour};
 
-/// Species uptake coefficient used by the benches, m² h⁻¹.
-const RATE: f64 = 1e-4;
+/// Species uptake coefficient used by the benches.
+const RATE: M2PerHour = M2PerHour(1e-4);
+/// Uptake ceiling per root length used by the benches.
+const MAX: KgPerMH = KgPerMH(1.25e-4);
+
+fn requests(roots: &[ps_soil::RootCells]) -> Vec<PlantUptake<'_>> {
+    roots
+        .iter()
+        .map(|r| PlantUptake {
+            demand: KgWater(1e-3),
+            roots: r,
+            rate: RATE,
+            max_per_length: MAX,
+        })
+        .collect()
+}
 
 fn soil(c: &mut Criterion) {
     let hour = summer_hour();
@@ -18,12 +33,13 @@ fn soil(c: &mut Criterion) {
             }
         });
     });
-    let roots = dense_roots(&g, 1);
+    let roots = plant_roots(&g, 1);
+    let req = requests(&roots);
     c.bench_function("soil/pot/uptake+ftsw day, 1 plant", |b| {
         b.iter(|| {
             for _ in 0..24 {
-                black_box(g.ftsw(&roots[0]).expect("len"));
-                black_box(g.take_up(KgWater(1e-3), &roots[0], RATE).expect("len"));
+                black_box(g.ftsw(&roots[0]).expect("cells"));
+                black_box(g.take_up(&req).expect("cells"));
             }
         });
     });
@@ -36,14 +52,15 @@ fn soil(c: &mut Criterion) {
             }
         });
     });
-    let roots = dense_roots(&g, PLOT_PLANTS);
+    let roots = plant_roots(&g, PLOT_PLANTS);
+    let req = requests(&roots);
     c.bench_function("soil/plot/uptake+ftsw day, 30 plants", |b| {
         b.iter(|| {
             for _ in 0..24 {
                 for r in &roots {
-                    black_box(g.ftsw(r).expect("len"));
-                    black_box(g.take_up(KgWater(1e-3), r, RATE).expect("len"));
+                    black_box(g.ftsw(r).expect("cells"));
                 }
+                black_box(g.take_up(&req).expect("cells"));
             }
         });
     });
