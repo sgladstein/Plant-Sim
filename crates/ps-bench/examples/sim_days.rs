@@ -11,12 +11,14 @@ use std::time::Instant;
 
 use ps_world::{Catalog, Scenario, World};
 
-const SCENARIOS: [&str; 5] = [
+const SCENARIOS: [&str; 7] = [
     "single_pot",
     "two_pot_sun_shade",
     "plot_30_beans",
     "m2/pole_trellis",
     "m2/pole_row_trellis",
+    "m2/wheat_spaced",
+    "m2/wheat_stand",
 ];
 
 fn main() -> Result<(), Box<dyn Error>> {
