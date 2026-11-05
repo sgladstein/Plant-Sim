@@ -1,7 +1,7 @@
 # 0022: Grass module and spring wheat (WP23)
 
 - **Date:** 2026-11-05
-- **Status:** accepted. Spring wheat follows the research recommendation; the owner's card is still open.
+- **Status:** accepted. The owner chose spring wheat on the research recommendation, 2026-11-05 (decision 0023).
 
 ## Context
 WP23 (design plan §7, M2) adds a grass module and a grass species file, covering
