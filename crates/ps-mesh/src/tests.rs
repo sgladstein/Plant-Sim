@@ -480,6 +480,54 @@ fn root_cohorts_draw_as_spread_copies() {
 }
 
 #[test]
+fn cohort_copies_keep_their_dip_and_stay_in_the_pot() {
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let seed = g
+        .add(&organ(OrganKind::Seed, None, 0, 0.4, [0.0, 0.0, -1.0]), &a)
+        .unwrap();
+    // A near-horizontal basal root with a down-sloping lateral cohort of 8.
+    let basal = g
+        .add(
+            &organ(OrganKind::Root, Some(seed), 0, 1.0, [1.0, 0.0, -0.1]),
+            &a,
+        )
+        .unwrap();
+    let lat = g
+        .add(
+            &organ(OrganKind::Root, Some(basal), 1, 1.0, [0.0, 0.8, -0.6]),
+            &a,
+        )
+        .unwrap();
+    let mut s = Skeleton::from_arena_with(&g, [0.0; 3], &[1.0, 1.0, 0.5], &[1.0, 1.0, 8.0]);
+    let axis = axes(&s, true)
+        .into_iter()
+        .find(|x| x.key() == lat)
+        .unwrap_or_else(|| unreachable!("no lateral axis"));
+    assert_eq!(axis.copies, 8);
+    let p = s.organs[lat.index()];
+    let dip = p.tip().z - p.base.z;
+    assert!(dip < 0.0);
+    for t in crate::copy_transforms(&s, &axis) {
+        let tip = t.transform_point3(p.tip());
+        let base = t.transform_point3(p.base);
+        assert!(
+            (tip.z - base.z - dip).abs() < 1e-5,
+            "a copy changed its dip"
+        );
+    }
+    // In a narrow pot, every copy's tip stays in the soil.
+    let pot = crate::Container::Cylinder {
+        radius: p.base.truncate().length() + 0.3 * (p.tip() - p.base).length(),
+        depth: 1.0,
+    };
+    s.container = Some(pot);
+    for t in crate::copy_transforms(&s, &axis) {
+        assert!(pot.contains(t.transform_point3(p.tip())));
+    }
+}
+
+#[test]
 fn a_grass_draws_blades_and_ears_at_the_sims_size() {
     let arena = small_plant(0.5);
     let mut s = Skeleton::from_arena(&arena, [0.0; 3]);
