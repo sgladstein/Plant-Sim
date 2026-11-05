@@ -246,6 +246,18 @@ impl SimSource {
             .map_or(1.0, |i| i.radiation_fraction)
     }
 
+    /// Half the width and depth of the soil of the pot at garden index `pot`, m: the
+    /// soil frame's surface center.
+    #[must_use]
+    pub fn soil_center(&self, pot: usize) -> [f64; 2] {
+        self.on_screen
+            .get(pot)
+            .and_then(|(_, soil)| self.pots.get(soil))
+            .map_or([0.0; 2], |i| {
+                [f64::from(i.size.width) * 0.5, f64::from(i.size.depth) * 0.5]
+            })
+    }
+
     /// Label of the pot at garden index `pot`.
     #[must_use]
     pub fn pot_label(&self, pot: usize) -> &str {

@@ -20,6 +20,7 @@ const LIGHT: &str = "docs/models/light.md";
 const PHENOLOGY: &str = "docs/models/thermal-time-and-phenology.md";
 const WATER: &str = "docs/models/soil-and-water.md";
 const ARCH: &str = "docs/models/herb-architecture.md";
+const VARIATION: &str = "docs/models/plant-variation.md";
 
 /// `FirstTrifoliate` to "first trifoliate".
 fn words(debug: &str) -> String {
@@ -66,7 +67,12 @@ pub fn inspect(src: Res<SimSource>, selection: Res<Selection>, mut inspector: Re
         organ(plant, i, src.day_start_hour(), fraction)
     } else {
         let row = snap.history.iter().rev().find(|r| r.plant == plant.id);
-        whole_plant(plant, row, src.pot_label(picked.pot))
+        whole_plant(
+            plant,
+            row,
+            src.pot_label(picked.pot),
+            src.soil_center(picked.pot),
+        )
     };
     let actions = picked
         .organ
@@ -316,12 +322,77 @@ pub fn organ(
     (title, f, why.join(" "))
 }
 
+/// What sets this plant apart from its siblings (decision 0027): the seed it grew
+/// from, how much warmth it needed to come up, where it was sown and which way its
+/// seedling faced. `soil_center` is the soil frame's surface center (m), so the sowing
+/// spot reads from the middle of the pot or bed.
+#[must_use]
+pub fn individual(p: &PlantEntry, soil_center: [f64; 2]) -> Vec<Field> {
+    let ind = &p.plant.individual;
+    let pos = p.plant.collar_position;
+    // The sim's azimuth is counterclockwise from east; a compass bearing is clockwise
+    // from north.
+    let bearing = (90.0 - ind.azimuth.0.to_degrees()).rem_euclid(360.0);
+    let mut f = vec![
+        Field::new(
+            "Seed size",
+            format!("{:.0}", ind.seed_factor * 100.0),
+            "% of the variety's mean",
+            VARIATION,
+        ),
+        Field::new(
+            "Seed mass",
+            format!("{:.3}", p.plant.params.seed_mass.0),
+            "g DM",
+            VARIATION,
+        ),
+        Field::new(
+            "Emergence needs",
+            format!("{:.0}", ind.emergence.0),
+            "°C·day",
+            VARIATION,
+        ),
+        Field::new(
+            "Sown at",
+            format!(
+                "{:+.1}, {:+.1}",
+                (pos[0] - soil_center[0]) * 100.0,
+                (pos[1] - soil_center[1]) * 100.0
+            ),
+            "cm E, N of center",
+            VARIATION,
+        ),
+        Field::new(
+            "Sowing depth",
+            format!("{:.1}", -pos[2] * 100.0),
+            "cm",
+            VARIATION,
+        ),
+        Field::new(
+            "Seedling faces",
+            format!("{bearing:.0}"),
+            "° from north",
+            VARIATION,
+        ),
+    ];
+    if let Some(d) = p.plant.emerged_day {
+        f.push(Field::new(
+            "Emerged",
+            format!("day {d} after sowing"),
+            "",
+            PHENOLOGY,
+        ));
+    }
+    f
+}
+
 /// Title, fields and why line for the whole plant, from its latest daily row.
 #[must_use]
 pub fn whole_plant(
     p: &PlantEntry,
     row: Option<&DayRow>,
     pot: &str,
+    soil_center: [f64; 2],
 ) -> (String, Vec<Field>, String) {
     let stage = words(&format!("{:?}", p.plant.phenology.stage));
     let title = format!("Plant {} ({pot})", p.id);
@@ -340,6 +411,7 @@ pub fn whole_plant(
             WATER,
         ),
     ];
+    f.extend(individual(p, soil_center));
     let Some(r) = row else {
         return (
             title,
@@ -471,10 +543,45 @@ mod tests {
                 all_numbers_have_units(&fields);
             }
             let row = w.state().history.iter().rev().find(|r| r.plant == p.id);
-            let (_, fields, why) = whole_plant(p, row, "Pot");
+            let (_, fields, why) = whole_plant(p, row, "Pot", [0.1, 0.1]);
             assert!(fields.len() > 10 && !why.is_empty());
             all_numbers_have_units(&fields);
         }
+    }
+
+    #[test]
+    fn each_plant_shows_its_own_seed() {
+        let data = crate::sim_source::find_data_dir(None).unwrap_or_else(|e| unreachable!("{e}"));
+        let (w, _) = crate::sim_source::load_world(
+            &data,
+            std::path::Path::new(crate::sim_source::DEFAULT_SCENARIO),
+        )
+        .unwrap_or_else(|e| unreachable!("{e:#}"));
+        let shown: Vec<Vec<Field>> = w
+            .state()
+            .plants
+            .iter()
+            .map(|p| individual(p, [0.1, 0.1]))
+            .collect();
+        for fields in &shown {
+            let labels: Vec<&str> = fields.iter().map(|f| f.label.as_str()).collect();
+            assert_eq!(
+                labels,
+                [
+                    "Seed size",
+                    "Seed mass",
+                    "Emergence needs",
+                    "Sown at",
+                    "Sowing depth",
+                    "Seedling faces"
+                ]
+            );
+            all_numbers_have_units(fields);
+        }
+        assert_ne!(
+            shown[0][0].value, shown[1][0].value,
+            "two plants, one seed size"
+        );
     }
 
     #[test]
