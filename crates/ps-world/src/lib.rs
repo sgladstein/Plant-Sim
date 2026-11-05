@@ -268,6 +268,9 @@ impl WorldState {
     }
 }
 
+/// A daily hash being computed on a snapshot (see [`World::run_until`]).
+type PendingHash = Option<std::sync::mpsc::Receiver<u64>>;
+
 /// A world: state plus the weather series rebuilt from it.
 #[derive(Clone, Debug)]
 pub struct World {
@@ -609,10 +612,23 @@ impl World {
     /// # Errors
     /// Any [`WorldError`] from a step.
     pub fn run_until(&mut self, tick: u64) -> Result<(), WorldError> {
-        while self.state.tick < tick {
-            self.step_hour()?;
-        }
-        Ok(())
+        // The whole run executes on a rayon worker, so each parallel section starts on
+        // this thread instead of waiting for a sleeping worker to pick it up.
+        // Each day's hash runs on a snapshot while the next day's hours step (it is
+        // waited for at the next daily step and before returning), so the hash, which
+        // is one sequential chain, leaves the critical path. Same value either way.
+        rayon::scope(|s| {
+            let mut pending: PendingHash = None;
+            let mut result = Ok(());
+            while self.state.tick < tick {
+                result = self.step_hour_on_worker(Some((s, &mut pending)));
+                if result.is_err() {
+                    break;
+                }
+            }
+            self.finish_hash(&mut pending);
+            result
+        })
     }
 
     /// Steps `days` whole days.
@@ -802,6 +818,15 @@ impl World {
     /// # Errors
     /// Any [`WorldError`] from a soil or a plant.
     pub fn step_hour(&mut self) -> Result<(), WorldError> {
+        rayon::scope(|_| self.step_hour_on_worker(None))
+    }
+
+    /// [`World::step_hour`], run on the calling thread (a rayon worker). With `defer`,
+    /// the daily hash is computed by a task on that scope (see [`World::run_until`]).
+    fn step_hour_on_worker(
+        &mut self,
+        defer: Option<(&rayon::Scope<'_>, &mut PendingHash)>,
+    ) -> Result<(), WorldError> {
         self.apply_due()?;
         let tick = self.state.tick;
         let start_hour = u64::from(self.state.scenario.start.hour);
@@ -834,12 +859,41 @@ impl World {
             // 3, 5, 6. Light, water status, gas exchange: each plant's demand, from
             // the soil before this hour's water moves.
             let soil = &soils[si].grid;
-            let demand: Vec<KgWater> = members
+            members
+                .iter_mut()
+                .map(|e| e.plant.update_water_status(soil))
+                .collect::<Result<Vec<()>, _>>()?;
+            // Plants with the same leaf parameters and stress bits share one class
+            // table (the hour's weather is the soil's): the table is a pure function of
+            // those, so sharing it gives the same bits as building one per plant.
+            let mut keys: Vec<([u64; 14], u64)> = Vec::new();
+            let mut owners: Vec<usize> = Vec::new();
+            let slot: Vec<usize> = members
+                .iter()
+                .enumerate()
+                .map(|(m, e)| {
+                    let key = e.plant.class_table_key();
+                    keys.iter().position(|k| *k == key).unwrap_or_else(|| {
+                        keys.push(key);
+                        owners.push(m);
+                        keys.len() - 1
+                    })
+                })
+                .collect();
+            let tables: Vec<_> = owners
+                .iter()
+                .map(|&m| members[m].plant.class_table(&ctx))
+                .collect();
+            let (demand, areas): (Vec<KgWater>, Vec<f64>) = members
                 .par_iter_mut()
-                .map(|e| e.plant.water_demand(&ctx, soil))
-                .collect::<Result<_, _>>()?;
+                .zip(&slot)
+                .map(|(e, &k)| {
+                    let d = e.plant.water_demand_with(&ctx, &tables[k]);
+                    (d, e.plant.leaf_area())
+                })
+                .unzip();
             // 4. Soil water: rain, irrigation and action water; radiation under the canopy.
-            let leaf_area: f64 = members.iter().map(|e| e.plant.leaf_area()).sum();
+            let leaf_area: f64 = areas.iter().copied().sum();
             let irr = Self::irrigation_mm(&soils[si], hour, day);
             let entry = &mut soils[si];
             let lai = leaf_area / entry.grid.surface_area().max(1e-12);
@@ -869,7 +923,7 @@ impl World {
         }
         self.state.tick += 1;
         if hour == 23 {
-            self.step_day()?;
+            self.step_day(defer)?;
         }
         Ok(())
     }
@@ -887,7 +941,13 @@ impl World {
     }
 
     /// The daily step (§3.2) for every plant, then the day's rows and hash.
-    fn step_day(&mut self) -> Result<(), WorldError> {
+    fn step_day(
+        &mut self,
+        mut defer: Option<(&rayon::Scope<'_>, &mut PendingHash)>,
+    ) -> Result<(), WorldError> {
+        if let Some((_, pending)) = defer.as_mut() {
+            self.finish_hash(pending);
+        }
         let now = self.state.tick;
         let day = u32::try_from(self.state.hashes.len()).unwrap_or(u32::MAX);
         let path = self.sun_path(now);
@@ -934,11 +994,61 @@ impl World {
             });
         }
         // 7. Output: the chained daily hash.
-        let h = self.state.day_hash();
-        self.state.hashes.push(h);
+        if let Some((scope, pending)) = defer {
+            // The same tuple `WorldState::day_hash` hashes, on owned copies.
+            let st = &self.state;
+            let prev = st
+                .hashes
+                .last()
+                .copied()
+                .unwrap_or_else(|| hash_of(&(&st.model_version, &st.scenario, &st.catalog)));
+            let tick = st.tick;
+            let (soils, plants) = rayon::join(
+                || st.soils.clone(),
+                || st.plants.par_iter().cloned().collect::<Vec<_>>(),
+            );
+            let log = st.log[st.hashed_log..st.applied].to_vec();
+            let rows = st.history[st.hashed_rows..].to_vec();
+            let (tx, rx) = std::sync::mpsc::channel();
+            scope.spawn(move |_| {
+                let h = hash_of(&(prev, tick, &soils, &plants, &log[..], &rows[..]));
+                // The receiver lives until this hash is collected.
+                let _ = tx.send(h);
+            });
+            *pending = Some(rx);
+        } else {
+            let h = self.state.day_hash();
+            self.state.hashes.push(h);
+        }
         self.state.hashed_log = self.state.applied;
         self.state.hashed_rows = self.state.history.len();
         Ok(())
+    }
+
+    /// Waits for a deferred daily hash and appends it.
+    fn finish_hash(&mut self, pending: &mut PendingHash) {
+        if let Some(rx) = pending.take() {
+            // Wait by running other pool work (possibly the hash task itself), so a
+            // pool whose every worker is waiting here still makes progress.
+            loop {
+                match rx.try_recv() {
+                    Ok(h) => {
+                        self.state.hashes.push(h);
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        if rayon::yield_now() != Some(rayon::Yield::Executed) {
+                            std::thread::yield_now();
+                        }
+                    }
+                    // The task only drops its sender after sending, unless it
+                    // panicked, and the scope then re-raises that panic.
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        unreachable!("deferred hash task panicked")
+                    }
+                }
+            }
+        }
     }
 
     /// Daily steps 1 to 6 for every plant, in parallel (each plant depends only on
@@ -1013,11 +1123,26 @@ impl World {
             // One G per plot: the first plant's (one species per plot until WP23).
             let g = plants[first].plant.g_function();
             let (_, coeffs) = ps_light::rebuild_plot(&leaves, &extra, path, &sky, g);
+            // Each plant's slice of the coefficients, then the rest of the daily step
+            // for every member in parallel (each depends only on itself).
+            let mut slices: Vec<Option<(usize, usize)>> = vec![None; plants.len()];
             let mut at = 0;
             for (&p, n) in members.iter().zip(counts) {
-                let mine = coeffs.get(at..at + n).unwrap_or(&[]);
+                slices[p] = Some((at, n));
                 at += n;
-                reports[p] = Some(plants[p].plant.day_after_light(path, Some(mine)));
+            }
+            let after: Vec<(usize, DayReport)> = plants
+                .par_iter_mut()
+                .enumerate()
+                .filter_map(|(p, e)| {
+                    slices[p].map(|(a, n)| {
+                        let mine = coeffs.get(a..a + n).unwrap_or(&[]);
+                        (p, e.plant.day_after_light(path, Some(mine)))
+                    })
+                })
+                .collect();
+            for (p, r) in after {
+                reports[p] = Some(r);
             }
         }
         Ok(reports.into_iter().flatten().collect())

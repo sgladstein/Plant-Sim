@@ -719,7 +719,17 @@ impl Plant {
         ctx: &HourCtx<'_>,
         soil: &SoilGrid,
     ) -> Result<KgWater, ArchError> {
-        let wx = ctx.weather;
+        self.update_water_status(soil)?;
+        let table = self.class_table(ctx);
+        Ok(self.water_demand_with(ctx, &table))
+    }
+
+    /// The first part of [`Plant::water_demand`]: this hour's FTSW over the roots and
+    /// the stress factors.
+    ///
+    /// # Errors
+    /// [`ArchError::Soil`] if the root list does not fit the soil.
+    pub fn update_water_status(&mut self, soil: &SoilGrid) -> Result<(), ArchError> {
         self.ftsw = if self.roots.cells().is_empty() {
             1.0
         } else {
@@ -730,6 +740,36 @@ impl Plant {
             stress_factor(self.ftsw, hp.ftsw_conductance),
             stress_factor(self.ftsw, hp.ftsw_expansion),
         );
+        Ok(())
+    }
+
+    /// What this hour's class table depends on besides the hour's weather: the leaf
+    /// parameters and the conductance stress factor, as bits. Plants of one soil with
+    /// equal keys have identical tables (call after [`Plant::update_water_status`]).
+    #[must_use]
+    pub fn class_table_key(&self) -> ([u64; 14], u64) {
+        (self.params.leaf.bit_key(), self.stress.0.to_bits())
+    }
+
+    /// This hour's class table (call after [`Plant::update_water_status`]).
+    #[must_use]
+    pub fn class_table(&self, ctx: &HourCtx<'_>) -> ClassTable {
+        let wx = ctx.weather;
+        let env = LeafEnv {
+            par: UmolPerM2S(0.0),
+            t_leaf: wx.t_air,
+            vpd: wx.vpd,
+            ca: ctx.co2,
+            patm: ctx.patm,
+        };
+        ClassTable::build(&self.params.leaf, &env, self.stress.0)
+    }
+
+    /// The rest of [`Plant::water_demand`] with this hour's class table, which may be
+    /// shared with other plants of equal [`Plant::class_table_key`].
+    pub fn water_demand_with(&mut self, ctx: &HourCtx<'_>, table: &ClassTable) -> KgWater {
+        let wx = ctx.weather;
+        let hp = &self.params;
         self.income.clear();
         self.income.resize(self.arena.len(), GramsC(0.0));
         let leaves: Vec<OrganId> = self
@@ -739,14 +779,6 @@ impl Plant {
             .collect();
         let mut water = 0.0;
         if !leaves.is_empty() {
-            let env = LeafEnv {
-                par: UmolPerM2S(0.0),
-                t_leaf: wx.t_air,
-                vpd: wx.vpd,
-                ca: ctx.co2,
-                patm: ctx.patm,
-            };
-            let table = ClassTable::build(&hp.leaf, &env, self.stress.0);
             let sin_e = if wx.sun.is_up() {
                 wx.sun.direction()[2]
             } else {
@@ -807,7 +839,7 @@ impl Plant {
                 water += e * area * 3600.0 * KG_PER_MOL_WATER;
             }
         }
-        Ok(KgWater(water))
+        KgWater(water)
     }
 
     /// The plant's roots, for the world's joint uptake.
