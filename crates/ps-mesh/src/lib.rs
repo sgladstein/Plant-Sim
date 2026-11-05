@@ -43,7 +43,7 @@ pub use instances::{
     pulvinus, unfold_level,
 };
 pub use mesh::MeshData;
-pub use skeleton::{Coil, MAX_COPIES, Placement, Skeleton};
+pub use skeleton::{Coil, Container, MAX_COPIES, Placement, Skeleton};
 pub use templates::{
     DROOP_LEVELS, Template, TemplateKey, UNFOLD_LEVELS, build_template, build_template_shaded,
 };

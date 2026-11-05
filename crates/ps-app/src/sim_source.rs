@@ -400,6 +400,18 @@ fn skeleton_of(p: &PlantEntry, size: PotSize) -> Skeleton {
     skeleton.relayout();
     // A grass draws blades and ears (WP23).
     skeleton.blade_aspect = plant.params.grass.as_ref().map(|g| g.blade_aspect as f32);
+    // Drawn root-cohort copies stay in the soil.
+    skeleton.container = Some(match size.shape {
+        PotShape::Round => ps_mesh::Container::Cylinder {
+            radius: 0.5 * size.width.min(size.depth),
+            depth: size.soil_depth,
+        },
+        PotShape::Box => ps_mesh::Container::Box {
+            half_width: 0.5 * size.width,
+            half_depth: 0.5 * size.depth,
+            depth: size.soil_depth,
+        },
+    });
     skeleton
 }
 

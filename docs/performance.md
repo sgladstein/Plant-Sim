@@ -3,6 +3,8 @@
 Budgets come from the design plan (§3.5, §3.8, §7). This file tracks how the code
 measures against them. Update the table when a work package changes a hot path.
 
+How the performance work runs, what is open and what was tried: [perf/handoff.md](perf/handoff.md).
+
 ## Budgets
 
 | Scope | Budget | Source |
@@ -144,14 +146,18 @@ run: Vulkan mean 2.70 ms per frame (p99 2.94), GPU about 51% busy; DX12 mean 5.7
 (p99 6.05), GPU about 98%. Both are well inside the 16.7 ms M1 budget; Vulkan is the
 better default.
 
-Pacing re-run on the same machine (main 58807c6, new look, so not comparable to the
-2.7 ms above):
+Pacing re-run on the same machine (main 58807c6, new look, still stand-in plants, so
+not comparable to the 2.7 ms above):
 
 | Backend, present mode | Frame time | Notes |
 | --- | --- | --- |
 | Vulkan, Mailbox | mean 4.0 ms, p99 4.4 ms | no spikes; recommended |
 | Vulkan, Fifo | 7.2% of frames near 31 ms, every ~14 frames | a ~64 Hz present cadence beating against 60 Hz on the virtual display; frame latency setting has no effect |
 | DX12, Fifo | p99 32.7 ms, 4.3% spikes | |
+
+With the real sim instead of stand-in plants (f4bec25, Vulkan uncapped,
+2352 × 1325): mean 6.55 ms, p99 9.61 ms. The #72 lawn and #78 fuller plants are not
+yet timed.
 
 Cold start: Vulkan about 5 s, DX12 about 180 s (pipeline compilation). Default to
 Vulkan with Mailbox where supported, falling back to Fifo, and DX12 only when Vulkan
