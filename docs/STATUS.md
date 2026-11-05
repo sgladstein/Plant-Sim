@@ -31,6 +31,12 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 25 Actions, obstacles, weather files | #69 | done (PR #73, decision 0024). Model 0.8.0, species schema 5. Sim side: Harvest action and seed library, obstacles (scenario and PlaceObstacle) shading pot and plot light grids, AddSupport (build a trellis mid-run), a synthetic hourly weather file driving m2/single_pot_weather_file. Apical hold (owner's choice): buds of the top 1.5 nodes under a growing bean apex stay dormant, so topping releases them within 4 days (done-when). UI parts are the viewer's |
 | 26, 27 | | open |
 
+## M3: seeds, breeding and challenges
+| WP | Issue | State |
+| --- | --- | --- |
+| 28 Genome | #90 | in progress. Step 1 (result-neutral, golden hashes unchanged): `ps_species::genetics` (Haldane linkage, meiosis keyed per ovule, two-tier mutation, crosses) and `ps_species::seed_colour` (layered rule-table evaluator); optional locus keys `name`, `tier`, `chromosome`, `position_cm` and genome keys `named_mutation_rate`, `mutation_effect_sd`, `chromosome_lengths_cm` (one per chromosome). F2 > F1 variance shown on a test genome. Step 2 (model PR): 20 to 40 loci with allele distributions in the species files, the named-locus placements of decision 0023, the bean seed-colour table, a decision record, schema and model bumps |
+| 29 to 32 | | open |
+
 **M0 exit (§7):** the validation report passes every M0 gate, the 90-day run is deterministic (golden hashes, Linux = Windows, debug = release), frost kills the plant for good, and the known limits are in decision 0018 and the model cards. The owner signs off M0.
 
 ## M1 groundwork (parallel to M0, viewer thread)
