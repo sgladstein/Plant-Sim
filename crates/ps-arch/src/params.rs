@@ -10,6 +10,7 @@ use ps_units::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::grass::GrassParams;
 use crate::nitrogen::NitrogenParams;
 use crate::vine::ClimbingParams;
 
@@ -202,6 +203,9 @@ pub struct HerbParams {
     /// Climbing (vines only).
     #[serde(default)]
     pub climbing: ClimbingParams,
+    /// The grass shoot (grasses only, WP23).
+    #[serde(default)]
+    pub grass: Option<GrassParams>,
     /// Root segment and lateral cohort length.
     pub root_segment: Meters,
     /// Root types, in file order.
@@ -344,6 +348,7 @@ impl HerbParams {
             nitrogen: NitrogenParams::new(s, t),
             indeterminate: t.habit >= 0.5,
             climbing: ClimbingParams::new(s),
+            grass: s.grass.as_ref().map(GrassParams::new),
             root_segment: Meters(c.root_segment_length.value * CM),
             roots,
             feedback_onset: c.reserve_feedback_onset.value,

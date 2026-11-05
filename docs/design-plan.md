@@ -523,7 +523,7 @@ M1 exit: the two-pot runs look right to the owner and the pot differences are th
 | --- | --- | --- | --- |
 | 21 | Plot soil block (1 × 1 to 3 × 3 m, 5 cm cells), merged light grid, per-voxel light coefficients (measured and not used; decision 0019) | M | 30 plants under 20 ms per sim-day |
 | 22 | Vine module and pole bean: habit locus, indeterminate growth, tendril search and attachment, trellis objects (built as twining, decision 0021) | L | A pole bean fills a 2 m trellis by day 60; without a trellis it flops and yields less |
-| 23 | Grass module and a grass species file: tillering, intercalary growth, fibrous roots | L | Tiller count and height inside a literature range to be chosen in WP23 |
+| 23 | Grass module and a grass species file: tillering, intercalary growth, fibrous roots | L | Tiller count and height inside a literature range to be chosen in WP23 (spring wheat; ranges and results in decision 0022) |
 | 24 | Nitrogen: soil mineral N, mineralization, leaching, uptake, leaf N drives Vcmax, remobilization, nodules for legumes, fertilize action | L | Nodulated beans grow in N-free soil and unnodulated ones do not; bottom-up senescence now emergent |
 | 25 | Prune and harvest actions, obstacles, weather file import UI, latitude and season controls | M | Pruning releases branching visibly |
 | 26 | Save and load UI, replay scrubber with action markers, competition, temperature and nitrogen lenses, carbon flow arrows | M | Replay of a saved plot matches its hash |

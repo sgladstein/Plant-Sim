@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use ps_rng::{Purpose, RngKey};
 use serde::{Deserialize, Serialize};
 
-pub use schema::{Climbing, Constants, Nitrogen, Phenology, SCHEMA, Spec};
+pub use schema::{Climbing, Constants, Grass, Nitrogen, Phenology, SCHEMA, Spec};
 pub use traits::{TRAIT_KEYS, Traits};
 
 /// A numeric parameter with provenance.
@@ -187,6 +187,10 @@ pub struct Species {
     pub nitrogen: Nitrogen,
     /// Climbing and indeterminate growth (schema 3, WP22).
     pub climbing: Climbing,
+    /// The grass shoot (schema 4, WP23); present exactly when the growth form is
+    /// `Grass`.
+    #[serde(default)]
+    pub grass: Option<Grass>,
     /// Root types, by order.
     pub roots: Vec<RootType>,
     /// Appearance.
@@ -366,6 +370,7 @@ impl Species {
             check_param(&format!("climbing.{}", spec.key), spec.unit, p)?;
         }
         self.validate_climbing()?;
+        self.validate_grass()?;
         self.validate_roots()?;
         for r in &self.roots {
             for (spec, p) in r.entries() {
@@ -420,6 +425,65 @@ impl Species {
             return bad(
                 "lodge_height",
                 "lodge_height and vegetative_after_flowering must be 0 or more",
+            );
+        }
+        Ok(())
+    }
+
+    fn validate_grass(&self) -> Result<(), SpeciesError> {
+        let bad = |key: &str, why: &str| {
+            Err(SpeciesError::Value {
+                at: format!("grass.{key}"),
+                why: why.into(),
+            })
+        };
+        let Some(g) = &self.grass else {
+            return if self.growth_form == GrowthForm::Grass {
+                bad("", "a Grass growth form needs the grass group")
+            } else {
+                Ok(())
+            };
+        };
+        if self.growth_form != GrowthForm::Grass {
+            return bad("", "only a Grass growth form has the grass group");
+        }
+        for (spec, p) in g.entries() {
+            check_param(&format!("grass.{}", spec.key), spec.unit, p)?;
+        }
+        for (key, p) in [
+            ("site_filling", &g.site_filling),
+            ("blade_first_fraction", &g.blade_first_fraction),
+            ("blade_flag_fraction", &g.blade_flag_fraction),
+        ] {
+            if !(0.0..=1.0).contains(&p.value) {
+                return bad(key, "a fraction, 0 to 1");
+            }
+        }
+        for (key, p) in [
+            ("crown_internode_length", &g.crown_internode_length),
+            ("sheath_length_first", &g.sheath_length_first),
+            ("sheath_length_last", &g.sheath_length_last),
+            ("sheath_specific_length", &g.sheath_specific_length),
+            ("blade_aspect", &g.blade_aspect),
+            ("tiller_delay", &g.tiller_delay),
+            ("peduncle_length", &g.peduncle_length),
+        ] {
+            if p.value <= 0.0 {
+                return bad(key, "must be positive");
+            }
+        }
+        if !(0.0..90.0).contains(&g.blade_elevation.value)
+            || !(0.0..90.0).contains(&g.tiller_angle.value)
+        {
+            return bad("blade_elevation", "angles are 0 to 90 deg");
+        }
+        if !(0.0..=3.0).contains(&g.tiller_max_order.value)
+            || g.elongating_internodes.value < 1.0
+            || g.tiller_survive_leaves.value < 0.0
+        {
+            return bad(
+                "tiller_max_order",
+                "tiller_max_order 0 to 3, elongating_internodes 1 or more, tiller_survive_leaves 0 or more",
             );
         }
         Ok(())
@@ -558,6 +622,16 @@ impl Species {
                 p.unit.clone(),
                 p.source.clone(),
             ));
+        }
+        if let Some(g) = &self.grass {
+            for (spec, p) in g.entries() {
+                out.push((
+                    format!("grass.{}", spec.key),
+                    p.value,
+                    p.unit.clone(),
+                    p.source.clone(),
+                ));
+            }
         }
         for r in &self.roots {
             for (spec, p) in r.entries() {
