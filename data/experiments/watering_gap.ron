@@ -1,0 +1,9 @@
+// Experiment card (design plan §6.5). Read by the app's Experiment dialog.
+ExperimentCard(
+  id: "watering_gap",
+  prompt: "How long can a bean go between waterings before it suffers?",
+  species: "bush_bean",
+  variable: WaterInterval,
+  levels: [1.0, 3.0, 7.0],
+  watch: ["Root-zone soil water", "Water shortfall", "Dry mass by organ"],
+)

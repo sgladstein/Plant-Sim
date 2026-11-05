@@ -1,0 +1,9 @@
+// Experiment card (design plan §6.5). Read by the app's Experiment dialog.
+ExperimentCard(
+  id: "pot_size",
+  prompt: "Does a bigger pot grow a bigger bean, with the same water on top?",
+  species: "bush_bean",
+  variable: PotSize,
+  levels: [30.0, 20.0, 12.0],
+  watch: ["Dry mass by organ", "Root-zone soil water"],
+)

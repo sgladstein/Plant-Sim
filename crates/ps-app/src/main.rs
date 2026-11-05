@@ -27,6 +27,8 @@
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
 //! soil-water, plant-water, roots, carbon, phenology, shade. `--charts` opens the
 //! charts panel. `--inspect POT[:ORGAN]` selects a plant or an organ for the inspector.
+//! `--experiment CARD` starts the experiment card `CARD` (an id under
+//! `data/experiments`) instead of `--scenario`; its notebook goes under `--captures`.
 //! `--card NAME` opens a model card in the side panel (for example `light` for
 //! `docs/models/light.md`).
 //! `--captures DIR` is where the Screenshot and Export CSV buttons write (default
@@ -52,6 +54,7 @@ mod bench;
 mod capture;
 mod demo_source;
 mod display;
+mod experiment;
 mod inspect;
 mod sim_source;
 mod tools;
@@ -75,6 +78,7 @@ struct Options {
     charts: bool,
     inspect: Option<ps_view::Picked>,
     card: Option<String>,
+    experiment: Option<String>,
     captures: PathBuf,
     timelapse: Option<PathBuf>,
     to_day: Option<f64>,
@@ -154,6 +158,7 @@ fn parse_args() -> Result<Options> {
         charts: false,
         inspect: None,
         card: None,
+        experiment: None,
         captures: PathBuf::from("captures"),
         timelapse: None,
         to_day: None,
@@ -186,6 +191,7 @@ fn parse_args() -> Result<Options> {
             "--lens" => o.lens = parse_lens(&value()?)?,
             "--charts" => o.charts = true,
             "--inspect" => o.inspect = Some(parse_pick(&value()?)?),
+            "--experiment" => o.experiment = Some(value()?),
             "--card" => {
                 let name = value()?;
                 let path = format!("docs/models/{}.md", name.trim_end_matches(".md"));
@@ -334,9 +340,17 @@ fn main() -> Result<()> {
         stem,
     })
     .add_systems(Update, capture::capture_requests.after(ViewSet::Source));
-    if let Some((sim, data, scenario)) = sim {
+    if let Some((sim, data, scenario, ex)) = sim {
         let mut ui_tools = ps_ui::Tools::default();
         tools::init_new_run(&mut ui_tools.new_run, &data, &scenario, &options.scenario);
+        let mut ui_ex = ps_ui::Experiment::default();
+        experiment::init(&mut ui_ex, &data);
+        if let Some((setup, running, notebook)) = ex {
+            ui_ex.setup = setup;
+            ui_ex.running = Some(running);
+            app.insert_resource(notebook);
+        }
+        app.insert_resource(ui_ex);
         app.insert_resource(ui_tools)
             .insert_resource(tools::RunSettings {
                 data,
@@ -359,7 +373,9 @@ fn main() -> Result<()> {
         app.insert_resource(sim).add_systems(
             Update,
             (
+                experiment::end_on_new_run,
                 tools::new_run,
+                experiment::experiment,
                 tools::apply_tools,
                 sim_source::drive,
                 inspect::inspect,
@@ -405,14 +421,35 @@ fn main() -> Result<()> {
 }
 
 /// Loads the scenario and starts the sim thread.
-fn start_sim(
-    options: &Options,
-    paused: bool,
-) -> Result<(sim_source::SimSource, PathBuf, ps_world::Scenario)> {
+/// The started sim, its data directory and scenario, and the experiment if it is one.
+type Started = (
+    sim_source::SimSource,
+    PathBuf,
+    ps_world::Scenario,
+    Option<(
+        ps_ui::ExperimentSetup,
+        ps_ui::Running,
+        experiment::OpenNotebook,
+    )>,
+);
+
+fn start_sim(options: &Options, paused: bool) -> Result<Started> {
     let data = sim_source::find_data_dir(options.data.as_deref())?;
+    if let Some(id) = &options.experiment {
+        let setup = experiment::card_setup(&data, id)?;
+        let (src, running, notebook, scenario) = experiment::launch(
+            &setup,
+            &data,
+            &options.captures,
+            options.day,
+            options.speed,
+            paused,
+        )?;
+        return Ok((src, data, scenario, Some((setup, running, notebook))));
+    }
     let (world, scenario) = sim_source::load_world(&data, &options.scenario)?;
     let src = sim_source::SimSource::start(world, &scenario, options.day, options.speed, paused)?;
-    Ok((src, data, scenario))
+    Ok((src, data, scenario, None))
 }
 
 /// Frames rendered after the pipelines are ready before the screenshot, so the camera

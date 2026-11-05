@@ -1,0 +1,9 @@
+// Experiment card (design plan §6.5). Read by the app's Experiment dialog.
+ExperimentCard(
+  id: "water_for_pods",
+  prompt: "Find the watering that gives the most pods with the least water.",
+  species: "bush_bean",
+  variable: WaterAmount,
+  levels: [20.0, 10.0, 5.0, 2.0],
+  watch: ["Pods", "Root-zone soil water", "Water shortfall"],
+)
