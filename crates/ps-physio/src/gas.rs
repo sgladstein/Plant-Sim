@@ -150,15 +150,42 @@ struct Kinetics {
     rd: f64,
 }
 
-fn kinetics(p: &LeafParams, env: &LeafEnv, capacity: f64) -> Kinetics {
-    let t = env.t_leaf;
-    let pscale = env.patm.0 / 100.0;
-    let gamma_star = GAMMA_STAR25 * arrhenius(t, GAMMA_STAR_EA) * pscale;
-    let ko = KO25 * arrhenius(t, KO_EA);
-    let km = KC25 * arrhenius(t, KC_EA) * (1.0 + O2 * pscale / ko);
-    let vcmax = capacity * p.vcmax25.0 * p.vcmax_t.factor(t);
-    let jmax = capacity * p.jmax25.0 * p.jmax_t.factor(t);
-    let rd = capacity * p.rd25.0 * libm::pow(p.rd_q10, (t.0 - 25.0) / 10.0);
+/// The temperature and pressure terms of [`kinetics`], which depend only on the
+/// leaf's temperature and the air pressure, not on PAR or capacity. A class table
+/// computes them once for its 68 solves.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct TemperatureTerms {
+    gamma_star: f64,
+    km: f64,
+    vcmax_factor: f64,
+    jmax_factor: f64,
+    rd_factor: f64,
+}
+
+impl TemperatureTerms {
+    /// The terms for parameters `p` at the leaf temperature and air pressure of `env`.
+    #[must_use]
+    pub fn new(p: &LeafParams, env: &LeafEnv) -> Self {
+        let t = env.t_leaf;
+        let pscale = env.patm.0 / 100.0;
+        let gamma_star = GAMMA_STAR25 * arrhenius(t, GAMMA_STAR_EA) * pscale;
+        let ko = KO25 * arrhenius(t, KO_EA);
+        let km = KC25 * arrhenius(t, KC_EA) * (1.0 + O2 * pscale / ko);
+        Self {
+            gamma_star,
+            km,
+            vcmax_factor: p.vcmax_t.factor(t),
+            jmax_factor: p.jmax_t.factor(t),
+            rd_factor: libm::pow(p.rd_q10, (t.0 - 25.0) / 10.0),
+        }
+    }
+}
+
+fn kinetics(p: &LeafParams, env: &LeafEnv, capacity: f64, tt: &TemperatureTerms) -> Kinetics {
+    let (gamma_star, km) = (tt.gamma_star, tt.km);
+    let vcmax = capacity * p.vcmax25.0 * tt.vcmax_factor;
+    let jmax = capacity * p.jmax25.0 * tt.jmax_factor;
+    let rd = capacity * p.rd25.0 * tt.rd_factor;
     // Non-rectangular hyperbola of absorbed PAR.
     let (a, th) = (p.quantum_yield, p.curvature);
     let q = env.par.0.max(0.0);
@@ -265,7 +292,19 @@ fn solve_limitation(d: &Demand, ca: f64, m: f64, g0c: f64) -> Option<(f64, f64, 
 /// Ci; net assimilation is the smaller of the two.
 #[must_use]
 pub fn solve(p: &LeafParams, env: &LeafEnv, capacity: f64, stress: f64) -> GasExchange {
-    let k = kinetics(p, env, capacity.clamp(0.0, 1.0));
+    solve_with(p, env, capacity, stress, &TemperatureTerms::new(p, env))
+}
+
+/// [`solve`] with the temperature terms already computed for `env` (bit-identical).
+#[must_use]
+pub fn solve_with(
+    p: &LeafParams,
+    env: &LeafEnv,
+    capacity: f64,
+    stress: f64,
+    tt: &TemperatureTerms,
+) -> GasExchange {
+    let k = kinetics(p, env, capacity.clamp(0.0, 1.0), tt);
     let ca = env.ca.0.max(1.0);
     let vpd = env.vpd.0.max(VPD_MIN);
     let g0c = p.g0.0 / H2O_PER_CO2;
