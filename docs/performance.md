@@ -49,6 +49,7 @@ Whole sim through `World` (`benches/world.rs`, committed scenarios, 90 days):
 | --- | --- | --- |
 | single_pot | 1.67 ms [2.34] (2.17 [3.4] after WP12 tuning) | M0 §7 "under 2 ms per sim-day": met on 4 cores; single-thread still over |
 | two_pot_sun_shade | 2.94 ms (3.9 after WP12; single-thread not re-measured) | M1 sim-week per second needs 24 ms of sim per wall second: fine |
+| plot_30_beans | 20.1 ms [51] (median of 5 runs, 19.7 to 20.7; 28.8 [59] at WP21) | M2 30 plants under 20 ms: at the target on 4 cores, not reliably under |
 
 The WP12 plant is bigger (more leaves, branches and root cohorts), which took
 single_pot from 1.90 to 2.17 ms. The M0 speed fix (bit-identical, same golden hashes)
@@ -57,6 +58,30 @@ axes, a ray locates its start cell once, `rebuild_daily` reuses each leaf's foot
 from the grid fit, `ClassTable::build` computes the temperature terms once per table
 (`gas::TemperatureTerms`), and the maintenance Q10 cache keeps every temperature of the
 hour. Callgrind, single_pot on one thread: 2.88G to 2.32G instructions over 90 days.
+
+Plot speed follow-up to WP21 (bit-identical, golden hashes unchanged). Callgrind on the
+plot showed light rays 38% of instructions, the daily state hash 3.6 ms of serial time
+(one sequential mixing chain over about 2 million words by day 90, so it is
+latency-bound: a flat loop over pre-collected words is no faster), and about 65 µs per
+parallel section spent waking sleeping rayon workers (measured: a 30-item `par_iter`
+after any idle gap takes 60 to 75 µs). Changes:
+
+- Plants of one soil with identical leaf parameters and stress bits share one hourly
+  class table (`Plant::class_table_key`, `Plant::water_demand_with`).
+- The plot grid keeps each leaf's footprint from the fit, computed in parallel
+  (`LightGrid::add_leaves_keeping`).
+- Joint uptake totals requests per cell on a dense scratch grid instead of sorting.
+- `day_after_light` runs in parallel; FTSW and stress are updated serially (cheaper than
+  a parallel section's wake-up); leaf area comes from the demand pass.
+- `run_until` runs on a rayon worker, and each day's hash runs on a snapshot (a parallel
+  clone, about 0.6 ms) while the next day steps; it is collected at the next daily
+  step and before `run_until` returns, so `WorldState::hashes` is complete at every API
+  boundary. The waiting worker runs pool work meanwhile, so one thread cannot deadlock.
+
+Remaining plot cost on 4 cores, per sim-day: daily light and growth step about 8 ms,
+hourly growth 5.5 to 6.8 ms, demand 2.2 ms, soil 0.8 ms, uptake 0.8 ms. Further cuts
+need the owner's call: fewer rays per leaf (a model change), or a cheaper hash
+definition (new golden hashes).
 
 Full state hash at day 90: 0.25 ms (the daily hash is chained, so it no longer grows
 with run length). RON snapshot at day 90: 3.3 ms, 740 KB, on demand only.

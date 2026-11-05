@@ -13,7 +13,7 @@
 use ps_graph::LightCoeffs;
 use ps_units::Meters;
 
-use crate::{LeafPoint, LightGrid, SkySector, as_f64, coefficients, leaf_radius};
+use crate::{LeafPoint, LightGrid, SkySector, as_f64, coefficients_with, leaf_radius};
 
 /// Cell edge of a plot light grid, m (decision 0019).
 pub const PLOT_CELL_M: f64 = 0.03;
@@ -30,6 +30,13 @@ impl LightGrid {
     /// (`z = 0`) or below the lowest leaf. Returns `None` when there are no leaves.
     #[must_use]
     pub fn fit_plot(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
+        let mut grid = Self::fit_plot_geometry(leaves, extra, g)?;
+        grid.add_leaves(leaves);
+        Some(grid)
+    }
+
+    /// The empty grid [`LightGrid::fit_plot`] places around `leaves` and `extra`.
+    fn fit_plot_geometry(leaves: &[LeafPoint], extra: &[[f64; 3]], g: f64) -> Option<Self> {
         if leaves.is_empty() {
             return None;
         }
@@ -67,9 +74,7 @@ impl LightGrid {
                 lo[a]
             };
         }
-        let mut grid = Self::with_geometry(origin, Meters(cell), n, g);
-        grid.add_leaves(leaves);
-        Some(grid)
+        Some(Self::with_geometry(origin, Meters(cell), n, g))
     }
 }
 
@@ -84,10 +89,12 @@ pub fn rebuild_plot(
     sky: &[SkySector],
     g: f64,
 ) -> (Option<LightGrid>, Vec<LightCoeffs>) {
-    let Some(grid) = LightGrid::fit_plot(leaves, extra_bounds, g) else {
+    let Some(mut grid) = LightGrid::fit_plot_geometry(leaves, extra_bounds, g) else {
         return (None, Vec::new());
     };
-    let coeffs = coefficients(&grid, leaves, sun_path, sky);
+    // Footprints are computed once, for the grid and for the rays.
+    let feet = grid.add_leaves_keeping(leaves);
+    let coeffs = coefficients_with(&grid, leaves, &feet, sun_path, sky);
     (Some(grid), coeffs)
 }
 
