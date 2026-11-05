@@ -74,7 +74,8 @@ for whatever you pick up.
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.
 - **M1 (two-pot visible proof, WP13 to WP20): mostly done** in the viewer: Bevy app,
   real sim on its own thread, 7 lenses, charts, inspector, capture, time-lapse.
-  WP13 passed its frame-time gate on the GTX 1070 (re-run on final main is
+  WP13 passed its frame-time gate on the GTX 1070 (app-side timing on a virtual
+  display, not yet checked on a physical monitor; re-run on final main is
   advisable: numbers predate #78). Open: WP20 "the moments" (not started; its
   done-when is the owner's sun-vs-shade clip sign-off), and the experiment and
   model-card panels of WP17. WP25's viewer side (harvest and cut, garden tools, seed
@@ -90,9 +91,9 @@ for whatever you pick up.
   misses: thermal-time phenology, pole bean height, wheat stand height and yield,
   drought and heat seed size, shade height, nar_early, root_shoot_seed_fill.
 - **Speed (4 cores):** single pot ~2.2 ms per sim-day (budget 2), 30-bean plot ~24.5
-  ms (budget 20), wheat stand ~110 ms (no budget). Viewer on the GTX 1070: Vulkan
-  ~4 ms per frame (Mailbox, measured on 58807c6, before the #72 lawn and #78 fuller
-  plants, neither timed on the 1070 yet; budget 16.7).
+  ms (budget 20), wheat stand ~110 ms (no budget). Viewer on the GTX 1070, real sim,
+  Vulkan uncapped at 2352x1325: 6.55 ms mean, p99 9.61 ms (f4bec25; budget 16.7).
+  It predates the #72 lawn and #78 fuller plants, which are untimed.
 
 ### Open PRs at handoff
 
@@ -204,7 +205,7 @@ Practical notes:
 ### Windows builds and releases
 
 - Every shipped Windows build must use `--features static-dxc`. DX12 cold start
-  falls from ~176 s to 5 to 9 s. Building it locally needs the Visual Studio ATL
+  falls from ~176 s (default build, f4bec25) to 5 to 9 s (static DXC, d5ab169). Building it locally needs the Visual Studio ATL
   component (atls.lib); the owner's PC doesn't have it, so use the CI artifact.
 - Backend: wgpu picks Vulkan on the owner's PC, about 2x faster than DX12 there;
   `WGPU_BACKEND=dx12` is the fallback. Present mode defaults to mailbox (Bevy falls
@@ -215,9 +216,12 @@ Practical notes:
   latest green `render` run on main and `tag` = the next tag (v0.1.0-pre.2, ...).
   The GitHub MCP has no create-release tool; this workflow is the way.
 - First release: v0.1.0-pre.1 = main d5ab169, zip SHA-256
-  `fe288957d02b5491c560895227e5db478183d7ac2d415ff9b53a7a1696c03316`.
+  `fe288957d02b5491c560895227e5db478183d7ac2d415ff9b53a7a1696c03316`, plant-sim.exe
+  SHA-256 `432a37eeb0159697df97ebaa5806b7e4be5294d0d81d040b5c499c9261010ebc`.
 - Running on the owner's desktop: see [docs/handoff/gpu-desktop.md](handoff/gpu-desktop.md).
-  Each build, run and download there needs the owner's explicit approval every time.
+  Expect to get the owner's explicit approval for building, running and downloading
+  on that machine at the start of each new session; it doesn't carry over between
+  sessions or accounts.
 
 ## 7. The rules that keep the sim honest
 
