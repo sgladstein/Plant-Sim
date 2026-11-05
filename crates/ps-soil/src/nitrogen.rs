@@ -390,7 +390,10 @@ impl SoilGrid {
             return roots.clone();
         }
         let (nx, ny, nz) = self.dims();
-        let mut pairs = Vec::new();
+        // Lengths summed per cell on a dense scratch grid, in the same order
+        // `RootCells::from_pairs` would add them (its sort is stable), without the sort.
+        let mut length = vec![0.0_f64; self.water.len()];
+        let mut touched = vec![false; self.water.len()];
         let mut near = Vec::new();
         for &(i, l) in roots.cells() {
             let c = self.cell_of(i);
@@ -410,8 +413,23 @@ impl SoilGrid {
             }
             #[allow(clippy::cast_precision_loss)] // at most 17³ cells
             let share = l.0 / near.len() as f64;
-            pairs.extend(near.iter().map(|&j| (j, Meters(share))));
+            for &j in &near {
+                if touched[j] {
+                    length[j] += share;
+                } else {
+                    touched[j] = true;
+                    length[j] = share;
+                }
+            }
         }
+        let pairs: Vec<(usize, Meters)> = touched
+            .iter()
+            .zip(&length)
+            .enumerate()
+            .filter(|(_, (t, l))| **t && **l > 0.0)
+            .map(|(j, (_, l))| (j, Meters(*l)))
+            .collect();
+        // Already sorted and merged; `from_pairs` keeps them as they are.
         RootCells::from_pairs(pairs)
     }
 
