@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 6;
+pub const SCHEMA: u32 = 7;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -313,6 +313,32 @@ param_group!(
         flowering: "Cd",
         /// Thermal time from germination to physiological maturity (decision 0011).
         maturity: "Cd",
+    }
+);
+
+param_group!(
+    /// Non-heritable plant-to-plant variation (schema 7, decision 0027): what makes
+    /// two plants of one pure line differ although they share a genotype. Every draw
+    /// is keyed by (world seed, plant, tick, purpose), so a world seed always gives the
+    /// same plants. All zeros make every plant of a species start alike.
+    Variation {
+        /// Coefficient of variation of the mass of the individual seeds sown.
+        seed_mass_cv: "-",
+        /// Exponent of the preformed (unifoliate or first) leaves' size on the relative
+        /// seed mass.
+        seed_leaf_exponent: "-",
+        /// Coefficient of variation of each seed's thermal time from germination to
+        /// emergence.
+        emergence_cv: "-",
+        /// Extra thermal time to emergence per cm sown deeper than the reference depth.
+        emergence_per_depth: "Cd/cm",
+        /// Sowing depth at which the species' emergence threshold applies.
+        emergence_reference_depth: "cm",
+        /// Coefficient of variation of each leaf's potential area about the node
+        /// profile.
+        leaf_size_cv: "-",
+        /// Standard deviation of each node's divergence angle about the phyllotaxis.
+        divergence_sd: "deg",
     }
 );
 

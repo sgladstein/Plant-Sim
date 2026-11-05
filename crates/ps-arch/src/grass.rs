@@ -246,7 +246,7 @@ impl Plant {
         sh.direction = direction;
         sh.azimuth = ax.azimuth;
         let sheath = self.spawn(&sh, now)?;
-        let area = hp.leaf_area.0 * g.blade_factor(k, n);
+        let area = hp.leaf_area.0 * g.blade_factor(k, n) * self.leaf_scatter(now);
         let shade = self.shade_signal_at(node);
         let sla = hp.sla.0 * hp.shade_factor(shade, hp.shade_sla);
         let mut b = Spawn::new(
@@ -284,7 +284,7 @@ impl Plant {
         ax.apex = node;
         ax.nodes = k;
         ax.last_leaf = Some(blade);
-        ax.azimuth += hp.phyllotaxis.0;
+        ax.azimuth += self.divergence(node, now);
         Ok(())
     }
 

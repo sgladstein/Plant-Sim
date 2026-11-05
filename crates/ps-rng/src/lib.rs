@@ -51,6 +51,14 @@ pub enum Purpose {
     Twining,
     /// Rot of an organ on the soil (WP22).
     Rot,
+    /// The size of the individual seed a plant grows from (natural variation).
+    SeedSize,
+    /// Leaf-to-leaf variation in potential leaf size (natural variation).
+    LeafSize,
+    /// Small-scale soil heterogeneity of a plot (natural variation).
+    SoilPatch,
+    /// Hand-sowing scatter of a seed's position and depth (natural variation).
+    Sowing,
     /// Test-only purpose; never used by the model.
     Test,
 }
@@ -74,6 +82,10 @@ impl Purpose {
             Purpose::Light => 12,
             Purpose::Twining => 13,
             Purpose::Rot => 14,
+            Purpose::SeedSize => 15,
+            Purpose::LeafSize => 16,
+            Purpose::SoilPatch => 17,
+            Purpose::Sowing => 18,
             Purpose::Test => 0xFFFF,
         }
     }

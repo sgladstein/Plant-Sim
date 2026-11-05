@@ -118,3 +118,51 @@ fn root_types_convert_to_model_units() {
         19
     );
 }
+
+#[test]
+fn individuals_are_keyed_by_plant() {
+    use crate::Individual;
+    use ps_units::{Hours, Meters};
+    let p = params();
+    let d = Meters(0.03);
+    let a = Individual::draw(&p, 7, 3, Hours(0), d);
+    assert_eq!(a, Individual::draw(&p, 7, 3, Hours(0), d));
+    let others: Vec<Individual> = (0..20)
+        .map(|e| Individual::draw(&p, 7, e, Hours(0), d))
+        .collect();
+    let seeds: Vec<f64> = others.iter().map(|i| i.seed_factor).collect();
+    assert!(
+        seeds.iter().any(|&f| f > 1.02) && seeds.iter().any(|&f| f < 0.98),
+        "{seeds:?}"
+    );
+    for i in &others {
+        assert!((0.25..=1.75).contains(&i.seed_factor));
+        assert!((0.0..core::f64::consts::TAU).contains(&i.azimuth.0));
+        assert!(i.emergence.0 >= 0.25 * p.thresholds.emergence.0);
+    }
+}
+
+#[test]
+fn deeper_seeds_emerge_later_and_no_variation_means_the_species_value() {
+    use crate::{Individual, VariationParams};
+    use ps_units::{Hours, Meters};
+    let mut p = params();
+    let shallow = Individual::draw(&p, 7, 1, Hours(0), Meters(0.02));
+    let deep = Individual::draw(&p, 7, 1, Hours(0), Meters(0.05));
+    let per_cm = p.variation.emergence_per_depth * 0.01;
+    assert!(deep.emergence.0 > shallow.emergence.0 + 2.0 * per_cm);
+    p.variation = VariationParams {
+        reference_depth: Meters(0.03),
+        ..VariationParams::default()
+    };
+    let i = Individual::draw(&p, 7, 1, Hours(0), Meters(0.03));
+    assert!((i.seed_factor - 1.0).abs() < f64::EPSILON);
+    assert!((i.emergence.0 - p.thresholds.emergence.0).abs() < 1e-12);
+}
+
+#[test]
+fn scatter_is_bounded() {
+    assert!((crate::scatter(0.0, 0.2) - 1.0).abs() < f64::EPSILON);
+    assert!((crate::scatter(10.0, 0.2) - 1.5).abs() < 1e-12);
+    assert!((crate::scatter(-10.0, 0.5) - 0.25).abs() < 1e-12);
+}

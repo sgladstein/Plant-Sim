@@ -11,6 +11,7 @@ publish.workspace = true
 ps-units.workspace = true
 ps-graph.workspace = true
 ps-species.workspace = true
+ps-rng.workspace = true
 ps-soil.workspace = true
 ps-weather.workspace = true
 ps-arch.workspace = true

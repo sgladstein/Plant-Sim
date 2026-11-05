@@ -315,3 +315,70 @@ fn plots_outside_the_size_range_are_rejected() {
         assert!(s.validate().is_err(), "{w} x {l} cm accepted");
     }
 }
+
+/// Decision 0027: the plants of a plot differ, and a plant's own draws do not depend
+/// on the other plants.
+#[test]
+fn plot_plants_differ_and_keep_their_draws() {
+    let (s, c) = short("plot_30_beans.ron", 1);
+    let w = World::new(s.clone(), c.clone()).unwrap();
+    let plants = &w.state().plants;
+    let firsts: Vec<_> = plants.iter().map(|p| p.plant.individual).collect();
+    assert!(firsts.windows(2).all(|p| p[0] != p[1]));
+    let mut fewer = s.clone();
+    fewer.sowings.truncate(5);
+    let w5 = World::new(fewer, c.clone()).unwrap();
+    for (a, b) in w5.state().plants.iter().zip(plants) {
+        assert_eq!(a.plant.individual, b.plant.individual);
+        assert_eq!(
+            a.plant.collar_position.map(f64::to_bits),
+            b.plant.collar_position.map(f64::to_bits)
+        );
+    }
+    // No field variation: every seed sits on its mark at its depth.
+    let mut exact = s;
+    exact.variation = ps_world::FieldVariation::NONE;
+    let we = World::new(exact.clone(), c).unwrap();
+    for (p, sow) in we.state().plants.iter().zip(&exact.sowings) {
+        assert!((p.plant.collar_position[2] + sow.depth_cm * 0.01).abs() < 1e-12);
+    }
+    for (p, q) in we.state().plants.iter().zip(plants) {
+        let d = (p.plant.collar_position[0] - q.plant.collar_position[0]).abs()
+            + (p.plant.collar_position[1] - q.plant.collar_position[1]).abs();
+        assert!(d < 0.06, "scatter stays within 2.5 sd: {d}");
+    }
+}
+
+/// Decision 0027: a plot's soil nitrogen is patchy around the scenario's mean, and a pot
+/// stays uniform.
+#[test]
+fn plot_soil_nitrogen_is_patchy() {
+    let (s, c) = short("plot_30_beans.ron", 1);
+    let w = World::new(s.clone(), c.clone()).unwrap();
+    let g = &w.state().soils[0].grid;
+    let (nx, ny, _) = g.dims();
+    let col: Vec<f64> = (0..nx * ny).map(|i| g.no3(i).0).collect();
+    #[allow(clippy::cast_precision_loss)]
+    let n = col.len() as f64;
+    let mean = col.iter().sum::<f64>() / n;
+    let sd = libm::sqrt(col.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / n);
+    let mut flat = s;
+    flat.variation = ps_world::FieldVariation::NONE;
+    let uniform = World::new(flat, c).unwrap().state().soils[0].grid.no3(0).0;
+    assert!(
+        (mean / uniform - 1.0).abs() < 0.2,
+        "mean {mean} vs {uniform}"
+    );
+    assert!((0.1..0.45).contains(&(sd / mean)), "cv {}", sd / mean);
+    let (p, pc) = short("single_pot.ron", 1);
+    let wp = World::new(p, pc).unwrap();
+    let pg = &wp.state().soils[0].grid;
+    let first = (0..pg.len())
+        .map(|i| pg.no3(i).0)
+        .find(|&v| v > 0.0)
+        .unwrap();
+    assert!((0..pg.len()).all(|i| {
+        let v = pg.no3(i).0;
+        v.abs() < 1e-300 || (v - first).abs() < 1e-15
+    }));
+}

@@ -1,7 +1,7 @@
 // Bush bean archetype (Phaseolus vulgaris, determinate type I). Design plan §3.16, §6.1.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 6,
+  schema: 7,
   id: "bush_bean",
   name: "Bush bean archetype",
   growth_form: Herb,
@@ -187,6 +187,15 @@ Species(
     heap_radius: (value: 15.0, unit: "cm", source: "~ a fallen vine coils back on itself"),
     lodge_height: (value: 2.0, unit: "cm", source: "~ a fallen stem lies on the soil"),
     pod_rot_rate: (value: 0.02, unit: "1/day", source: "~ staking keeps pods off wet soil and cuts pod rot (IITA PROPAS; Reckling 2011); set so unstaked yield falls inside the -30 to -70% band (decision 0021)"),
+  ),
+  variation: (            // schema 7, decision 0027: non-heritable plant-to-plant variation within a pure line
+    seed_mass_cv: (value: 0.12, unit: "-", source: "~ single seeds of one bean seed lot: about 10 to 15% CV (individual seed mass is set by pod position and maternal resources; 100-seed weight PCV 15% across landraces, Mesera 2022, is between lots)"),
+    seed_leaf_exponent: (value: 0.5, unit: "-", source: "~ the unifoliate leaves are preformed in the embryo, and larger bean seeds give larger primary leaves and early seedlings (seed-size vigour); square root as a partial effect"),
+    emergence_cv: (value: 0.15, unit: "-", source: "~ hydrothermal time: each seed of a lot has its own threshold, normally distributed (Gummerson 1986; Bradford 2002), so a sowing comes up over several days; 15% of 80 Cd is about a day either side at 12 Cd per day"),
+    emergence_per_depth: (value: 12.0, unit: "Cd/cm", source: "~ the hypocotyl hook pushes up about 1 cm per 10 to 15 Cd; CERES-Wheat uses 10.2 Cd per cm for a coleoptile, and an epigeal bean lifting its cotyledons is a little slower"),
+    emergence_reference_depth: (value: 3.0, unit: "cm", source: "the emergence sum was set for the 3 cm the scenarios sow at (decision 0018)"),
+    leaf_size_cv: (value: 0.1, unit: "-", source: "~ leaf-to-leaf scatter of final leaflet area about the node profile, about 10% in field leaf-area surveys"),
+    divergence_sd: (value: 10.0, unit: "deg", source: "~ measured divergence angles scatter by about 5 to 15 degrees about the ideal angle"),
   ),
   roots: [
     RootType(name: "tap", origin: Radicle, order: 0,

@@ -5,7 +5,7 @@
 // 50 to 80%, review of WP24). Weather, water and spacing as plot_30_beans.
 Scenario(
   schema: 1,
-  model_version: "0.9.0",
+  model_version: "0.10.0",
   world_seed: 7,
   latitude_deg: 45.0,
   start: (year: 2026, month: 5, day: 15, hour: 0),

@@ -5155,6 +5155,7 @@ dependencies = [
  "ps-arch",
  "ps-graph",
  "ps-light",
+ "ps-rng",
  "ps-soil",
  "ps-species",
  "ps-units",

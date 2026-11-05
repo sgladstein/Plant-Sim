@@ -42,7 +42,7 @@ use serde::{Deserialize, Serialize};
 pub use geometry::V3;
 pub use grass::GrassParams;
 pub use nitrogen::{NitrogenDay, NitrogenParams, PlantNitrogen};
-pub use params::{HerbParams, RootParams, ShadeSignal};
+pub use params::{HerbParams, RootParams, ShadeSignal, VariationParams, scatter};
 pub use vine::{Climb, ClimbingParams, Support, Twine};
 
 /// kg of water per mol.
@@ -437,6 +437,63 @@ pub struct DayReport {
     pub fixation_carbon: f64,
 }
 
+/// What sets one plant apart from its siblings at sowing (decision 0027): the seed it
+/// grew from and how fast that seed comes up. Drawn once in [`Plant::sow`] from the
+/// plant's own keyed streams, so adding another plant never changes it.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Individual {
+    /// Mass of the seed sown relative to the species' seed mass.
+    pub seed_factor: f64,
+    /// This seed's thermal time from germination to emergence, depth included.
+    pub emergence: DegreeDays,
+    /// Compass direction of the seedling's first pair of organs (a dicot's
+    /// cotyledons and unifoliates turn with it; a grass draws its first blade at
+    /// emergence instead).
+    pub azimuth: ps_units::Radians,
+}
+
+impl Default for Individual {
+    fn default() -> Self {
+        Self {
+            seed_factor: 1.0,
+            emergence: DegreeDays(0.0),
+            azimuth: ps_units::Radians(0.0),
+        }
+    }
+}
+
+impl Individual {
+    /// Draws a plant's individual traits from its keyed streams at sowing.
+    #[must_use]
+    pub fn draw(
+        params: &HerbParams,
+        world_seed: u64,
+        entity: u64,
+        tick: Hours,
+        depth: Meters,
+    ) -> Self {
+        let v = &params.variation;
+        let key = |purpose| RngKey::new(world_seed, plant_key(entity), tick.0, purpose).stream();
+        let seed_factor = scatter(key(Purpose::SeedSize).standard_normal(), v.seed_mass_cv);
+        let base = params.thresholds.emergence.0;
+        let deeper = v.emergence_per_depth * (depth.0 - v.reference_depth.0);
+        let spread = scatter(key(Purpose::Germination).standard_normal(), v.emergence_cv);
+        let emergence = DegreeDays(((base + deeper) * spread).max(0.25 * base));
+        let azimuth = key(Purpose::Phyllotaxis).uniform() * core::f64::consts::TAU;
+        Self {
+            seed_factor,
+            emergence,
+            azimuth: ps_units::Radians(azimuth),
+        }
+    }
+}
+
+/// The random-key entity of a plant's own (not an organ's) draws: the plant entity in
+/// the high word and an organ index no arena reaches in the low word.
+const fn plant_key(entity: u64) -> u64 {
+    (entity << 32) | 0xFFFF_FFFF
+}
+
 /// One plant: its organ graph and the growth-form state around it. Serializes
 /// completely for snapshots (the hourly scratch and the constant sky are rebuilt).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -458,6 +515,9 @@ pub struct Plant {
     pub nitrogen: PlantNitrogen,
     /// Phenology.
     pub phenology: Phenology,
+    /// The seed this plant grew from and its emergence (decision 0027).
+    #[serde(default)]
+    pub individual: Individual,
     /// Collar position in the soil frame (x, y, z = −sowing depth).
     pub collar_position: V3,
     /// Sowing depth.
@@ -610,7 +670,22 @@ impl Plant {
         collar_position: V3,
         tick: Hours,
     ) -> Result<Self, ArchError> {
-        let params = HerbParams::new(species, traits);
+        let mut params = HerbParams::new(species, traits);
+        let individual = Individual::draw(
+            &params,
+            world_seed,
+            entity,
+            tick,
+            Meters(-collar_position[2]),
+        );
+        // A bigger seed carries more reserve and bigger preformed leaves (decision 0027).
+        params.seed_mass = GramsDM(params.seed_mass.0 * individual.seed_factor);
+        params.unifoliate_area = ps_units::M2(
+            params.unifoliate_area.0
+                * libm::pow(individual.seed_factor, params.variation.seed_leaf_exponent),
+        );
+        params.thresholds.emergence = individual.emergence;
+        let az_seed = individual.azimuth.0;
         let mut arena = OrganArena::new();
         let fixed = params.seed_mass.0 * (1.0 - params.seed_mobilizable);
         let reserve =
@@ -662,7 +737,7 @@ impl Plant {
             meta.push(Meta::new(Role::Endosperm));
         }
         for k in 0..if params.grass.is_some() { 0 } else { 2u32 } {
-            let az = f64::from(k) * core::f64::consts::PI;
+            let az = az_seed + f64::from(k) * core::f64::consts::PI;
             let mut o = organ(
                 OrganKind::Cotyledon,
                 Some(hypocotyl),
@@ -688,6 +763,7 @@ impl Plant {
             ledger,
             nitrogen: PlantNitrogen::default(),
             phenology: Phenology::default(),
+            individual,
             collar_position,
             depth: Meters(-collar_position[2]),
             collar,

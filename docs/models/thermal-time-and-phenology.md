@@ -20,7 +20,8 @@ fill, maturity) when enough have added up. A warm spring makes beans flower soon
   does not destroy it (decision 0011).
 - Stages (daily step 1), one transition per day at most, never backward:
   Sown → Germinated (the seed module reports germination, §3.10) → Emerged (thermal time
-  since germination ≥ emergence) → FirstTrifoliate (architecture reports an unfolded
+  since germination ≥ the plant's own emergence threshold, which varies with seed and
+  depth, decision 0027 and plant-variation.md) → FirstTrifoliate (architecture reports an unfolded
   trifoliate) → Flowering (thermal time since germination ≥ flowering) → PodSet (a pod
   has set) → SeedFill (a seed is filling) → Mature (thermal time since germination ≥
   maturity). All thresholds count from germination, so time a seed waits in dry or
