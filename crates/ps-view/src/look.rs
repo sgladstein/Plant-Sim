@@ -32,7 +32,7 @@ pub const HORIZON: [f32; 3] = [0.66, 0.63, 0.55];
 /// Zenith, linear RGB.
 pub const ZENITH: [f32; 3] = [0.22, 0.40, 0.72];
 /// Ground seen far away, linear RGB.
-pub const GROUND: [f32; 3] = [0.09, 0.13, 0.05];
+pub const GROUND: [f32; 3] = [0.085, 0.15, 0.045];
 
 fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     let t = t.clamp(0.0, 1.0);

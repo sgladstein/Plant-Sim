@@ -309,8 +309,16 @@ pub(crate) struct DressingMeshes {
 /// The lawn, pebbles and trees around a bench of `size` (x, z).
 fn garden_dressing(size: Vec2) -> ColoredMesh {
     let half = size * 0.5;
-    let mut m = crate::dressing::lawn(half, 4.5);
-    for part in [crate::dressing::pebbles(half), crate::dressing::treeline()] {
+    // Scale the lawn and tree ring with the layout: a 3 m trellis row is framed from
+    // about 16 m, so a fixed 13 m ring would stand around the camera.
+    let extent = half.max_element();
+    let lawn_radius = (2.5 * extent).max(4.5);
+    let ring = (6.0 * extent + 10.0).max(13.0);
+    let mut m = crate::dressing::lawn(half, lawn_radius);
+    for part in [
+        crate::dressing::pebbles(half),
+        crate::dressing::treeline(ring),
+    ] {
         let base = m.mesh.vertex_count() as u32;
         m.mesh.positions.extend_from_slice(&part.mesh.positions);
         m.mesh.normals.extend_from_slice(&part.mesh.normals);

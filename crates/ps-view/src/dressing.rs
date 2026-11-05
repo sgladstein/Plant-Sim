@@ -127,7 +127,8 @@ pub fn lawn(keep_out: Vec2, radius: f32) -> ColoredMesh {
     let fresh = [0.16, 0.30, 0.06];
     let deep = [0.08, 0.17, 0.035];
     let straw = [0.34, 0.32, 0.14];
-    let count = 22_000_u32;
+    // About 340 blades per m² of disc, capped so very wide plots stay cheap.
+    let count = (340.0 * core::f32::consts::PI * radius * radius).min(60_000.0) as u32;
     for i in 0..count {
         // Area-uniform in a disc, biased toward the bench so the near lawn is thick.
         let r = radius * hash01(i, 1).powf(0.8);
@@ -191,7 +192,7 @@ pub fn pebbles(around: Vec2) -> ColoredMesh {
         let r = 1.0 + 0.6 * hash01(i, 12);
         let p = Vec2::new(a.cos() * around.x * r, a.sin() * around.y * r);
         let s = 0.012 + 0.03 * hash01(i, 13).powi(2);
-        let g = 0.32 + 0.25 * hash01(i, 14);
+        let g = 0.2 + 0.16 * hash01(i, 14);
         let c = [g, g * 0.97, g * 0.9];
         pebble(
             &mut m,
@@ -204,10 +205,10 @@ pub fn pebbles(around: Vec2) -> ColoredMesh {
     m
 }
 
-/// A ring of hedges and round-crowned trees at 7 to 13 m, for depth. Fog turns them
+/// A ring of hedges and round-crowned trees from `ring` to 1.7 × `ring` m, for depth. Fog turns them
 /// into soft silhouettes.
 #[must_use]
-pub fn treeline() -> ColoredMesh {
+pub fn treeline(ring: f32) -> ColoredMesh {
     let mut m = ColoredMesh::default();
     let foliage = [[0.05, 0.13, 0.04], [0.07, 0.16, 0.05], [0.10, 0.17, 0.06]];
     let trunk = [0.12, 0.08, 0.05];
@@ -217,7 +218,7 @@ pub fn treeline() -> ColoredMesh {
         if a.sin() > 0.55 {
             continue;
         }
-        let r = 13.0 + 9.0 * hash01(i, 21);
+        let r = ring * (1.0 + 0.7 * hash01(i, 21));
         let base = Vec3::new(r * a.cos(), 0.0, r * a.sin());
         let c = foliage[(hash01(i, 22) * 3.0) as usize % 3];
         if hash01(i, 23) < 0.45 {
@@ -225,8 +226,10 @@ pub fn treeline() -> ColoredMesh {
             let h = 1.6 + 1.6 * hash01(i, 24);
             pebble(
                 &mut m,
+                // Sunk a little into the ground, so the trunk meets the lawn at full
+                // width instead of tapering to a point above it.
                 base + Vec3::Y * h * 0.3,
-                Vec3::new(0.12, h * 0.3, 0.12),
+                Vec3::new(0.14, h * 0.42, 0.14),
                 i + 1000,
                 trunk,
             );
