@@ -255,9 +255,7 @@ fn panels(
     if tools.new_run.open {
         tools::new_run_window(ctx, &mut tools.new_run);
     }
-    if let Some(text) = &moments.banner {
-        moment_toast(ctx, text, top + 10.0);
-    }
+    moment_toast(ctx, moments.banner.as_deref(), top + 10.0);
     let insets = [left, top, right, bottom.response.rect.height()];
     if rig
         .insets
@@ -271,7 +269,10 @@ fn panels(
 }
 
 /// A moment's banner (WP20's flowering cue), centered under the top bar.
-fn moment_toast(ctx: &egui::Context, text: &str, y: f32) {
+fn moment_toast(ctx: &egui::Context, text: Option<&str>, y: f32) {
+    let Some(text) = text else {
+        return;
+    };
     egui::Area::new("moment".into())
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, y))
         .interactable(false)
