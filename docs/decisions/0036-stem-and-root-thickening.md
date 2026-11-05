@@ -55,7 +55,7 @@ distance from the root's base, and OpenSimRoot's table is a diameter increment.
    (5 cm below the collar), the organ rows `secondary_g`. Validation gains
    `basal_stem_diameter` (4.5 to 10 mm at seed fill), `tap_root_diameter` (2 to 6 mm)
    and `stem_share_peak` (stem over stem plus leaf mass, 0.35 to 0.60), all Info, with
-   the derived variable `stem_share`. Model 0.17.0 → 0.18.0, goldens regenerated.
+   the derived variable `stem_share`. Model 0.18.0 → 0.19.0 (0.18.0 went to the class-table tolerance, decision 0034 amendment), goldens regenerated.
 
 ## Consequences
 - Done-when (`ps-arch/tests/thickening.rs`, 56 days in a 24 cm pot): the hypocotyl is
@@ -64,10 +64,10 @@ distance from the root's base, and OpenSimRoot's table is a diameter increment.
   never falls; stem mass still rises in the last week; the tap root is 3.9 mm at 5 cm
   and 1.6 mm at 15 cm. Wheat makes no secondary mass, and the wheat scenarios' daily and
   organ outputs are identical to 0.17.0.
-- Validation on four-seed means: 90 checks, **69 pass** (0.17.0: 67 of 87), every M0
-  gate passes. New: hypocotyl 5.8 mm at seed fill (5.5 to 6.1) and tap root 4.1 mm (3.9
+- Validation on four-seed means: 90 checks, **69 pass** (0.17.0 and 0.18.0: 67 of 87),
+  every M0 gate passes. Changes below are against 0.17.0 (0.18.0 moved no verdict). New: hypocotyl 5.8 mm at seed fill (5.5 to 6.1) and tap root 4.1 mm (3.9
   to 4.3) pass; `stem_share_peak` misses at 0.31 (band 0.35 to 0.60; R1b's stem storage
-  adds to it). `harvest_index_tops` passes again (0.392 → 0.424): wood draws carbon
+  adds to it). `harvest_index_tops` passes again (0.392 → 0.422): wood draws carbon
   during pod set, so the pot plant sets fewer pods (13.0 → 9.5) and fills each better
   (0.235 → 0.254 g a seed); total mass at maturity 24.7 → 23.4 g, peak leaf area 0.221
   → 0.190 m². `drought_root_shoot_cited` now misses (+23% → +9%): thickening adds root

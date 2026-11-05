@@ -62,7 +62,7 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 
 ## 2. Current state (2026-11-05, R1a PR)
 
-**Model and data.** Model 0.18.0 (decision 0036: stem and root thickening, realism plan R1a), species schema 12. Before it 0.17.0 (decision 0034: the leaf energy balance, WP27, schema 11) and 0.16.0 (decision 0033: broad leaves at 5 light points) and schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
+**Model and data.** Model 0.19.0 (decision 0036: stem and root thickening, realism plan R1a), species schema 12. Before it 0.18.0 (decision 0034 amendment: coupled tolerance 0.05 K, for speed; perf thread), 0.17.0 (decision 0034: the leaf energy balance, WP27, schema 11) and 0.16.0 (decision 0033: broad leaves at 5 light points) and schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
 
 **Merged today:**
 - #87: lateral roots stay in the soil (decision 0028, model 0.11.0).
@@ -71,9 +71,10 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - #104: the re-tune (decision 0032, model 0.15.0): development trapezoid 7 / 25 / 33 / 42 °C with the calendar kept, Medlyn g1 5.79, per-organ construction cost keys (all 1.25 for now), pole internode_last_fraction 1.75.
 - #110: broad leaves at 5 light points (decision 0033, model 0.16.0), the performance thread's plot-speed option 1.
 - #114: leaf energy balance (decision 0034, model 0.17.0), wind, leaf frost on leaf temperature.
-- The R1a PR (decision 0036, model 0.18.0): stem and root thickening, a sink at priority 0.4.
+- #118: coupled leaf-temperature tolerance 0.05 K (decision 0034 amendment, model 0.18.0), perf thread.
+- The R1a PR (decision 0036, model 0.19.0): stem and root thickening, a sink at priority 0.4.
 
-**Validation at 0.18.0, seed means.** 69 of 90 pass, every M0 gate passes (0.17.0: 67 of 87). R1a's basal_stem_diameter and tap_root_diameter pass, harvest_index_tops passes again (0.424); stem_share_peak (0.31, R1b adds storage) and drought_root_shoot_cited (+9%) miss. The misses:
+**Validation at 0.19.0, seed means.** 69 of 90 pass, every M0 gate passes (0.17.0 and 0.18.0: 67 of 87). R1a's basal_stem_diameter and tap_root_diameter pass, harvest_index_tops passes again (0.422); stem_share_peak (0.31, R1b adds storage) and drought_root_shoot_cited (+9%) miss. The misses:
 - **Thermal-time phenology.** The seven checks against two literature bases that disagree with each other.
 - **Wheat.** Five checks: the stand is too short and low-yielding, spaced plants tiller too little.
 - **Drought and heat seed size** (drought_seed_size, drought_seeds_per_pod, heat_seed_mass, heat_seed_size): seed number does not adjust to carbon after pod set, so seed size takes every shortfall. Needs a seed abortion rule.
