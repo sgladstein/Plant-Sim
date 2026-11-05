@@ -3,6 +3,8 @@
 Budgets come from the design plan (§3.5, §3.8, §7). This file tracks how the code
 measures against them. Update the table when a work package changes a hot path.
 
+How the performance work runs, what is open and what was tried: [perf/handoff.md](perf/handoff.md).
+
 ## Budgets
 
 | Scope | Budget | Source |
