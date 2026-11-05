@@ -16,7 +16,7 @@ keep implementing the design plan from the repository alone.
 - Review follow-ups that are not a WP get their own small PR, such as the light fix (#75), the validation harness (#81) and the root fix. Record them in STATUS.
 
 **Every model change carries five things in the same PR:**
-1. A decision record, `docs/decisions/NNNN-title.md`, from `TEMPLATE.md`. Number it as the next free number; 0032 is the latest.
+1. A decision record, `docs/decisions/NNNN-title.md`, from `TEMPLATE.md`. Number it as the next free number; 0033 is the latest.
 2. A model card update in `docs/models/` for every equation or default that changes.
 3. A minor bump of `MODEL_VERSION` in `crates/ps-world/src/lib.rs`, plus `model_version` in every scenario under `data/scenarios/` (sed them all).
 4. A species schema bump in `crates/ps-species/src/schema.rs`, if a species file key changes. Schema is at 10.
@@ -62,7 +62,7 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 
 ## 2. Current state (2026-11-05, re-tune PR)
 
-**Model and data.** Model 0.15.0, species schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
+**Model and data.** Model 0.16.0 (decision 0033: broad leaves at 5 light points), species schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
 
 **Merged today:**
 - #87: lateral roots stay in the soil (decision 0028, model 0.11.0).

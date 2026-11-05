@@ -3,7 +3,7 @@
 //!
 //! Once a day, [`rebuild_daily`] fits an adaptive voxel grid around the shoot, spreads
 //! each leaf's area over its footprint (leaf area density, m² m⁻³), and marches rays
-//! from seven points on every leaf toward each of the day's hourly sun positions and
+//! from five points on every broad leaf (three on a grass strip) toward each of the day's hourly sun positions and
 //! each of 16 sky sectors. The optical depth along a ray in direction `d` is
 //! `Σ k · LAD · path length`, where each leaf's `k` is its own projection `|n · d|`
 //! (its blade normal `n`, decision 0025) for small leaves (Beer's law) and rises toward
@@ -20,7 +20,7 @@
 //!
 //! A leaf's footprint is a horizontal disc of the leaf's area at its height, and a
 //! leaf's own footprint is excluded when its rays are marched, so an isolated leaf is
-//! fully lit while other foliage in the same cells still shades it. The seven ray
+//! fully lit while other foliage in the same cells still shades it. The ray
 //! origins lie in the plane of the blade (its normal), so a tilted leaf half under a
 //! neighbor is half shaded.
 //!
@@ -1148,7 +1148,7 @@ fn leaf_coeffs(
 }
 
 /// Number of points on a leaf's disc from which rays are cast: the center and a ring.
-pub const SAMPLE_POINTS: usize = 7;
+pub const SAMPLE_POINTS: usize = 5;
 /// Number of points along a narrow strip (a third of a grass blade) from which rays are
 /// cast: its center and one toward each end (decision 0030).
 pub const STRIP_SAMPLE_POINTS: usize = 3;
@@ -1168,9 +1168,9 @@ impl Samples {
     }
 }
 
-/// The leaf's sample points. A broad leaf: its center and six points on a ring at
+/// The leaf's sample points. A broad leaf: its center and four points on a ring at
 /// `r/√2` (the ring that splits the disc into equal-area halves), in the plane of the
-/// leaf blade. A narrow strip: its center and the two points its `strip` offset puts
+/// leaf blade, 90° apart (decision 0033; six at 60° before). A narrow strip: its center and the two points its `strip` offset puts
 /// along it (decision 0030).
 #[must_use]
 pub fn sample_points(l: &LeafPoint) -> Samples {
@@ -1196,7 +1196,7 @@ fn disc_points(l: &LeafPoint) -> [[f64; 3]; SAMPLE_POINTS] {
     let (u, v) = blade_basis(l.normal);
     let mut out = [l.center; SAMPLE_POINTS];
     for (k, p) in out.iter_mut().skip(1).enumerate() {
-        let a = as_f64(k) * PI / 3.0;
+        let a = as_f64(k) * PI / 2.0;
         let (ca, sa) = (libm::cos(a), libm::sin(a));
         for i in 0..3 {
             p[i] += rr * (ca * u[i] + sa * v[i]);
