@@ -65,7 +65,70 @@ pub fn soil_color(depth_fraction: f32) -> [f32; 4] {
     ]
 }
 
-const BANDS: usize = 8;
+/// Soil crumb cell size, m: the soil faces are tiled with cells of slightly varied
+/// brightness so the cut face reads as soil, not as a flat brown card.
+const CRUMB: f32 = 0.012;
+
+/// A deterministic value in [−1, 1] for a cell.
+fn jitter(a: usize, b: usize, c: usize) -> f32 {
+    let mut h = (a as u32).wrapping_mul(0x9E37_79B9)
+        ^ (b as u32).wrapping_mul(0x85EB_CA6B)
+        ^ (c as u32).wrapping_mul(0xC2B2_AE35);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2C1B_3C6D);
+    h ^= h >> 12;
+    (h & 0xffff) as f32 / 32767.5 - 1.0
+}
+
+fn speckle(c: [f32; 4], j: f32) -> [f32; 4] {
+    let k = 1.0 + 0.16 * j;
+    [c[0] * k, c[1] * k, c[2] * k, c[3]]
+}
+
+/// A face from `corner` spanning `u` (horizontal) and `v` (up), as a grid of shared
+/// vertices whose colors follow depth with a little smooth mottling (vertex colors
+/// interpolate, so it reads as soil texture, not as pixels). `flip` reverses the facing.
+#[allow(clippy::too_many_arguments)]
+fn crumb_face(
+    m: &mut ColoredMesh,
+    face: usize,
+    corner: Vec3,
+    u: Vec3,
+    v: Vec3,
+    h: f32,
+    flip: bool,
+    tone: f32,
+) {
+    let nu = ((u.length() / CRUMB).ceil() as usize).max(1);
+    let nv = ((v.length() / CRUMB).ceil() as usize).max(1);
+    let (du, dv) = (u / nu as f32, v / nv as f32);
+    let n = if flip { dv.cross(du) } else { du.cross(dv) }.normalize_or(Vec3::Z);
+    let base = m.mesh.vertex_count() as u32;
+    for k in 0..=nv {
+        for i in 0..=nu {
+            let p = corner + du * i as f32 + dv * k as f32;
+            let depth = (-p.z / h).clamp(0.0, 1.0);
+            let c = speckle(soil_color(depth), jitter(face, i, k));
+            m.mesh
+                .push_vertex(p, n, Vec2::new(i as f32 / nu as f32, k as f32 / nv as f32));
+            m.colors.push([c[0] * tone, c[1] * tone, c[2] * tone, 1.0]);
+        }
+    }
+    let row = nu as u32 + 1;
+    for k in 0..nv as u32 {
+        for i in 0..nu as u32 {
+            let a = base + k * row + i;
+            let (b, c, d) = (a + 1, a + row + 1, a + row);
+            if flip {
+                m.mesh.push_triangle(a, c, b);
+                m.mesh.push_triangle(a, d, c);
+            } else {
+                m.mesh.push_triangle(a, b, c);
+                m.mesh.push_triangle(a, c, d);
+            }
+        }
+    }
+}
 
 /// The soil seen from inside: back, side and bottom faces facing in, plus the surface.
 #[must_use]
@@ -73,32 +136,82 @@ pub fn soil(size: PotSize) -> ColoredMesh {
     let (w, d, h) = (size.width, size.depth, size.soil_depth);
     let e = 0.000_5; // keep the soil just inside the walls
     let mut m = ColoredMesh::default();
-    let band = h / BANDS as f32;
-    for k in 0..BANDS {
-        let z0 = -h + band * k as f32;
-        let frac = 1.0 - (k as f32 + 0.5) / BANDS as f32;
-        let c = soil_color(frac);
-        let up = Vec3::Z * band;
-        // Back wall, facing south.
-        m.quad(Vec3::new(-w / 2.0, d / 2.0 - e, z0), Vec3::X * w, up, c);
-        // West wall, facing east.
-        m.quad(Vec3::new(-w / 2.0 + e, -d / 2.0, z0), Vec3::Y * d, up, c);
-        // East wall, facing west.
-        m.quad(Vec3::new(w / 2.0 - e, -d / 2.0, z0), up, Vec3::Y * d, c);
-    }
-    m.quad(
+    let up = Vec3::Z * h;
+    // Back wall, facing south.
+    crumb_face(
+        &mut m,
+        0,
+        Vec3::new(-w / 2.0, d / 2.0 - e, -h),
+        Vec3::X * w,
+        up,
+        h,
+        false,
+        1.0,
+    );
+    // West wall, facing east.
+    crumb_face(
+        &mut m,
+        1,
+        Vec3::new(-w / 2.0 + e, -d / 2.0, -h),
+        Vec3::Y * d,
+        up,
+        h,
+        false,
+        1.0,
+    );
+    // East wall, facing west.
+    crumb_face(
+        &mut m,
+        2,
+        Vec3::new(w / 2.0 - e, -d / 2.0, -h),
+        Vec3::Y * d,
+        up,
+        h,
+        true,
+        1.0,
+    );
+    // The floor, seen from above through the glass: deep subsoil, in shade.
+    crumb_face(
+        &mut m,
+        4,
         Vec3::new(-w / 2.0, -d / 2.0, -h + e),
         Vec3::X * w,
         Vec3::Y * d,
-        soil_color(1.0),
+        h,
+        false,
+        0.55,
     );
-    // The surface, slightly lighter and drier-looking.
-    m.quad(
-        Vec3::new(-w / 2.0, -d / 2.0, 0.0),
+    // The surface: drier and lighter than the topsoil below, with crumbs.
+    let top = Vec3::new(-w / 2.0, -d / 2.0, 0.0);
+    let start = m.mesh.vertex_count();
+    crumb_face(&mut m, 3, top, Vec3::X * w, Vec3::Y * d, 1.0, false, 1.0);
+    for c in &mut m.colors[start..] {
+        let j = c[0] / soil_color(0.0)[0];
+        *c = [0.16 * j, 0.1 * j, 0.06 * j, 1.0];
+    }
+    m
+}
+
+/// Soil haze just behind the glass: a translucent cut face, so the slab reads as full
+/// of soil and roots deeper in it look buried rather than floating in an empty crate.
+/// The lens system hides it in X-ray.
+#[must_use]
+pub fn soil_haze(size: PotSize, alpha: f32) -> ColoredMesh {
+    let (w, d, h) = (size.width, size.depth, size.soil_depth);
+    let mut m = ColoredMesh::default();
+    crumb_face(
+        &mut m,
+        5,
+        Vec3::new(-w / 2.0, -d / 2.0 + 0.004, -h),
         Vec3::X * w,
-        Vec3::Y * d,
-        [0.16, 0.1, 0.06, 1.0],
+        Vec3::Z * h,
+        h,
+        false,
+        0.6,
     );
+    for c in &mut m.colors {
+        c[3] = alpha;
+    }
     m
 }
 

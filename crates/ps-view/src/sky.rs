@@ -40,6 +40,16 @@ pub(crate) fn spawn_sun(mut commands: Commands) {
             shadow_maps_enabled: true,
             ..default()
         },
+        // The diorama is about a meter across: one tight cascade instead of the default
+        // four spread over 150 m, so leaf shadows are crisp instead of blocky.
+        bevy::light::CascadeShadowConfigBuilder {
+            num_cascades: 1,
+            minimum_distance: 0.01,
+            maximum_distance: 5.0,
+            first_cascade_far_bound: 5.0,
+            overlap_proportion: 0.2,
+        }
+        .build(),
         Transform::from_xyz(1.0, 2.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
         Sun,
     ));
@@ -75,11 +85,22 @@ pub fn sky_color(sin_elevation: f32, cloud: f32) -> [f32; 3] {
 }
 
 #[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_sky(
     sky: Res<SkyState>,
     mut clear: ResMut<ClearColor>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut suns: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
+    mut images: ResMut<Assets<Image>>,
+    mut sky_images: ResMut<crate::look::SkyImages>,
+    mut cameras: Query<
+        (
+            &mut bevy::light::Skybox,
+            &mut bevy::light::GeneratedEnvironmentMapLight,
+            &mut bevy::pbr::DistanceFog,
+        ),
+        With<crate::camera::OrbitCamera>,
+    >,
 ) {
     let dir = sky.sun_direction.normalize_or(Vec3::Z);
     let sin_e = dir.z;
@@ -87,7 +108,29 @@ pub(crate) fn update_sky(
     clear.0 = Color::linear_rgb(c[0], c[1], c[2]);
     let daylight = (sky.global / 800.0).clamp(0.0, 1.2);
     ambient.color = Color::linear_rgb(0.55 + 0.4 * c[0], 0.6 + 0.3 * c[1], 0.7 + 0.3 * c[2]);
-    ambient.brightness = 30.0 + 420.0 * daylight;
+    // The sky cubemap does the fill now; a little flat ambient keeps night readable.
+    ambient.brightness = 15.0 + 40.0 * daylight;
+    let tint = crate::look::sky_tint(sin_e, sky.cloud_fraction);
+    if tint
+        .iter()
+        .zip(&sky_images.tint)
+        .any(|(a, b)| (a - b).abs() > 0.01)
+    {
+        if let Some(mut img) = images.get_mut(&sky_images.backdrop) {
+            *img = crate::look::sky_cubemap(tint);
+        }
+        sky_images.tint = tint;
+    }
+    let backdrop = 120.0 + 900.0 * daylight.min(1.0);
+    for (mut skybox, mut env, mut fog) in &mut cameras {
+        skybox.brightness = backdrop;
+        env.intensity = 40.0 + 1100.0 * daylight;
+        // The fog matches the sky texel at the horizon exactly, so there is no seam at
+        // dusk where the tint is strongest.
+        let h = crate::look::sky_gradient(Vec3::X, tint);
+        let k = backdrop * crate::look::EXPOSURE;
+        fog.color = Color::linear_rgb(h[0] * k, h[1] * k, h[2] * k);
+    }
     for (mut light, mut t) in &mut suns {
         // Direct light only; clouds turn it into ambient.
         let direct = sky.global * (1.0 - 0.75 * sky.cloud_fraction);

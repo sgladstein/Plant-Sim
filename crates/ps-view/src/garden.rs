@@ -115,11 +115,11 @@ pub fn natural_color(p: &Placement) -> [f32; 3] {
     }
     match p.kind {
         // Young leaves are a fresh yellow-green and darken as they mature.
-        OrganKind::Leaf => mix([0.22, 0.45, 0.06], [0.06, 0.22, 0.03], age / 150.0),
+        OrganKind::Leaf => mix([0.24, 0.46, 0.08], [0.08, 0.21, 0.045], age / 150.0),
         OrganKind::Cotyledon => mix([0.45, 0.5, 0.12], [0.55, 0.45, 0.1], age / 150.0),
-        OrganKind::Internode | OrganKind::Tendril | OrganKind::Bud => [0.12, 0.3, 0.05],
+        OrganKind::Internode | OrganKind::Tendril | OrganKind::Bud => [0.16, 0.27, 0.07],
         OrganKind::Root | OrganKind::Nodule => {
-            mix([0.85, 0.8, 0.65], [0.45, 0.33, 0.2], age / 600.0)
+            mix([0.95, 0.92, 0.8], [0.55, 0.42, 0.26], age / 600.0)
         }
         OrganKind::Flower => [0.85, 0.75, 0.9],
         // Pods ripen from green to straw.

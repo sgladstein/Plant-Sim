@@ -5,11 +5,18 @@
 //!
 //! ```text
 //! plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
+//!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
+//!           [--bench-frames N] [--bench-out FILE.csv]
 //! ```
 //!
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
-//! soil-water, plant-water, roots, carbon, phenology, shade. `--screenshot` renders a
-//! few frames, saves the window and exits (for headless checks and bug reports).
+//! soil-water, plant-water, roots, carbon, phenology, shade. `--screenshot` waits until
+//! the GPU pipelines have compiled and the scene has settled, saves the window and exits
+//! (for headless checks and bug reports). `--present` and `--frame-latency` set the
+//! swap chain's present mode (default auto vsync) and maximum queued frames (default
+//! the driver's), for frame-pacing tests. `--bench-frames N` records N frame times after
+//! the pipelines are ready and a 120-frame warm-up, writes them to `--bench-out`
+//! (default frame-times.csv) with a summary line (mean, p50, p95, p99, max), and exits.
 
 // Converting sim f64 and counts to f32 for display is intended.
 #![allow(
@@ -18,6 +25,7 @@
     clippy::cast_sign_loss
 )]
 
+mod bench;
 mod demo_source;
 
 use std::path::PathBuf;
@@ -25,8 +33,8 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use bevy::window::WindowResolution;
-use ps_view::{Lens, PlantViewPlugin, ViewSet};
+use bevy::window::{PresentMode, WindowResolution};
+use ps_view::{Lens, PlantViewPlugin, Ready, ViewSet};
 
 #[derive(Clone, Debug, Resource)]
 struct Options {
@@ -35,6 +43,22 @@ struct Options {
     paused: bool,
     lens: Lens,
     screenshot: Option<PathBuf>,
+    present: PresentMode,
+    frame_latency: Option<std::num::NonZero<u32>>,
+    present_name: String,
+    bench_frames: Option<u32>,
+    bench_out: PathBuf,
+}
+
+fn parse_present(name: &str) -> Result<PresentMode> {
+    Ok(match name {
+        "auto" => PresentMode::AutoVsync,
+        "fifo" => PresentMode::Fifo,
+        "mailbox" => PresentMode::Mailbox,
+        "immediate" => PresentMode::Immediate,
+        "novsync" => PresentMode::AutoNoVsync,
+        other => bail!("unknown present mode {other:?}"),
+    })
 }
 
 fn parse_lens(name: &str) -> Result<Lens> {
@@ -58,6 +82,11 @@ fn parse_args() -> Result<Options> {
         paused: false,
         lens: Lens::Off,
         screenshot: None,
+        present: PresentMode::AutoVsync,
+        frame_latency: None,
+        present_name: "auto".into(),
+        bench_frames: None,
+        bench_out: PathBuf::from("frame-times.csv"),
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -69,9 +98,24 @@ fn parse_args() -> Result<Options> {
             "--paused" => o.paused = true,
             "--lens" => o.lens = parse_lens(&value()?)?,
             "--screenshot" => o.screenshot = Some(PathBuf::from(value()?)),
+            "--present" => {
+                o.present_name = value()?;
+                o.present = parse_present(&o.present_name)?;
+            }
+            "--bench-frames" => {
+                o.bench_frames = Some(anyhow::Context::context(
+                    value()?.parse::<u32>(),
+                    "--bench-frames",
+                )?);
+            }
+            "--bench-out" => o.bench_out = PathBuf::from(value()?),
+            "--frame-latency" => {
+                let n = anyhow::Context::context(value()?.parse::<u32>(), "--frame-latency")?;
+                o.frame_latency = std::num::NonZero::new(n);
+            }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv]"
                 );
                 std::process::exit(0);
             }
@@ -89,6 +133,8 @@ fn main() -> Result<()> {
         primary_window: Some(Window {
             title: "Plant-Sim".into(),
             resolution: WindowResolution::new(1600, 900),
+            present_mode: options.present,
+            desired_maximum_frame_latency: options.frame_latency,
             ..default()
         }),
         ..default()
@@ -102,6 +148,14 @@ fn main() -> Result<()> {
     .insert_resource(options.lens)
     .insert_resource(options.clone())
     .add_systems(Update, demo_source::drive.in_set(ViewSet::Source));
+    if let Some(frames) = options.bench_frames {
+        app.insert_resource(bench::BenchConfig {
+            frames: frames.max(1),
+            out: options.bench_out.clone(),
+            present: options.present_name.clone(),
+        })
+        .add_systems(Last, bench::record);
+    }
     if options.screenshot.is_some() {
         app.add_systems(Update, screenshot_and_exit);
     }
@@ -109,23 +163,61 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Waits for the scene to settle, saves one screenshot, then exits.
+/// Frames rendered after the pipelines are ready before the screenshot, so the camera
+/// has eased onto the plants.
+const SETTLE_AFTER_READY: u32 = 60;
+/// Give up if the scene is not ready after this many seconds.
+const SCREENSHOT_TIMEOUT_S: f32 = 180.0;
+
+/// Screenshot progress.
+#[derive(Default)]
+struct Shot {
+    frames_ready: u32,
+    requested: bool,
+    saved: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    frames_since_saved: u32,
+}
+
+/// Waits until the pipelines are compiled and the scene has settled, saves one
+/// screenshot, then exits once the file is written.
 #[allow(clippy::needless_pass_by_value)]
 fn screenshot_and_exit(
     mut commands: Commands,
     options: Res<Options>,
-    mut frames: Local<u32>,
+    ready: Res<Ready>,
+    time: Res<Time<Real>>,
+    mut shot: Local<Shot>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    *frames += 1;
-    if *frames == 90
-        && let Some(path) = &options.screenshot
-    {
+    let Some(path) = &options.screenshot else {
+        return;
+    };
+    if ready.ready {
+        shot.frames_ready += 1;
+    }
+    if !shot.requested && shot.frames_ready >= SETTLE_AFTER_READY {
+        shot.requested = true;
+        let saved = shot.saved.clone();
         commands
             .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(path.clone()));
+            .observe(save_to_disk(path.clone()))
+            .observe(
+                move |_: On<bevy::render::view::screenshot::ScreenshotCaptured>| {
+                    saved.store(true, std::sync::atomic::Ordering::Relaxed);
+                },
+            );
     }
-    if *frames == 130 {
-        exit.write(AppExit::Success);
+    if shot.saved.load(std::sync::atomic::Ordering::Relaxed) {
+        // A few more frames so the save observer has certainly run.
+        shot.frames_since_saved += 1;
+        if shot.frames_since_saved > 5 {
+            exit.write(AppExit::Success);
+        }
+    } else if time.elapsed_secs() > SCREENSHOT_TIMEOUT_S {
+        error!(
+            "screenshot: scene not ready after {SCREENSHOT_TIMEOUT_S} s ({} pipelines waiting)",
+            ready.waiting
+        );
+        exit.write(AppExit::error());
     }
 }
