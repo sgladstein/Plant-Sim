@@ -36,9 +36,9 @@ Science research thread before a spec relies on it, **[I]** inference or arithme
    the code doesn't do it [M]. There is no hydrotropism, no extra branching in wet or
    N-rich soil, and no response to compaction or waterlogging.
 4. **Water inside the plant is a single step from soil to leaf.** There is no water
-   potential anywhere, not even in the soil. So the planned "wilting and recovery"
-   moment (design plan §2.3) has no sim mechanism behind it, and nor does the
-   "phototropic lean" (the sim has no phototropism).
+   potential anywhere, not even in the soil. WP20 (#99) now draws wilting from the
+   stress factor and a lean from per-leaf light, but in the sim there is no turgor and
+   no phototropism, so the plant's shape and water use don't change with either.
 5. **Level of detail: the idea works, but pots and plots need less of it than
    expected.** A whole bean season takes about 0.2 s to fast-forward in a pot and
    about 2 s in a 30-bean plot [I from the perf numbers], so week, month and season
@@ -48,7 +48,7 @@ Science research thread before a spec relies on it, **[I]** inference or arithme
    points, or replays and challenges would stop matching (§4).
 6. **Recommended order** (§5): carbon sinks (thickening and storage) first, then root
    system realism, then plant hydraulics after WP27. Phototropism is a cheap extra
-   that the WP20 moments need. Two decisions for the owner are in §6.
+   that would make the WP20 lean real. Two decisions for the owner are in §6.
 
 ---
 
@@ -174,17 +174,21 @@ more of the realism, and players will see it more.
 ### F4. No water potential anywhere
 Soil holds water by volume, with no retention curve. The plant has no resistance or
 storage. Stress reacts at once to root-zone FTSW. Consequences:
-- Wilting is not a physical state. The viewer would have to fake the WP20 "wilting and
-  recovery within sim-hours of watering" moment from the stress factor.
+- Wilting is not a physical state. WP20 (#99) draws the "wilting and recovery" moment
+  from the stress factor, which follows root-zone FTSW at once, with no turgor and no
+  delay.
 - Water in a wet patch can't make up for dry soil elsewhere through the plant's
   plumbing. The proportional split does some of that, but not by hydraulics.
 - Root traits that breeders select in bean, like xylem size and axial conductance
   (Strock et al. 2020) or deep against shallow basal roots, can't matter in M3
   breeding [F].
 
-### F5. Two designed moments and a few follow-ups depend on missing sim mechanisms
-- "Leaves and stems lean toward the light": no phototropism in the sim.
-- "Wilting under drought and visible recovery": no turgor (F4).
+### F5. Two designed moments are drawn by the viewer, not grown by the sim
+- "Leaves and stems lean toward the light": WP20 (#99) poses the shoot toward its
+  brighter side when drawing it, but the sim has no phototropism, so the lean never
+  changes where leaves are or what light they get.
+- "Wilting under drought and visible recovery": drawn from the stress factor; no turgor
+  in the sim (F4).
 - Topping pays off poorly because branches have no buds of their own (WP25 follow-up).
 - Doc inconsistency: herb-architecture.md says leaves don't senesce from the base
   during seed fill, but nitrogen.md and its test say they do since WP24. Both are partly
@@ -260,7 +264,7 @@ follows the whole radius or only a phloem ring [I].
 
 | # | Item | Realism and game value | Minimal model | Cost | Tiers? | Step order | Rating |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| E1 | **Phototropism** | Plants lean toward the window or out of shade: a designed moment (§2.3) and WP20 | Daily bend of new internodes toward the light-weighted direction from the daily coefficients (§3.4 already specifies it) | Negligible | No | None | **Needed** (cheap, unblocks WP20) |
+| E1 | **Phototropism** | Plants lean toward the window or out of shade, and the lean changes the light they get. WP20 draws a lean; this makes it real | Daily bend of new internodes toward the light-weighted direction from the daily coefficients (§3.4 already specifies it) | Negligible | No | None | **Needed** (cheap) |
 | E2 | Branches on branches, buds and racemes on branches, a branch taking over as leader | Topping and pruning pay off as in a garden (WP25 follow-up) | Bud sites on branch nodes with the same fate rule | More organs | No | None | Wanted |
 | E3 | Drought speeds development | Dry beans mature earlier (a known bean response) [K, to verify] | Stress term on thermal-time accumulation from flowering | None | No | None | Wanted |
 | E4 | Heat shortens seed fill, so seeds are smaller | Fixes the two heat seed checks | Fill duration in thermal time with a high-temperature cut [K, to verify] | None | No | None | Wanted |
@@ -364,8 +368,8 @@ Accepted ones get WP numbers and issues when specced.
 | --- | --- | --- | --- | --- |
 | 1 | **R1 Carbon sinks** | A1 stem thickening, A2 root secondary growth, A3 storage and remobilization, A4 exudation, D1 seed-driven N stripping; fix the herb card's senescence line | L | The must-have. Fixes F1, which is behind several validation misses and the weak plot competition (an M2 exit target). Changes the carbon budget a lot, so it comes before more tuning |
 | 2 | **R2 Root system** | B1 early vigor, B2 fine laterals, B8 uptake from root length (closes #58), B3 foraging, B4 dry-soil response, B5 hydrotropism | L (two PRs: R2a length and uptake, R2b plasticity) | Fixes F2 and F3. R2a after R1, because thickening and root length share the root carbon |
-| 3 | **R3 Plant hydraulics** | C1 soil retention, C2 network and stomata on leaf potential, turgor for wilting, the simplified level and the fidelity report (§4) | L | Fixes F4 and gives WP20 its wilting. After WP27, because both change how stomata and transpiration are set, and doing hydraulics first would mean redoing it |
-| any time | **R4 Phototropism** | E1 | S | Cheap; WP20's lean needs it. Could go with R1 |
+| 3 | **R3 Plant hydraulics** | C1 soil retention, C2 network and stomata on leaf potential, turgor for wilting, the simplified level and the fidelity report (§4) | L | Fixes F4 and gives WP20's wilting a turgor value to draw. After WP27, because both change how stomata and transpiration are set, and doing hydraulics first would mean redoing it |
+| any time | **R4 Phototropism** | E1 | S | Cheap; makes WP20's drawn lean real. Could go with R1 |
 | later | R5 Soil extras | B6 waterlogging, C5 compaction, C4 upward flow | M | High game value (overwatering, raised beds) once R2 and R3 exist |
 | later | R6 Shoot extras | E2 branches on branches, E3 drought phenology, E4 heat on seed fill, E7 wheat grain number, D2 pod set reads N, C6 leaf folding | M each | Triage again after R1, since R1 may move the heat and drought checks |
 | later | R7 N transport | D3 with two levels | M | Mostly lens value |
@@ -387,7 +391,7 @@ Accepted ones get WP numbers and issues when specced.
   radial and axial conductances and the leaf turgor-loss point, and the hydropatterning
   and nitrate-patch response sizes. Most are "[K, to verify]" above.
 - **Viewer**: R1 gives stems and roots real taper; R3 gives a turgor value per leaf
-  for wilting; R4 gives the lean. Each needs only the existing snapshot fields plus a
+  for wilting; R4 makes the drawn lean real. Each needs only the existing snapshot fields plus a
   per-leaf turgor value.
 - **M3 breeding**: R2 and R3 make root traits (basal root angle, secondary growth,
   xylem conductance) real breedable traits, which is among the best-documented bean
