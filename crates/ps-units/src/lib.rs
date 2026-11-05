@@ -313,6 +313,21 @@ quantity!(
     "J/m2"
 );
 quantity!(
+    /// Specific length, m per g dry matter (internodes, roots).
+    MPerG,
+    "m/g"
+);
+quantity!(
+    /// Specific area, m² per g dry matter (specific leaf area).
+    M2PerG,
+    "m2/g"
+);
+quantity!(
+    /// Density, g dry matter per m³ of tissue.
+    GPerM3,
+    "g/m3"
+);
+quantity!(
     /// Water depth in millimeters (rain, irrigation); 1 mm over 1 m² is 1 kg.
     Millimeters,
     "mm"

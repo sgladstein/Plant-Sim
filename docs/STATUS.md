@@ -10,8 +10,8 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 0 Repo scaffold | #1 | done in this PR |
 | 1 Units and RNG | #2 | done in this PR |
 | 2 Weather and sun | #3 | done (in PR #14) |
-| 3 Organ graph | #4 | next |
-| 4 Species schema | #5 | not started |
+| 3 Organ graph | #4 | done (in PR #14) |
+| 4 Species schema | #5 | next |
 | 5 Soil and water | #6 | not started |
 | 6 Light | #7 | not started |
 | 7 Physiology | #8 | not started |

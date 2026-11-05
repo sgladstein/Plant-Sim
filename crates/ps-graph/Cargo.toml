@@ -1,0 +1,20 @@
+[package]
+name = "ps-graph"
+description = "Organ graph arena, organ types, expansion curves and allometry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-units.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+libm.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

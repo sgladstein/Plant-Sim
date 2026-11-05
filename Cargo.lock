@@ -244,6 +244,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-graph"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "proptest",
+ "ps-units",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "ps-rng"
 version = "0.1.0"
 dependencies = [
