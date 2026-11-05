@@ -1,0 +1,24 @@
+// Measured shoot_mass_g against days after sowing; DSSAT Drybean experiment CCPA9001.
+Curve(
+  schema: 1,
+  id: "dssat_ccpa9001_redkloud_shoot_mass_g",
+  source: "dssat_ccpa9001",
+  conditions: "CIAT Palmira, Colombia, 1990; Redkloud (Andean Type I, dark red kidney); field, 25 plants/m2, rows 60 cm, irrigated; planted 1990-03-02",
+  x: Axis(variable: "days_since_sowing", unit: "d"),
+  y: Axis(variable: "shoot_mass_g", unit: "g/plant"),
+  basis: Some("Days after planting; planting date taken as sowing day 0. Field crop at stand density, so per-plant values are smaller than for a lone pot plant; compare shape and timing, not absolute size. Per-plant values = kg/ha / 10 / plants per m2."),
+  method: "Measured time series, DSSAT CCPA9001 .BNT/.GBT file, column CWAD (all above-ground living dry mass); read from the file",
+  gate: Info,
+  points: [
+    Point(x: 11.0, y: 0.303, sd: None),
+    Point(x: 18.0, y: 0.642, sd: None),
+    Point(x: 25.0, y: 1.806, sd: None),
+    Point(x: 32.0, y: 3.989, sd: None),
+    Point(x: 39.0, y: 6.184, sd: None),
+    Point(x: 47.0, y: 9.98, sd: None),
+    Point(x: 53.0, y: 11.52, sd: None),
+    Point(x: 59.0, y: 12.708, sd: None),
+    Point(x: 67.0, y: 12.108, sd: None),
+    Point(x: 73.0, y: 11.824, sd: None),
+  ],
+)

@@ -1,0 +1,20 @@
+// Measured stem_mass_g against days after sowing; DSSAT Drybean experiment UFGA8501.
+Curve(
+  schema: 1,
+  id: "dssat_ufga8501_manitou_irrigated_stem_mass_g",
+  source: "dssat_ufga8501",
+  conditions: "Gainesville FL, 1985; Manitou (Andean Type I); field, 51.7 plants/m2, irrigated (treatment 3)",
+  x: Axis(variable: "days_since_sowing", unit: "d"),
+  y: Axis(variable: "stem_mass_g", unit: "g/plant"),
+  basis: Some("Days after planting; planting date taken as sowing day 0. Field crop at stand density, so per-plant values are smaller than for a lone pot plant; compare shape and timing, not absolute size. Per-plant values = kg/ha / 10 / plants per m2."),
+  method: "Measured time series, DSSAT UFGA8501 .BNT/.GBT file, column SWAD (stem and petioles); read from the file",
+  gate: Info,
+  points: [
+    Point(x: 32.0, y: 0.591, sd: None),
+    Point(x: 44.0, y: 2.306, sd: None),
+    Point(x: 56.0, y: 3.097, sd: None),
+    Point(x: 67.0, y: 3.207, sd: None),
+    Point(x: 78.0, y: 2.81, sd: None),
+    Point(x: 88.0, y: 2.662, sd: None),
+  ],
+)

@@ -1,0 +1,24 @@
+// Maldonado and Corchuelo 1993, leaf area per plant, ICA-Tundama (Type II).
+Curve(
+  schema: 1,
+  id: "maldonado1993_leaf_area_tundama",
+  source: "maldonado1993",
+  conditions: "Field, Mosquera, Colombia, 2640 m, mean 14 C, 0.50 x 0.12 m; ICA-Tundama (Type II); mean of 12 plants",
+  x: Axis(variable: "days_since_emergence", unit: "d"),
+  y: Axis(variable: "leaf_area_m2", unit: "m2/plant"),
+  basis: Some("Cool high-altitude climate: slow development, so compare shape more than timing."),
+  method: "Cuadro 1 (total leaf area per plant, cm2, converted to m2)",
+  gate: Info,
+  points: [
+    Point(x: 15.0, y: 0.006315, sd: None),
+    Point(x: 22.0, y: 0.011119, sd: None),
+    Point(x: 29.0, y: 0.016673, sd: None),
+    Point(x: 36.0, y: 0.033682, sd: None),
+    Point(x: 43.0, y: 0.046899, sd: None),
+    Point(x: 50.0, y: 0.071212, sd: None),
+    Point(x: 57.0, y: 0.120247, sd: None),
+    Point(x: 64.0, y: 0.189789, sd: None),
+    Point(x: 71.0, y: 0.236232, sd: None),
+    Point(x: 78.0, y: 0.318373, sd: None),
+  ],
+)

@@ -1,0 +1,20 @@
+// Measured main_nodes against days after sowing; DSSAT Drybean experiment UFGA8501.
+Curve(
+  schema: 1,
+  id: "dssat_ufga8501_isabella_irrigated_main_nodes",
+  source: "dssat_ufga8501",
+  conditions: "Gainesville FL, 1985; Isabella (Andean Type I, light red kidney); field, 51.7 plants/m2, irrigated (treatment 1)",
+  x: Axis(variable: "days_since_sowing", unit: "d"),
+  y: Axis(variable: "main_nodes", unit: "nodes"),
+  basis: Some("Days after planting; planting date taken as sowing day 0. Field crop at stand density, so per-plant values are smaller than for a lone pot plant; compare shape and timing, not absolute size. Per-plant values = kg/ha / 10 / plants per m2."),
+  method: "Measured time series, DSSAT UFGA8501 .BNT/.GBT file, column L#SD (leaf number on the main stem; DSSAT counts the unifoliate node); read from the file",
+  gate: Info,
+  points: [
+    Point(x: 32.0, y: 6.17, sd: None),
+    Point(x: 44.0, y: 6.92, sd: None),
+    Point(x: 56.0, y: 6.58, sd: None),
+    Point(x: 67.0, y: 6.58, sd: None),
+    Point(x: 78.0, y: 6.25, sd: None),
+    Point(x: 88.0, y: 6.25, sd: None),
+  ],
+)

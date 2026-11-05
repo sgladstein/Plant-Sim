@@ -1,0 +1,22 @@
+// CROPGRO-Drybean species file BNGRO048.SPE (DSSAT CSM 4.8), "VEGETATIVE PARTITIONING PARAMETERS, XLEAF/YLEAF".
+// Model calibration curve, not a measurement: use it as a shape check (gate Info).
+Curve(
+  schema: 1,
+  id: "cropgro_leaf_partitioning",
+  source: "cropgro_drybean_spe",
+  conditions: "Share of new vegetative growth (leaf + stem + root) going to leaf, well watered; roots get 1 - leaf - stem",
+  x: Axis(variable: "main_nodes", unit: "nodes"),
+  y: Axis(variable: "leaf_share_new_veg", unit: "g/g"),
+  basis: Some("x is the CROPGRO V-stage, compared against main_nodes; the table continues flat to V-stage 30"),
+  method: "BNGRO048.SPE lines XLEAF and YLEAF, read from the file",
+  gate: Info,
+  points: [
+    Point(x: 0.0, y: 0.46, sd: None),
+    Point(x: 1.8, y: 0.56, sd: None),
+    Point(x: 4.0, y: 0.6, sd: None),
+    Point(x: 6.5, y: 0.55, sd: None),
+    Point(x: 8.5, y: 0.45, sd: None),
+    Point(x: 9.5, y: 0.4, sd: None),
+    Point(x: 12.0, y: 0.3, sd: None),
+  ],
+)
