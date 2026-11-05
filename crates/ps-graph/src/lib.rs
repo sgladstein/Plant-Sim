@@ -84,8 +84,13 @@ impl Orientation {
 pub struct LightCoeffs {
     /// Probability the leaf is sunlit at each of the 24 hourly sun positions.
     pub direct: [f64; 24],
-    /// Diffuse-sky transmittance to the leaf.
+    /// Diffuse-sky transmittance to the leaf: the share of horizontal diffuse
+    /// irradiance that would reach a horizontal surface at the leaf (1 in the open).
     pub diffuse: f64,
+    /// Diffuse irradiance absorbed per unit leaf area of a randomly oriented leaf, as a
+    /// share of horizontal diffuse irradiance before absorptance (`12/7 · G` in the open
+    /// under an overcast sky).
+    pub diffuse_absorbed: f64,
     /// Sunlit fraction for the current hour.
     pub sunlit_fraction: f64,
     /// Red:far-red proxy.
@@ -97,6 +102,7 @@ impl Default for LightCoeffs {
         Self {
             direct: [0.0; 24],
             diffuse: 0.0,
+            diffuse_absorbed: 0.0,
             sunlit_fraction: 0.0,
             rfr: 1.2,
         }
@@ -428,6 +434,7 @@ impl OrganArena {
                 f(d.to_bits());
             }
             f(self.light[i].diffuse.to_bits());
+            f(self.light[i].diffuse_absorbed.to_bits());
             f(self.light[i].sunlit_fraction.to_bits());
             f(self.light[i].rfr.to_bits());
             for d in self.orientation[i].direction {

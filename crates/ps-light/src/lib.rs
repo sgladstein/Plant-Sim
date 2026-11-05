@@ -262,10 +262,47 @@ impl LightGrid {
         self.path_sum(&self.depth, from, dir, own)
     }
 
+    /// Where a ray from outside the grid first enters it (slab method), nudged a hair
+    /// inside, or `None` if it misses the grid.
+    fn entry_point(&self, from: [f64; 3], dir: [f64; 3]) -> Option<[f64; 3]> {
+        let (mut t0, mut t1) = (0.0_f64, f64::INFINITY);
+        for a in 0..3 {
+            let lo = self.origin[a];
+            let hi = lo + as_f64(self.n[a]) * self.cell.0;
+            if dir[a].abs() < 1e-15 {
+                if from[a] < lo || from[a] >= hi {
+                    return None;
+                }
+            } else {
+                let (ta, tb) = ((lo - from[a]) / dir[a], (hi - from[a]) / dir[a]);
+                t0 = t0.max(ta.min(tb));
+                t1 = t1.min(ta.max(tb));
+            }
+        }
+        if t0 > t1 {
+            return None;
+        }
+        let t = t0 + 1e-9 * self.cell.0;
+        Some([
+            from[0] + t * dir[0],
+            from[1] + t * dir[1],
+            from[2] + t * dir[2],
+        ])
+    }
+
     /// `Σ field · length` along the ray from `from` in unit direction `dir` until it
     /// leaves the grid (Amanatides and Woo 1987 traversal). `own` is the leaf's own
     /// contribution to `field` (sorted by cell), excluded wherever the ray crosses it.
     fn path_sum(&self, field: &[f64], from: [f64; 3], dir: [f64; 3], own: &[(usize, f64)]) -> f64 {
+        // A ray that starts outside the grid (a ring point of a tilted blade can lie
+        // just above or below the box) is advanced to where it enters the box.
+        let from = match self.locate(from) {
+            Some(_) => from,
+            None => match self.entry_point(from, dir) {
+                Some(p) => p,
+                None => return 0.0,
+            },
+        };
         let Some(mut c) = self.locate(from) else {
             return 0.0;
         };
@@ -319,13 +356,18 @@ impl LightGrid {
     }
 }
 
-/// A sky sector for diffuse light: its central direction and its weight.
+/// A sky sector for diffuse light: its central direction and its two weights.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SkySector {
     /// Unit vector toward the sector center (east, north, up).
     pub direction: [f64; 3],
     /// Share of diffuse irradiance on a horizontal surface from this sector (sum 1).
     pub weight: f64,
+    /// Radiance times solid angle of this sector, `∫ L cos β dβ dφ`, over the
+    /// hemisphere's horizontal irradiance `∫ L sin β cos β dβ dφ` (sum 12/7 for the
+    /// overcast sky). Times G, the sector's contribution to the diffuse flux absorbed
+    /// per unit area of a randomly oriented leaf (decision 0008).
+    pub absorb_weight: f64,
 }
 
 /// The 16 sky sectors of §3.5: two elevation bands (0° to 45°, 45° to 90°) × eight
@@ -333,34 +375,39 @@ pub struct SkySector {
 /// Spencer 1942) integrated over each band for irradiance on a horizontal surface.
 #[must_use]
 pub fn sky_sectors() -> [SkySector; 16] {
-    // Irradiance on a horizontal surface from elevation β per unit β (per azimuth):
-    // radiance (1 + 2 sin β)/3 × sin β (projection) × cos β (solid angle).
-    let density = |b: f64| (1.0 + 2.0 * libm::sin(b)) * libm::sin(b) * libm::cos(b);
-    // Midpoint integration of each band: its weight and its weighted mean elevation.
+    // Radiance (1 + 2 sin β)/3 times solid angle (cos β) per unit β and azimuth; times
+    // sin β (projection) it is the irradiance on a horizontal surface.
+    let radiance = |b: f64| (1.0 + 2.0 * libm::sin(b)) * libm::cos(b);
+    // Midpoint integration of each band: horizontal irradiance, radiance times solid
+    // angle, and the irradiance-weighted mean elevation.
     let band = |b0: f64, b1: f64| {
         let steps = 512u32;
         let h = (b1 - b0) / f64::from(steps);
-        let (mut w, mut wb) = (0.0, 0.0);
+        let (mut w, mut a, mut wb) = (0.0, 0.0, 0.0);
         for i in 0..steps {
             let b = b0 + (f64::from(i) + 0.5) * h;
-            w += density(b) * h;
-            wb += density(b) * b * h;
+            let irr = radiance(b) * libm::sin(b);
+            w += irr * h;
+            a += radiance(b) * h;
+            wb += irr * b * h;
         }
-        (w, wb / w)
+        (w, a, wb / w)
     };
     let bands = [band(0.0, PI / 4.0), band(PI / 4.0, PI / 2.0)];
     let total = bands[0].0 + bands[1].0;
     let mut out = [SkySector {
         direction: [0.0, 0.0, 1.0],
         weight: 0.0,
+        absorb_weight: 0.0,
     }; 16];
-    for (b, (w, elev)) in bands.iter().enumerate() {
+    for (b, (w, a, elev)) in bands.iter().enumerate() {
         for k in 0..8u32 {
             let az = (f64::from(k) + 0.5) * PI / 4.0;
             let ce = libm::cos(*elev);
             out[b * 8 + k as usize] = SkySector {
                 direction: [ce * libm::sin(az), ce * libm::cos(az), libm::sin(*elev)],
                 weight: w / total / 8.0,
+                absorb_weight: a / total / 8.0,
             };
         }
     }
@@ -416,14 +463,23 @@ pub fn coefficients(
                     direct[h] = trans(*d);
                 }
             }
+            let sky_t: Vec<f64> = sky.iter().map(|s| trans(s.direction)).collect();
             let diffuse = sky
                 .iter()
-                .map(|s| s.weight * trans(s.direction))
+                .zip(&sky_t)
+                .map(|(s, t)| s.weight * t)
                 .fold(0.0, |a, b| a + b);
+            let diffuse_absorbed = grid.g
+                * sky
+                    .iter()
+                    .zip(&sky_t)
+                    .map(|(s, t)| s.absorb_weight * t)
+                    .fold(0.0, |a, b| a + b);
             let lai_above = grid.path_lad(l.center, [0.0, 0.0, 1.0], &own);
             LightCoeffs {
                 direct,
                 diffuse,
+                diffuse_absorbed,
                 sunlit_fraction: 0.0,
                 rfr: red_far_red(lai_above),
             }
@@ -510,7 +566,9 @@ impl AbsorbedPar {
 /// `absorptance` is leaf PAR absorptance.
 ///
 /// Beam on the sunlit part, per unit leaf area: `G · I_b,horizontal / sin β`
-/// (the beam's flux normal to the sun times the mean projection G).
+/// (the beam's flux normal to the sun times the mean projection G). Diffuse on both
+/// parts: `diffuse_absorbed · I_d,horizontal`, the same random-orientation convention
+/// (decision 0008).
 #[must_use]
 pub fn absorbed_par(
     c: &LightCoeffs,
@@ -522,7 +580,7 @@ pub fn absorbed_par(
     absorptance: f64,
 ) -> AbsorbedPar {
     let to_par = PAR_FRACTION * UMOL_PER_J_PAR * absorptance;
-    let diffuse_par = c.diffuse * diffuse.0.max(0.0) * to_par;
+    let diffuse_par = c.diffuse_absorbed * diffuse.0.max(0.0) * to_par;
     let (fraction, beam) = if sin_elevation > 0.0 && direct.0 > 0.0 {
         let f = c.direct[hour.min(23)];
         let b = g * direct.0 / sin_elevation.max(MIN_SIN_ELEVATION) * to_par;

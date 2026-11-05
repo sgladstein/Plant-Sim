@@ -115,6 +115,7 @@ fn single_plant_matches_ray_tracer() {
     let mut errors = Vec::with_capacity(n);
     let (mut total_model, mut total_ref) = (0.0, 0.0);
     let mut report = String::new();
+    let mut mixed = 0;
     for i in 0..n {
         let ns = f64::from(u32::try_from(r.sun.len()).unwrap());
         let ref_direct: f64 = r.sun.iter().map(|d| d[i]).sum::<f64>() / ns;
@@ -128,10 +129,18 @@ fn single_plant_matches_ray_tracer() {
         total_ref += a * refv;
         let err = model - refv;
         errors.push(err.abs());
+        if err.abs() <= 0.05_f64.max(0.10 * refv) {
+            mixed += 1;
+        }
+        // Diagnostic: the worst single sun direction, so a change that fixes the mean
+        // while breaking one direction shows up.
+        let worst_dir = (0..r.sun.len())
+            .map(|h| c[i].direct[8 + h] - r.sun[h][i])
+            .fold(0.0_f64, |a, b| if b.abs() > a.abs() { b } else { a });
         writeln!(
             report,
             "leaf {i:2} z {:.3}: direct {mod_direct:.3}/{ref_direct:.3} \
-             diffuse {mod_diffuse:.3}/{ref_diffuse:.3} err {err:+.3}",
+             diffuse {mod_diffuse:.3}/{ref_diffuse:.3} err {err:+.3} worst sun {worst_dir:+.3}",
             r.leaves[i].center[2]
         )
         .unwrap();
@@ -141,7 +150,8 @@ fn single_plant_matches_ray_tracer() {
     let within = errors.iter().filter(|&&e| e <= 0.10).count();
     println!(
         "{report}total {total_model:.5} vs {total_ref:.5} ({total_rel:+.4}); \
-         {within}/{n} leaves within 0.10, worst {worst:.3}"
+         {within}/{n} leaves within 0.10, worst {worst:.3}; \
+         {mixed}/{n} within max(0.05, 10%) (reported, not gated)"
     );
     // Design target: plant total within 3%.
     assert!(total_rel.abs() < 0.03, "plant total {total_rel:+.4}");
