@@ -160,7 +160,7 @@ Buds carry: dormancy state, light signal (yesterday's absorbed PAR at the bud's 
 Each module implements one trait (§11) with daily bud-fate and organ-initiation rules. All share phyllotaxis, tropisms and shade avoidance.
 
 - **Herb, determinate (M0): bush bean.** Epigeal germination with two cotyledons, a pair of unifoliate leaves, then alternate trifoliate leaves. The main stem produces a species-set number of nodes (\~6 to 8) and terminates in a raceme. Axillary buds on lower nodes make branches (\~3 to 6 per plant); upper nodes make racemes. Bud activation probability rises with the bud's light signal and its parent internode's reserve concentration and falls with apical dominance.
-- **Vine, indeterminate (M2): pole bean.** The same species file with the habit locus flipped: the main stem keeps producing nodes, internodes are longer, and a tendril module searches a cone around the tip for a support within reach, attaches, and wraps. Without a support the stem flops and shades itself (emergent penalty).
+- **Vine, indeterminate (M2): pole bean.** The same species file with the habit locus flipped: the main stem keeps producing nodes, internodes are longer, and a tendril module searches a cone around the tip for a support within reach, attaches, and wraps. Without a support the stem flops and shades itself (emergent penalty). (WP22, decision 0021: common bean twines rather than using tendrils, so the module is a circumnutation sweep, capture and helical coil; the flop penalty in the sim comes mostly from pods rotting on the soil.)
 - **Grass (M2).** Tillering from basal buds, intercalary growth (leaves elongate from the base), fibrous root system with many first-order roots and no tap root.
 - **Tree (M4).** Self-organizing bud fate driven by the light signal and local carbon (Palubicki spirit, no space-colonization markers); pipe-model secondary growth as a carbon sink; perennial storage in wood and roots; dormancy and leaf fall by photoperiod and temperature; frost hardiness.
 - **Roots (all).** CRootBox-style parametric root types (§3.7).
@@ -522,7 +522,7 @@ M1 exit: the two-pot runs look right to the owner and the pot differences are th
 | WP | Work package | Size | Done when |
 | --- | --- | --- | --- |
 | 21 | Plot soil block (1 × 1 to 3 × 3 m, 5 cm cells), merged light grid, per-voxel light coefficients (measured and not used; decision 0019) | M | 30 plants under 20 ms per sim-day |
-| 22 | Vine module and pole bean: habit locus, indeterminate growth, tendril search and attachment, trellis objects | L | A pole bean fills a 2 m trellis by day 60; without a trellis it flops and yields less |
+| 22 | Vine module and pole bean: habit locus, indeterminate growth, tendril search and attachment, trellis objects (built as twining, decision 0021) | L | A pole bean fills a 2 m trellis by day 60; without a trellis it flops and yields less |
 | 23 | Grass module and a grass species file: tillering, intercalary growth, fibrous roots | L | Tiller count and height inside a literature range to be chosen in WP23 |
 | 24 | Nitrogen: soil mineral N, mineralization, leaching, uptake, leaf N drives Vcmax, remobilization, nodules for legumes, fertilize action | L | Nodulated beans grow in N-free soil and unnodulated ones do not; bottom-up senescence now emergent |
 | 25 | Prune and harvest actions, obstacles, weather file import UI, latitude and season controls | M | Pruning releases branching visibly |

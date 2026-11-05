@@ -1,0 +1,35 @@
+// WP22 done-when (design plan §7, decision 0021): pole beans, each with a 2 m stake 1.5 cm
+// across, 5 cm east of the seed. Sown 10 June at 45 N so the first 75 days average about
+// 20 C (the research recommendation's temperature). 4 replicate 40 cm loam pots 3 m
+// apart, watered to field capacity every morning, non-limiting nitrogen (300 ppm NO3,
+// decision 0020).
+Scenario(
+  schema: 1,
+  model_version: "0.6.0",
+  world_seed: 7,
+  latitude_deg: 45.0,
+  start: (year: 2026, month: 6, day: 10, hour: 0),
+  weather: Preset("temperate_summer"),
+  soils: [
+    Pot(id: 0, diameter_cm: 40.0, depth_cm: 40.0, texture: Loam, position_m: (0.0, 0.0)),
+    Pot(id: 1, diameter_cm: 40.0, depth_cm: 40.0, texture: Loam, position_m: (3.0, 0.0)),
+    Pot(id: 2, diameter_cm: 40.0, depth_cm: 40.0, texture: Loam, position_m: (6.0, 0.0)),
+    Pot(id: 3, diameter_cm: 40.0, depth_cm: 40.0, texture: Loam, position_m: (9.0, 0.0)),
+  ],
+  irrigation: { 0: ToFieldCapacity(every_days: 1), 1: ToFieldCapacity(every_days: 1), 2: ToFieldCapacity(every_days: 1), 3: ToFieldCapacity(every_days: 1) },
+  nitrogen: { 0: (no3_ppm: 300.0, nh4_ppm: 2.0, organic_g_per_kg: 1.0, rhizobia: true), 1: (no3_ppm: 300.0, nh4_ppm: 2.0, organic_g_per_kg: 1.0, rhizobia: true), 2: (no3_ppm: 300.0, nh4_ppm: 2.0, organic_g_per_kg: 1.0, rhizobia: true), 3: (no3_ppm: 300.0, nh4_ppm: 2.0, organic_g_per_kg: 1.0, rhizobia: true) },
+  co2_ppm: 420.0,
+  sowings: [
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0),
+    (soil: 1, species: "pole_bean", seed: Default, depth_cm: 3.0),
+    (soil: 2, species: "pole_bean", seed: Default, depth_cm: 3.0),
+    (soil: 3, species: "pole_bean", seed: Default, depth_cm: 3.0),
+  ],
+  supports: [
+    (soil: 0, offset_cm: (5.0, 0.0), height_cm: 200.0, diameter_cm: 1.5),
+    (soil: 1, offset_cm: (5.0, 0.0), height_cm: 200.0, diameter_cm: 1.5),
+    (soil: 2, offset_cm: (5.0, 0.0), height_cm: 200.0, diameter_cm: 1.5),
+    (soil: 3, offset_cm: (5.0, 0.0), height_cm: 200.0, diameter_cm: 1.5),
+  ],
+  duration_days: 110,
+)

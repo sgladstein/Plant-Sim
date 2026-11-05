@@ -1,0 +1,37 @@
+// WP22 done-when (design plan §7, decision 0021): a row of 8 pole beans 15 cm apart in a
+// 1.5 x 1 m loam bed, each with a 2 m trellis string (5 mm) 4 cm east of its seed.
+// Sown 10 June at 45 N so the first 75 days average about 20 C. Watered to field
+// capacity every morning; non-limiting nitrogen (300 ppm NO3, decision 0020).
+Scenario(
+  schema: 1,
+  model_version: "0.6.0",
+  world_seed: 7,
+  latitude_deg: 45.0,
+  start: (year: 2026, month: 6, day: 10, hour: 0),
+  weather: Preset("temperate_summer"),
+  soils: [ Plot(id: 0, width_cm: 150.0, length_cm: 100.0, depth_cm: 40.0, texture: Loam, position_m: (0.0, 0.0)) ],
+  irrigation: { 0: ToFieldCapacity(every_days: 1) },
+  nitrogen: { 0: (no3_ppm: 300.0, nh4_ppm: 2.0, organic_g_per_kg: 1.0, rhizobia: true) },
+  co2_ppm: 420.0,
+  sowings: [
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((-52.5, 0.0))),
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((-37.5, 0.0))),
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((-22.5, 0.0))),
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((-7.5, 0.0))),
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((7.5, 0.0))),
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((22.5, 0.0))),
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((37.5, 0.0))),
+    (soil: 0, species: "pole_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((52.5, 0.0))),
+  ],
+  supports: [
+    (soil: 0, offset_cm: (-48.5, 0.0), height_cm: 200.0, diameter_cm: 0.5),
+    (soil: 0, offset_cm: (-33.5, 0.0), height_cm: 200.0, diameter_cm: 0.5),
+    (soil: 0, offset_cm: (-18.5, 0.0), height_cm: 200.0, diameter_cm: 0.5),
+    (soil: 0, offset_cm: (-3.5, 0.0), height_cm: 200.0, diameter_cm: 0.5),
+    (soil: 0, offset_cm: (11.5, 0.0), height_cm: 200.0, diameter_cm: 0.5),
+    (soil: 0, offset_cm: (26.5, 0.0), height_cm: 200.0, diameter_cm: 0.5),
+    (soil: 0, offset_cm: (41.5, 0.0), height_cm: 200.0, diameter_cm: 0.5),
+    (soil: 0, offset_cm: (56.5, 0.0), height_cm: 200.0, diameter_cm: 0.5),
+  ],
+  duration_days: 110,
+)

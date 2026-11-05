@@ -1,4 +1,4 @@
-//! Generated-by-macro parameter groups of a species file (schema 1).
+//! Generated-by-macro parameter groups of a species file (schema 3).
 //!
 //! Struct groups use RON struct syntax as in design plan §6.1, and every field is a
 //! [`Param`] whose unit is checked against the unit given here. Unknown fields are
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 2;
+pub const SCHEMA: u32 = 3;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -312,6 +312,43 @@ param_group!(
         flowering: "Cd",
         /// Thermal time from germination to physiological maturity (decision 0011).
         maturity: "Cd",
+    }
+);
+
+param_group!(
+    /// Climbing and indeterminate growth (schema 3, WP22, decision 0021). Read only
+    /// when the `habit` trait is 0.5 or more; a determinate species carries the group
+    /// with its values unused.
+    Climbing {
+        /// Most main-stem nodes an indeterminate stem makes.
+        max_main_nodes: "-",
+        /// Thermal time after first flower over which the main stem keeps making nodes
+        /// (CROPGRO FL-VS).
+        vegetative_after_flowering: "Cd",
+        /// Main-stem nodes over which internodes rise from the first fraction to full
+        /// length.
+        internode_ramp_nodes: "-",
+        /// Radius of the circle the shoot tip sweeps while it searches for a support.
+        circumnutation_radius: "cm",
+        /// Supports up to this diameter are always caught.
+        support_diameter_sure: "cm",
+        /// Supports this thick or more are never caught.
+        support_diameter_max: "cm",
+        /// Rise of the twining helix per turn; with the support's radius it sets the
+        /// helix angle.
+        helix_pitch: "cm",
+        /// Flattest helix angle above the horizontal (thick supports).
+        helix_inclination_min: "deg",
+        /// Steepest helix angle above the horizontal (thin strings).
+        helix_inclination_max: "deg",
+        /// Stem length an unsupported vine holds up before it lodges.
+        self_support_length: "cm",
+        /// Radius around the collar within which a lodged vine coils.
+        heap_radius: "cm",
+        /// Height below which a lodged stem runs level instead of sagging.
+        lodge_height: "cm",
+        /// Daily chance that a vine's pod hanging onto the soil rots.
+        pod_rot_rate: "1/day",
     }
 );
 

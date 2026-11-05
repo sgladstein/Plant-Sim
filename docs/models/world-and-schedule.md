@@ -18,6 +18,10 @@ replayed exactly.
   daily plant steps. Each soil's starting nitrogen comes from the scenario's
   `nitrogen` map (default garden soil); the `Fertilize` action adds g N m⁻² of nitrate
   or ammonium to its top layer.
+- Supports (WP22, decision 0021): the scenario's `supports` list stands vertical
+  stakes or strings in a soil (offset from its center, height, diameter). At sowing
+  each plant takes those of its soil into its own frame; vines climb them (model card
+  climbing).
 - Rain shelter: rain reaching a soil `= rain_fraction × rain` (scenario `rain_fraction`
   per soil, default 1; decision 0018). Irrigation and action water are not affected.
 - Plots (decision 0019): plants of one soil step in parallel and are collected in plant
@@ -41,6 +45,7 @@ replayed exactly.
 | Plot cell size | 5 | cm | design plan §3.6 (decision 0019) |
 | Plot sides | 100 to 300 | cm | design plan §7 WP21 |
 | Plot depth, minimum | 10 | cm | decision 0019 |
+| Support height, diameter, most | 500, 100 | cm | input limits (decision 0021) |
 | Initial soil temperature | 15 | °C | "~" until the air history fills |
 | Soil-surface extinction | 0.5 | - | "~" Beer's law with G = 0.5 |
 
@@ -49,6 +54,7 @@ replayed exactly.
 | --- | --- | --- | --- |
 | in | scenario | RON | data/scenarios |
 | in | species files, weather file | RON, CSV | data/ (kept in the catalog) |
+| in | supports (stakes, strings) | cm | the scenario (WP22) |
 | in | scenario events, heat wave, shade cloth, rain shelter | tick, kind; °C; - | the scenario's treatments (decisions 0015, 0018) |
 | in | actions | tick, kind | player, scripts, replay |
 | out | daily rows per plant, with the day's weather and soil water | - | `ps-export` CSV (decision 0015) |

@@ -1,7 +1,7 @@
 // Bush bean archetype (Phaseolus vulgaris, determinate type I). Design plan §3.16, §6.1.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 2,
+  schema: 3,
   id: "bush_bean",
   name: "Bush bean archetype",
   growth_form: Herb,
@@ -172,6 +172,21 @@ Species(
     nodule_nitrate_onset: (value: 5.0, unit: "mg N / kg", source: "~ research m2-m3 notes (to calibrate against 2 to 10 mM solution thresholds)"),
     nodule_nitrate_full: (value: 30.0, unit: "mg N / kg", source: "~ research m2-m3 notes"),
     nodule_nitrate_floor: (value: 0.1, unit: "-", source: "~ research m2-m3 notes"),
+  ),
+  climbing: (             // WP22, decision 0021; read only when habit >= 0.5 (the pole bean's values, unused here)
+    max_main_nodes: (value: 30.0, unit: "-", source: "~ research m2-m3 notes: open-ended, cap 25 to 35"),
+    vegetative_after_flowering: (value: 260.0, unit: "Cd", source: "CROPGRO BNGRO048.ECO FL-VS 13 photothermal days (default and EMBRAPA ecotypes; 11 for others) x 20 Cd per day at optimum (t_opt - t_base)"),
+    internode_ramp_nodes: (value: 8.0, unit: "-", source: "~ CROPGRO YVSHT reaches full length by about node 10 (research m2-m3 notes)"),
+    circumnutation_radius: (value: 6.0, unit: "cm", source: "~ 3 to 10 cm (Sothern 1998 for Glycine soja, 2.9 to 8.7 cm; research m2-m3 notes)"),
+    support_diameter_sure: (value: 5.0, unit: "cm", source: "Darwin 1875; research m2-m3 notes: certain capture up to 5 cm"),
+    support_diameter_max: (value: 20.0, unit: "cm", source: "Darwin 1875 (fails on 23 cm); research m2-m3 notes: capture falls to 0 at 10 to 20 cm"),
+    helix_pitch: (value: 10.0, unit: "cm", source: "~ review of WP22: about 10 cm per turn; Rutjens 2025 pitch p = 2 pi R tan(eta)"),
+    helix_inclination_min: (value: 35.0, unit: "deg", source: "Rutjens 2025: 35 to 75 deg"),
+    helix_inclination_max: (value: 75.0, unit: "deg", source: "Rutjens 2025: 35 to 75 deg"),
+    self_support_length: (value: 40.0, unit: "cm", source: "~"),
+    heap_radius: (value: 15.0, unit: "cm", source: "~ a fallen vine coils back on itself"),
+    lodge_height: (value: 2.0, unit: "cm", source: "~ a fallen stem lies on the soil"),
+    pod_rot_rate: (value: 0.02, unit: "1/day", source: "~ staking keeps pods off wet soil and cuts pod rot (IITA PROPAS; Reckling 2011); set so unstaked yield falls inside the -30 to -70% band (decision 0021)"),
   ),
   roots: [
     RootType(name: "tap", origin: Radicle, order: 0,
