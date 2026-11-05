@@ -252,7 +252,7 @@ fn every_template_is_sound() {
         assert_sound(&m);
         assert_winding_matches_normals(&m);
     }
-    assert_eq!(TemplateKey::all().len(), 2 * 5 + 5);
+    assert_eq!(TemplateKey::all().len(), 3 * 5 + 6);
 }
 
 #[test]
@@ -472,4 +472,38 @@ fn root_cohorts_draw_as_spread_copies() {
     // Huge cohorts are capped.
     let big = Skeleton::from_arena_with(&g, [0.0; 3], &[1.0, 1.0, 0.5], &[1.0, 1.0, 500.0]);
     assert_eq!(big.organs[2].copies, crate::MAX_COPIES);
+}
+
+#[test]
+fn a_grass_draws_blades_and_ears_at_the_sims_size() {
+    let arena = small_plant(0.5);
+    let mut s = Skeleton::from_arena(&arena, [0.0; 3]);
+    s.blade_aspect = Some(18.0);
+    for inst in instances(&s, InstanceOptions::default()) {
+        let p = &s.organs[inst.organ.index()];
+        match p.kind {
+            OrganKind::Leaf => {
+                assert_eq!(inst.key.template, Template::GrassBlade);
+                // Length 18 widths, and length × width × shape is the blade's area.
+                let (l, w) = (inst.scale.x, inst.scale.y);
+                assert!((l / w - 18.0).abs() < 1e-3);
+                assert!(
+                    (l * w * crate::templates::BLADE_SHAPE - p.area).abs()
+                        < 1e-6 * p.area.max(1e-6) + 1e-9
+                );
+            }
+            OrganKind::Pod => assert_eq!(inst.key.template, Template::WheatEar),
+            k => assert!(!matches!(k, OrganKind::Cotyledon | OrganKind::Flower)),
+        }
+    }
+    // The blade template's area is the shape factor (one side; the mesh has two).
+    let m = build_template(TemplateKey {
+        template: Template::GrassBlade,
+        droop: 0,
+    });
+    let area = m.area() / 2.0;
+    assert!(
+        (area - crate::templates::BLADE_SHAPE).abs() < 0.05,
+        "{area}"
+    );
 }

@@ -3,6 +3,7 @@
 use glam::{Mat3, Quat, Vec3};
 use ps_graph::{OrganId, OrganKind};
 
+use crate::templates::BLADE_SHAPE;
 use crate::{DROOP_LEVELS, Placement, Skeleton, Template, TemplateKey};
 
 /// One templated organ: which shared mesh, and where.
@@ -90,21 +91,26 @@ pub fn instances(skeleton: &Skeleton, options: InstanceOptions) -> Vec<Instance>
     let droop = droop_level(options.water_stress_factor);
     let mut main_leaves = 0_usize;
     let mut out = Vec::new();
+    let grass = skeleton.blade_aspect.filter(|a| a.is_finite() && *a > 0.0);
     for (i, p) in skeleton.organs.iter().enumerate() {
-        let template = match p.kind {
-            OrganKind::Leaf => {
+        let template = match (p.kind, grass) {
+            (OrganKind::Leaf, Some(_)) => Template::GrassBlade,
+            (OrganKind::Pod, Some(_)) => Template::WheatEar,
+            (OrganKind::Leaf, None) => {
                 let t = leaf_form(p, main_leaves);
                 if p.axis_order == 0 {
                     main_leaves += 1;
                 }
                 t
             }
-            OrganKind::Cotyledon => Template::Cotyledon,
-            OrganKind::Flower => Template::Flower,
-            OrganKind::Pod => Template::Pod,
-            OrganKind::Seed => Template::Seed,
-            OrganKind::SeedInPod if options.include_seeds_in_pods => Template::Seed,
-            OrganKind::Bud => Template::Bud,
+            (OrganKind::Cotyledon, None) => Template::Cotyledon,
+            (OrganKind::Flower, None) => Template::Flower,
+            (OrganKind::Pod, None) => Template::Pod,
+            (OrganKind::Seed, _) => Template::Seed,
+            (OrganKind::SeedInPod, _) if options.include_seeds_in_pods => Template::Seed,
+            (OrganKind::Bud, _) => Template::Bud,
+            // Roots and stems are axes; a grass's endosperm stays in the soil and its
+            // florets are too small to draw.
             _ => continue,
         };
         if !p.alive && !options.include_dead {
@@ -114,7 +120,14 @@ pub fn instances(skeleton: &Skeleton, options: InstanceOptions) -> Vec<Instance>
             Template::Cotyledon | Template::Unifoliate | Template::Trifoliate => {
                 Vec3::splat(p.area.sqrt())
             }
-            Template::Pod | Template::Seed => Vec3::new(p.length, p.radius, p.radius),
+            Template::GrassBlade => {
+                let aspect = grass.unwrap_or(1.0);
+                let width = (p.area.max(0.0) / (BLADE_SHAPE * aspect)).sqrt();
+                Vec3::new(aspect * width, width, aspect * width)
+            }
+            Template::Pod | Template::Seed | Template::WheatEar => {
+                Vec3::new(p.length, p.radius, p.radius)
+            }
             Template::Flower => Vec3::splat(p.length),
             Template::Bud => Vec3::splat(p.radius),
         };

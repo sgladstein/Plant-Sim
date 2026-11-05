@@ -307,7 +307,6 @@ fn spawn_pot(
         ))
         .id();
     let size = pot.size;
-    let overlay_mesh = meshes.add(colored(&ColoredMesh::default()));
     if !pot.container {
         // A plant sharing a plot's bed: the first plant's view draws the bed.
         let haze = commands.spawn((Transform::default(), ChildOf(entity))).id();
@@ -320,10 +319,12 @@ fn spawn_pot(
             axes: BTreeMap::new(),
             instances: BTreeMap::new(),
             overlay,
-            overlay_mesh,
+            // Never shown: only the container's view draws the soil overlay.
+            overlay_mesh: Handle::default(),
             overlay_state: None,
         };
     }
+    let overlay_mesh = meshes.add(colored(&ColoredMesh::default()));
     commands.spawn((
         Mesh3d(meshes.add(colored(&diorama::soil(size)))),
         MeshMaterial3d(assets.soil.clone()),
