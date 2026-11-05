@@ -54,8 +54,10 @@ pub struct HeritableParam {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Locus {
-    /// The heritable parameter this locus contributes to.
-    #[serde(rename = "trait")]
+    /// The heritable parameter this locus contributes to. Empty (absent from the file)
+    /// for a named locus with no physiological effect: a colour gene, a marker such as
+    /// phaseolin, or a gene whose process the sim does not model yet.
+    #[serde(rename = "trait", default, skip_serializing_if = "String::is_empty")]
     pub trait_name: String,
     /// Additive effect per unit allele value, in the trait's unit.
     pub effect: f64,
@@ -78,6 +80,18 @@ pub struct Locus {
     /// `chromosome`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position_cm: Option<f64>,
+    /// The allele value of the species file's own pure line, which every
+    /// `SeedChoice::Default` seed carries on both homologues; 0 when absent. For a named
+    /// locus it is an allele state code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<f64>,
+    /// Allele-state frequencies of a named locus in the species population, one per
+    /// state, summing to 1. Absent: the population is fixed for `line`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequencies: Option<Vec<f64>>,
+    /// Where the locus (its placement, effect and spread) comes from; "~" for a guess.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// How a locus mutates (decision 0023: two tiers).
@@ -100,6 +114,38 @@ impl Locus {
     #[must_use]
     pub fn tier(&self) -> LocusTier {
         self.tier.unwrap_or(LocusTier::Qtl)
+    }
+
+    /// The pure line's allele value (0 when absent).
+    #[must_use]
+    pub fn line(&self) -> f64 {
+        self.line.unwrap_or(0.0)
+    }
+
+    /// Checks `line` and `frequencies` against the tier.
+    fn check_alleles(&self) -> Result<(), &'static str> {
+        let line = self.line();
+        if !line.is_finite() {
+            return Err("line must be finite");
+        }
+        match (self.tier(), &self.frequencies) {
+            (LocusTier::Qtl, Some(_)) => Err("only a named locus has allele frequencies"),
+            (LocusTier::Qtl, None) => Ok(()),
+            (LocusTier::Named { states }, f) => {
+                if line.fract() != 0.0 || line < 0.0 || line >= f64::from(states) {
+                    return Err("line must be an allele state of the locus");
+                }
+                let Some(f) = f else { return Ok(()) };
+                let sum: f64 = f.iter().sum();
+                if f.len() != usize::from(states)
+                    || f.iter().any(|p| !(p.is_finite() && *p >= 0.0))
+                    || (sum - 1.0).abs() > 1e-9
+                {
+                    return Err("frequencies: one per state, >= 0, summing to 1");
+                }
+                Ok(())
+            }
+        }
     }
 }
 
@@ -452,7 +498,9 @@ impl Species {
             }
         }
         for (index, l) in self.genome.loci.iter().enumerate() {
-            if !self.heritable.contains_key(&l.trait_name) {
+            let visual_only =
+                l.trait_name.is_empty() && matches!(l.tier(), LocusTier::Named { .. });
+            if !visual_only && !self.heritable.contains_key(&l.trait_name) {
                 return Err(SpeciesError::LocusTrait {
                     index,
                     trait_name: l.trait_name.clone(),
@@ -656,6 +704,12 @@ impl Species {
             {
                 return bad(at, "locus names must be non-empty and unique");
             }
+            if l.source.as_deref().is_none_or(|src| src.trim().is_empty()) {
+                return bad(at, "missing source (use \"~\" for a guess to validate)");
+            }
+            if let Err(why) = l.check_alleles() {
+                return bad(at, why);
+            }
         }
         Ok(())
     }
@@ -754,34 +808,66 @@ impl Species {
         Ok(())
     }
 
-    /// Samples a genotype from the species population: for each locus, two allele
-    /// values drawn from N(0, `allele_sd`), keyed by (world seed, plant entity, tick 0,
-    /// `GenotypeSample`). With zero variance every allele is exactly 0.
+    /// Samples a pure line from the species population (bean is an inbreeder, so a
+    /// founder seed is homozygous at every locus), keyed by (world seed, plant entity,
+    /// tick 0, `GenotypeSample`), each locus on its own four draws. A QTL takes
+    /// `line + N(0, allele_sd)`; a named locus takes a state drawn from its `frequencies`
+    /// (its `line` state when it has none). With zero variance and no frequencies this
+    /// is the default genotype.
     #[must_use]
     pub fn sample_genotype(&self, world_seed: u64, plant_entity: u64) -> Genotype {
-        let mut s = RngKey::new(world_seed, plant_entity, 0, Purpose::GenotypeSample).stream();
+        let key = RngKey::new(world_seed, plant_entity, 0, Purpose::GenotypeSample);
         let alleles = self
             .genome
             .loci
             .iter()
-            .map(|l| {
-                let a = s.standard_normal();
-                let b = s.standard_normal();
-                if l.allele_sd > 0.0 {
-                    (a * l.allele_sd, b * l.allele_sd)
-                } else {
-                    (0.0, 0.0)
-                }
+            .enumerate()
+            .map(|(i, l)| {
+                let slot = u32::try_from(i).unwrap_or(u32::MAX).saturating_mul(4);
+                let mut s = key.stream_at(slot);
+                let line = l.line();
+                let v = match (l.tier(), &l.frequencies) {
+                    (LocusTier::Named { .. }, Some(f)) => {
+                        let u = s.uniform();
+                        let mut acc = 0.0;
+                        let mut pick = f.len().saturating_sub(1);
+                        for (k, p) in f.iter().enumerate() {
+                            acc += p;
+                            if u < acc {
+                                pick = k;
+                                break;
+                            }
+                        }
+                        #[allow(clippy::cast_precision_loss)]
+                        let state = pick as f64;
+                        state
+                    }
+                    (LocusTier::Named { .. }, None) => line,
+                    (LocusTier::Qtl, _) => {
+                        let z = s.standard_normal();
+                        if l.allele_sd > 0.0 {
+                            line + z * l.allele_sd
+                        } else {
+                            line
+                        }
+                    }
+                };
+                (v, v)
             })
             .collect();
         Genotype { alleles }
     }
 
-    /// The species-default genotype (all alleles zero).
+    /// The species file's pure line: every locus homozygous for its `line` allele.
     #[must_use]
     pub fn default_genotype(&self) -> Genotype {
         Genotype {
-            alleles: vec![(0.0, 0.0); self.genome.loci.len()],
+            alleles: self
+                .genome
+                .loci
+                .iter()
+                .map(|l| (l.line(), l.line()))
+                .collect(),
         }
     }
 
