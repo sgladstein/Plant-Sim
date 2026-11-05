@@ -1,0 +1,21 @@
+[package]
+name = "ps-validate"
+description = "Validation harness: reference targets, response checks and curves against world runs (design plan §8)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-world.workspace = true
+ps-export.workspace = true
+ps-arch.workspace = true
+ps-physio.workspace = true
+serde.workspace = true
+ron.workspace = true
+thiserror.workspace = true
+libm.workspace = true
+
+[lints]
+workspace = true

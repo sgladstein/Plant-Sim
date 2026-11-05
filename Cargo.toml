@@ -22,6 +22,7 @@ ps-physio = { path = "crates/ps-physio" }
 ps-arch = { path = "crates/ps-arch" }
 ps-world = { path = "crates/ps-world" }
 ps-export = { path = "crates/ps-export" }
+ps-validate = { path = "crates/ps-validate" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 libm = "0.2"

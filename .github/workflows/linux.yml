@@ -39,6 +39,42 @@ jobs:
       - name: determinism lint
         run: python3 scripts/check_determinism.py
 
+
+  # WP11: the validation report (design plan §8). Fails on a missed M0 target that is
+  # not in validation/known_misses.ron; the plots are uploaded either way.
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install the plot dependencies
+        run: pip install -r validation/requirements.txt
+      - name: validate
+        run: cargo run --release --locked -p ps-cli -- validate
+      - name: plot report
+        if: always()
+        run: python3 validation/report.py out/validation
+      - name: summary
+        if: always()
+        run: cat out/validation/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-report
+          path: |
+            out/validation/*.md
+            out/validation/*.html
+            out/validation/*.png
+            out/validation/*.csv
+            out/validation/curves/
+            out/validation/runs/*/daily.csv
+
   deny:
     runs-on: ubuntu-latest
     steps:

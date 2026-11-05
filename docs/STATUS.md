@@ -17,9 +17,9 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 7 Physiology | #8 | done (PR #20) |
 | 8 Herb architecture and roots | #9 | done (PR #27; decision 0013) |
 | 9 World | #10 | done (PR #29; decision 0014) |
-| 10 Export and CLI | #11 | done (this PR; decision 0015, docs/cli.md) |
-| 11 Validation harness | #12 | next; reference data in data/validation/ from the reference-data thread |
-| 12 Tuning and lock | #13 | not started |
+| 10 Export and CLI | #11 | done (PR #31; decision 0015, docs/cli.md) |
+| 11 Validation harness | #12 | done (this PR; decision 0017, validation/README.md) |
+| 12 Tuning and lock | #13 | next: empty validation/known_misses.ron |
 
 ## M1 groundwork (parallel to M0, viewer thread)
 | WP | State |
@@ -34,14 +34,15 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.rs` fills them from `ps_session::Snapshot`. Lateral root cohorts are drawn as up to 8 copies at golden-angle turns about the parent root. Still to do: pots render as boxes the size of the soil grid.
 
 ## Last validation report
-None yet (WP11).
+`cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11).
 
 ## Open questions for the owner
 - WP7 (decision 0009): two readings of the plan's text to confirm. Priority is the share of an organ's own available reserve it may spend per hour (taken literally, §3.9 would cap every organ below its potential), and the water stress factor multiplies the stomatal slope.
 - Set `main` as the repository's default branch in GitHub settings (the agent cannot change repo settings).
-- WP13 (Bevy smoke test on the GTX 1070) should run around sessions 3 or 4 of M0.
+- WP13 (Bevy smoke test on the GTX 1070) passed its frame-time gate on 2026-11-05 with stand-in plants: Vulkan 2.7 ms per frame, DX12 5.8 ms (budget 16 ms). Re-check on the real sim. The viewer thread has the follow-ups (default backend, slow cold-start screenshots, see-through side panel).
 
 ## Review follow-ups (fold into a later PR)
+- Viewer (PR #38): at day 60 of the full-sun pot at least one root tip sits outside the soil grid on the +x side, through the pot wall. Roots need clamping or deflecting at the pot boundary (ps-arch root elongation).
 - WP4 review: cross-field validation in `Species::validate` (t_base < t_opt < t_max, emergence < flowering < maturity, growth temperature ordering, finite tropisms, `#rrggbb` colors); the discrete-trait rounding rule in the species model card; `specific_stem_length` likely 10–20 cm/g (WP12). (The typed `Traits` view landed with WP7.)
 - WP5 review (/mnt/project-files/reviews/wp5-review.md): derive the lateral fraction from a diffusivity (4e-5 m² h⁻¹ gives 0.1 at 2 cm) so 5 cm cells are right; per-column surface radiation so canopy shade dries only sunlit columns; `M2PerHour` and `M3` newtypes for `take_up` and `cell_volume`; interpolate the soil temperature lag; add "infiltration can fill a lower cell through a saturated one in the same hour" to known limits.
 

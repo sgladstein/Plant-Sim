@@ -1,0 +1,10 @@
+// Test fixture: one target the bean meets and one it cannot.
+ValidationTargets(
+  schema: 1,
+  species: "bush_bean",
+  targets: [
+    Target(id: "pods_in_range", scenario: "single_pot", variable: "pods", at: Final, expect: Range(min: 5.0, max: 30.0), unit: "-", basis: None, sources: ["test"], gate: M0, note: "within reach"),
+    Target(id: "impossible_height", scenario: "single_pot", variable: "height_cm", at: Max, expect: Range(min: 500.0, max: 600.0), unit: "cm", basis: None, sources: ["test"], gate: M0, note: "out of reach"),
+    Target(id: "later_one", scenario: "m2/none", variable: "pods", at: Final, expect: Range(min: 0.0, max: 1.0), unit: "-", basis: None, sources: ["test"], gate: Later, note: ""),
+  ],
+)
