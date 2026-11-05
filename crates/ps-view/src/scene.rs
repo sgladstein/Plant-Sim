@@ -491,20 +491,35 @@ fn spawn_pot(
 /// Illustrated style: leaves deep in the canopy are darker and cooler, sunlit outer
 /// leaves lighter and warmer, from each leaf's own absorbed light in the sim (true value
 /// layering, where games fake it with a shell gradient).
-fn canopy_shade(pot: &PotView, i: usize, p: &Placement, rgb: [f32; 3]) -> [f32; 3] {
-    if p.kind != OrganKind::Leaf {
+fn canopy_shade(pot: &PotView, i: usize, p: &Placement, brightest: f32, rgb: [f32; 3]) -> [f32; 3] {
+    // Below a little light (dusk, night) every leaf is equally dim; leave the sun's
+    // own falloff to the shader instead of darkening the whole plant twice.
+    if p.kind != OrganKind::Leaf || brightest < 20.0 {
         return rgb;
     }
     let Some(par) = pot.organ_value(Lens::Light, i).filter(|v| v.is_finite()) else {
         return rgb;
     };
-    let t = (par / 1200.0).clamp(0.0, 1.0).sqrt();
-    let k = 0.55 + 0.5 * t;
+    // Relative to the plant's brightest leaf, so the shade pattern holds at any hour.
+    let t = (par / brightest).clamp(0.0, 1.0).sqrt();
+    let k = 0.55 + 0.45 * t;
     [
-        rgb[0] * k * (0.92 + 0.12 * t),
+        rgb[0] * k * (0.92 + 0.08 * t),
         rgb[1] * k,
-        rgb[2] * k * (1.12 - 0.15 * t),
+        rgb[2] * k * (1.12 - 0.12 * t),
     ]
+}
+
+/// The most PAR any live leaf of `pot` absorbs this hour.
+fn brightest_leaf(pot: &PotView) -> f32 {
+    pot.skeleton
+        .organs
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.kind == OrganKind::Leaf && p.alive)
+        .filter_map(|(i, _)| pot.organ_value(Lens::Light, i))
+        .filter(|v| v.is_finite())
+        .fold(0.0, f32::max)
 }
 
 /// The color of organ `i` of `pot` under `lens`, and whether it is a lens value.
@@ -755,6 +770,12 @@ pub(crate) fn sync_scene(
             ..InstanceOptions::default()
         };
         let list = instances(&pot.skeleton, options);
+        let shade_canopy = *style == Style::Illustrated && lens == Lens::Off;
+        let brightest = if shade_canopy {
+            brightest_leaf(pot)
+        } else {
+            0.0
+        };
         let mut alive = Vec::with_capacity(list.len());
         for inst in &list {
             alive.push(inst.organ);
@@ -762,8 +783,8 @@ pub(crate) fn sync_scene(
                 continue;
             };
             let (mut rgb, glow) = organ_color(pot, lens, inst.organ.index(), p);
-            if *style == Style::Illustrated && lens == Lens::Off {
-                rgb = canopy_shade(pot, inst.organ.index(), p, rgb);
+            if shade_canopy {
+                rgb = canopy_shade(pot, inst.organ.index(), p, brightest, rgb);
             }
             let (material, color) = assets.material(&mut materials, rgb, glow);
             let transform = Transform {
