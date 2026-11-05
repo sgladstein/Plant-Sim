@@ -31,4 +31,9 @@ alone.
   `ndfa_low_n_bed`, `heat_seeds_per_pod` and `emergence_thermal_time_b7` pass on the
   mean. `maturity_thermal_time_b8_3` and `wheat_peak_leaf_area_stand` miss on it, each
   at a band edge. Every M0 check passes.
+- At model 0.10.0 (plant-to-plant variation, decision 0027): 65 of 87 pass on seed means
+  against 64 on seed 7 alone. The pole bean misses on the mean with a wide spread:
+  1.38 m at day 60 (1.15 to 1.46 m over the four seeds) and 1.86 m at day 75 (1.61 to
+  1.99 m). Sowing scatter makes some vines miss the 6 cm capture sweep; a sweep that
+  grows with the free tip is the first fix to try (STATUS). Every M0 check passes.
 - The golden hashes are untouched: they hash the scenarios as written.
