@@ -62,7 +62,8 @@ The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.r
   - light.md: the plot grid bottom is `min(0, lowest leaf)`. world-and-schedule: list the first plant's G as a plot parameter.
   - Compute the light inputs and leaflet list once a day. Settle the G question in decision 0018.
 - WP22 (decision 0021), for later packages:
-  - The height rests on the pole bean's raised phloem conductance (1500 g/m/h, "~"). The unstaked yield response (-34%) sits near the edge of its band.
+  - Transport, not priority, decides how much of its potential a plant realizes. The pole bean's apex and the internode below it both had empty reserves while 75% of potential assimilation was lost to the sink feedback, and only raising phloem conductance (500 to 1500 g/m/h, "~", Ewers 1985) let the stem grow. The bush bean runs on the same mechanism at 500. Re-read the WP7 sink-limitation question in that light before M2 exit: a sink-limited plant with starving sinks points at the transport parameter.
+  - The unstaked row yield response (-34%) is entirely the encoded pod rot: with pod_rot_rate 0 the fallen row yields 1% more than the staked one. It sits near the edge of its band.
   - Climbing branches; supports as light obstacles; a build-a-trellis action (WP25); a climbing-ability trait next to fin; vines twining around each other; drawing the coil in the viewer (`Meta::twine`, `Twine::point`).
   - Most of the unstaked yield loss is encoded pod rot; in the sim a fallen canopy is lit better than a staked column.
   - `OrganKind::Tendril` is unused; remove it at the next schema break (ps-view names it).

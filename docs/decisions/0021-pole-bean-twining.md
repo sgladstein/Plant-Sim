@@ -86,9 +86,10 @@ at a 20 °C mean, the top of the published range, and recommended at least 1.5 m
   pass; the owner's choice of target is still open.
 - Without strings, the same row (m2/pole_row_no_trellis) falls at about node 5, stays
   under 25 cm, and yields 34% less seed (band −30 to −70%; the isolated pots lose 44%).
-  The response is measured on the row because the field trials are rows. Most of the
-  loss is pod rot, which is encoded. The fallen canopy alone does not cost yield in the
-  sim: before pod rot was added, fallen vines yielded 9 to 21% more than staked ones,
+  The response is measured on the row because the field trials are rows. With
+  `pod_rot_rate` set to 0 the fallen row yields 1% more than the staked one (7.08
+  against 7.00 g a plant), so on the row the whole −34% is the encoded pod rot and the
+  fallen canopy costs nothing. Before the transport fix, too, fallen vines yielded 9 to 21% more than staked ones,
   because their leaves spread over more ground (area-weighted light index 0.68 against
   0.54 in the row, 0.79 against 0.70 in the pots, measured at day 75). A leaf-on-soil
   rot rule was considered and left out: a fallen vine's leaves sit 4 to 6 cm up on their
