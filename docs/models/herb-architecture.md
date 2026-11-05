@@ -53,7 +53,11 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
 - **Root direction:** `u' = unit(u + 0.2 · w_g · (0, 0, −1) + ε)`, `ε ~ N(0, 0.15²)`
   per component.
 - **Lateral cohort:** one per 2 cm of parent past its apical zone, multiplicity
-  `m = 2 cm / spacing`, length `ℓ_max` of the lateral type.
+  `m = 2 cm / spacing`, length `ℓ_max` of the lateral type. Its direction is the
+  insertion angle off the parent at the next golden-angle turn, mirrored downward. The
+  cohort is one straight organ, so its tip must lie in active soil, as an axis segment
+  must: the drawn direction, else the pot-wall rule (straight down, then along the wall
+  either way), else the next seven golden-angle turns (decision 0028).
 - **Sink feedback on gross assimilation:** `A' = f(C) (A + Rd) − Rd`,
   `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (provisional; see gas-exchange).
 - **Leaf death:** at thermal age `expanded + lifespan`, after 5 days below light index

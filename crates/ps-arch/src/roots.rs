@@ -150,7 +150,7 @@ impl Plant {
             }
             // Laterals behind the apical zone, one cohort per parent segment.
             if let Some(lt) = lateral_type.filter(|_| rp.branch_spacing.0 > 0.0) {
-                self.laterals(a, lt, now)?;
+                self.laterals(a, lt, now, soil)?;
             }
             if ax.done {
                 continue;
@@ -183,7 +183,13 @@ impl Plant {
         Ok(())
     }
 
-    fn laterals(&mut self, a: usize, lt: usize, now: Hours) -> Result<(), ArchError> {
+    fn laterals(
+        &mut self,
+        a: usize,
+        lt: usize,
+        now: Hours,
+        soil: &SoilGrid,
+    ) -> Result<(), ArchError> {
         let seg = self.params.root_segment.0;
         let parent_type = self.params.roots[self.root_axes[a].kind].clone();
         let lp = self.params.roots[lt].clone();
@@ -219,6 +225,32 @@ impl Plant {
             // around the parent, and the upward ones turn down within a few
             // millimeters (decision 0013).
             dir[2] = -dir[2].abs();
+            // A cohort is one straight organ of the lateral's full length: keep its tip
+            // in active soil, as an axis segment is kept (decision 0028). Try the drawn
+            // direction, the pot-wall rule, then the next golden-angle turns.
+            let host_base = self.positions.get(h).map_or(self.collar_position, |p| p.0);
+            let base = add(
+                host_base,
+                self.arena.orientation[h].direction,
+                attach * host_len,
+            );
+            let len = lp.max_length.0;
+            let inside = |d: V3| soil_cell(soil, add(base, d, len)).is_some();
+            if let Some(d) = wall(soil, base, dir, len).or_else(|| {
+                (1..8)
+                    .map(|j| {
+                        let mut d = deflect(
+                            self.arena.orientation[h].direction,
+                            lp.insertion.0,
+                            GOLDEN_ANGLE * f64::from(k + j),
+                        );
+                        d[2] = -d[2].abs();
+                        d
+                    })
+                    .find(|d| inside(*d))
+            }) {
+                dir = d;
+            }
             let potential = GramsDM(lp.max_length.0 * mult / lp.specific_length.0);
             let duration = DegreeDays(lp.max_length.0 / lp.elongation_per_cd.max(1e-12));
             let mut s = Spawn::new(
