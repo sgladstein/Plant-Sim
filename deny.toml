@@ -4,10 +4,18 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+    # ttf-parser is unmaintained (no known vulnerability); it comes in through Bevy's and
+    # egui's font stack in the render crates only. Revisit when the Bevy pin moves.
+    { id = "RUSTSEC-2026-0192", reason = "transitive via bevy/egui fonts; render crates only" },
+]
 
 [licenses]
 version = 2
-allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib"]
+allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib",
+    # Render crates (Bevy, egui) only: encase is MIT-0; egui's bundled fonts are OFL-1.1 and
+    # the Ubuntu font licence.
+    "MIT-0", "OFL-1.1", "Ubuntu-font-1.0"]
 
 [bans]
 multiple-versions = "warn"
