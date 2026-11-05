@@ -21,6 +21,7 @@ pub mod diorama;
 pub mod garden;
 pub mod lens;
 pub mod look;
+pub mod pick;
 pub mod ready;
 pub mod scene;
 pub mod sky;
@@ -30,6 +31,7 @@ use bevy::prelude::*;
 pub use camera::CameraRig;
 pub use garden::{Garden, PotShape, PotSize, PotView, SoilFace};
 pub use lens::{Lens, LensInfo, Origin, Scale};
+pub use pick::{Picked, Selection};
 pub use ready::Ready;
 pub use sky::SkyState;
 
@@ -54,6 +56,7 @@ impl Plugin for PlantViewPlugin {
             .init_resource::<SkyState>()
             .init_resource::<Lens>()
             .init_resource::<CameraRig>()
+            .init_resource::<Selection>()
             .init_resource::<scene::SceneIndex>()
             .insert_resource(ClearColor(Color::linear_rgb(
                 look::HORIZON[0],
@@ -80,6 +83,8 @@ impl Plugin for PlantViewPlugin {
                     camera::apply_rig,
                     camera::apply_insets,
                     sky::update_sky,
+                    pick::click_to_select,
+                    pick::outline_selection,
                 )
                     .chain()
                     .in_set(ViewSet::Present),

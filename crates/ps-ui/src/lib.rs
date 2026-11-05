@@ -7,17 +7,20 @@
 //! - Right panel: the lens list and the active lens's legend, which is always visible
 //!   while a lens is on, with its unit, explanation, encoded-or-emergent tag and model
 //!   card.
+//! - Under the lenses: the inspector for the clicked organ or plant (§5.3).
 //! - Bottom panel: the charts (§5.4), toggled from the top bar.
 //! - A custom theme so the panels match the diorama rather than a debug tool (§4).
 
 mod charts;
+mod inspector;
 
 pub use charts::{Chart, Charts, Series, nearest, nice_max};
+pub use inspector::{Field, Inspector};
 
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
-use ps_view::{CameraRig, Garden, Lens, LensInfo, Origin, Scale};
+use ps_view::{CameraRig, Garden, Lens, LensInfo, Origin, Scale, Selection};
 
 /// Speed multipliers in sim hours per real second (§2.2).
 pub const SPEEDS: [(&str, f64); 5] = [
@@ -95,6 +98,7 @@ impl Plugin for PlantUiPlugin {
         app.add_plugins(EguiPlugin::default())
             .init_resource::<TimeControl>()
             .init_resource::<Charts>()
+            .init_resource::<Inspector>()
             .add_systems(EguiPrimaryContextPass, panels)
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -125,7 +129,7 @@ fn theme(ctx: &egui::Context) {
     ctx.set_visuals(v);
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 fn panels(
     mut contexts: EguiContexts,
     mut time: ResMut<TimeControl>,
@@ -133,6 +137,8 @@ fn panels(
     mut rig: ResMut<CameraRig>,
     garden: Res<Garden>,
     mut charts: ResMut<Charts>,
+    mut selection: ResMut<Selection>,
+    inspector: Res<Inspector>,
     mut themed: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -157,7 +163,13 @@ fn panels(
     let right = egui::Panel::right("lenses")
         .resizable(false)
         .exact_size(300.0)
-        .show(&mut root, |ui| lens_panel(ui, &mut lens, &garden))
+        .show(&mut root, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                lens_panel(ui, &mut lens, &garden);
+                ui.separator();
+                inspector::section(ui, &inspector, &mut selection, &garden, *lens);
+            });
+        })
         .response
         .rect
         .width();

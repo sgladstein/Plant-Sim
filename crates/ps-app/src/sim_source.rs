@@ -114,6 +114,8 @@ pub struct SimSource {
     startup_tick: u64,
     /// The sim hour at which day 0 starts (minus the scenario's start hour).
     day_start_hour: f64,
+    /// Plant id and soil id of each pot on screen, in garden order.
+    on_screen: Vec<(u32, u32)>,
 }
 
 impl SimSource {
@@ -171,7 +173,44 @@ impl SimSource {
             resume_speed,
             startup_tick,
             day_start_hour: -f64::from(scenario.start.hour),
+            on_screen: Vec::new(),
         })
+    }
+
+    /// The latest snapshot read.
+    #[must_use]
+    pub fn snapshot(&self) -> &Snapshot {
+        &self.snapshot
+    }
+
+    /// The plant in the pot at garden index `pot`.
+    #[must_use]
+    pub fn plant_of_pot(&self, pot: usize) -> Option<u32> {
+        self.on_screen.get(pot).map(|(plant, _)| *plant)
+    }
+
+    /// Share of open-sky radiation reaching the pot at garden index `pot`.
+    #[must_use]
+    pub fn radiation_fraction(&self, pot: usize) -> f64 {
+        self.on_screen
+            .get(pot)
+            .and_then(|(_, soil)| self.pots.get(soil))
+            .map_or(1.0, |i| i.radiation_fraction)
+    }
+
+    /// Label of the pot at garden index `pot`.
+    #[must_use]
+    pub fn pot_label(&self, pot: usize) -> &str {
+        self.on_screen
+            .get(pot)
+            .and_then(|(_, soil)| self.pots.get(soil))
+            .map_or("", |i| i.label.as_str())
+    }
+
+    /// The sim hour at which day 0 starts.
+    #[must_use]
+    pub fn day_start_hour(&self) -> f64 {
+        self.day_start_hour
     }
 }
 
@@ -509,6 +548,7 @@ pub fn drive(
     }
 
     let mut pots = Vec::with_capacity(snap.plants.len());
+    let mut on_screen = Vec::with_capacity(snap.plants.len());
     for p in &snap.plants {
         let Some(soil) = snap.soils.get(p.soil) else {
             continue;
@@ -517,6 +557,7 @@ pub fn drive(
             continue;
         };
         let skeleton = Skeleton::lerp(&frames.previous, &frames.current, frac);
+        on_screen.push((p.id, soil.id));
         pots.push(PotView {
             label: info.label.clone(),
             center: info.center,
@@ -536,6 +577,7 @@ pub fn drive(
     }
     garden.pots = pots;
     garden.stand_in_lenses.clear();
+    src.on_screen = on_screen;
 
     if charts.rows != snap.history.len() || charts.pots.len() != garden.pots.len() {
         let pot_of: BTreeMap<u32, usize> = snap
