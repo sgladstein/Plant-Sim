@@ -1,0 +1,18 @@
+[package]
+name = "ps-rng"
+description = "Keyed, stateless counter-based random numbers (Philox4x32-10) for the plant simulation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+libm.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

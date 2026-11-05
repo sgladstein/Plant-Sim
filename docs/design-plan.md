@@ -414,7 +414,7 @@ Scenario(
 )
 ```
 
-Weather files are hourly CSV with columns: timestamp (ISO 8601, local), t\_air\_c, rh\_pct, radiation\_w\_m2, rain\_mm, wind\_m\_s (optional), cloud\_fraction (optional). Daily files are accepted and disaggregated.
+Weather files are hourly CSV with columns: timestamp (ISO 8601, local), t\_air\_c, rh\_pct, radiation\_w\_m2, rain\_mm, wind\_m\_s (optional), cloud\_fraction (optional). Daily files are accepted and disaggregated. The sim clock, including scenario start hours and weather file timestamps, is local mean solar time: there is no longitude, time zone or daylight saving time, and 12:00 is when the mean sun crosses the meridian (decision record 0005).
 
 ### 6.3 Saves and the action log
 
