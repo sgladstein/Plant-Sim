@@ -1,0 +1,46 @@
+name: plantecophys
+
+# Proves the committed gas-exchange fixture (generated without R by
+# validation/fixtures/photosyn_reference.py) against plantecophys itself.
+#
+# The Rust code is tested against the committed fixture by `cargo test` in every PR
+# (crates/ps-physio). This job only checks the fixture against R, so it runs when the
+# fixture or its scripts change, weekly (to catch a new plantecophys release), and by
+# hand. Installing R on a runner can take 20 minutes, so it is not on every PR.
+on:
+  pull_request:
+    paths:
+      - crates/ps-physio/tests/fixtures/photosyn.csv
+      - validation/fixtures/photosyn_*
+      - validation/fixtures/compare_photosyn.py
+      - .github/workflows/plantecophys.yml
+  push:
+    branches: [main]
+    paths:
+      - crates/ps-physio/tests/fixtures/photosyn.csv
+      - validation/fixtures/photosyn_*
+      - validation/fixtures/compare_photosyn.py
+      - .github/workflows/plantecophys.yml
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  plantecophys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      # Installs plantecophys as a binary from Posit's package manager and caches the
+      # library between runs.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: any::plantecophys
+          dependencies: '"hard"'
+      - name: run plantecophys on the test grid
+        run: Rscript validation/fixtures/photosyn_plantecophys.R "$RUNNER_TEMP/photosyn_r.csv"
+      - name: compare with the committed fixture
+        run: python3 validation/fixtures/compare_photosyn.py crates/ps-physio/tests/fixtures/photosyn.csv "$RUNNER_TEMP/photosyn_r.csv"
