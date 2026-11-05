@@ -76,6 +76,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 | 20 The moments | Built (`ps_mesh::moments::pose`, `ps_view::moments`): emerging hook and cotyledons, lean toward the light, wilting and recovery, flowering cue (camera move-in and banner on sim time). Done-when: the owner signs off on a 60-second sun-versus-shade clip. |
 | 25 UI side | Done (#76). |
 | 26 UI side | Done: save and load (ps-app `saves.rs`, ps-ui `saves.rs`; the load note reports whether the state hash matches), `--load DIR`, replay-bar markers for scenario events and player actions, competition, temperature, nitrogen and carbon-flow lenses read from `Snapshot::lens` (`SessionOptions.lens = true`), phloem flow arrows (`ps_view::arrows`, a gizmo group with a small depth bias so they show through the tubes). |
+| 29 UI side | Done: hand crosses. On an open flower the inspector offers Collect pollen; with pollen in hand (shown in Garden tools, with Drop), an open flower of another plant offers Pollinate with Plant N's pollen (`ActionKind::Pollinate`). Flowers, pods and seeds show who pollinated them; the seed library has a Parents column (selfed, × Plant N). |
 
 ## 5. The look decision
 

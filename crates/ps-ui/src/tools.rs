@@ -21,6 +21,20 @@ pub enum PlayerAction {
         /// Organ index in the plant.
         organ: usize,
     },
+    /// Take pollen from the plant's open flowers to cross another plant with (WP29).
+    CollectPollen {
+        /// Pot (plant) index in the garden.
+        pot: usize,
+    },
+    /// Put the collected pollen on an open flower: its pod's seeds get that father.
+    Pollinate {
+        /// Pot (plant) index of the flower's plant in the garden.
+        pot: usize,
+        /// The flower's organ index in the plant.
+        organ: usize,
+        /// Pot (plant) index of the pollen plant.
+        pollen: usize,
+    },
     /// Cut an organ and everything it carries.
     Prune {
         /// Pot (plant) index in the garden.
@@ -164,6 +178,8 @@ pub struct SeedRow {
     pub mass_g: f64,
     /// Whether the seeds were ripe.
     pub mature: bool,
+    /// Their parents, for example "selfed" or "× Plant 3" (WP29).
+    pub parents: String,
 }
 
 /// The new-run dialog's choices. The data source fills the lists and starts the run.
@@ -208,6 +224,9 @@ pub struct Tools {
     pub obstacle: ObstacleDraft,
     /// Harvested lots, oldest first.
     pub seed_library: Vec<SeedRow>,
+    /// Pollen collected for a hand cross: the pot (plant) index it came from and its
+    /// name (WP29).
+    pub pollen: Option<(usize, String)>,
     /// The new-run dialog.
     pub new_run: NewRun,
     /// Whether the selected plant can take actions (the sim, not the demo plants).
@@ -224,6 +243,7 @@ impl Default for Tools {
             water_mm: 10.0,
             obstacle: ObstacleDraft::default(),
             seed_library: Vec::new(),
+            pollen: None,
             new_run: NewRun {
                 latitude_deg: 45.0,
                 month: 5,
@@ -250,6 +270,7 @@ pub(crate) fn section(
                 ui.weak("Tools need the simulation (not the --demo plants).");
                 return;
             }
+            pollen_line(ui, tools);
             let Some(pot) = selection.picked.map(|p| p.pot) else {
                 ui.weak("Click a plant or its soil to choose where the tools act.");
                 return;
@@ -371,6 +392,22 @@ pub(crate) fn section(
         });
 }
 
+/// The pollen in hand, if any, with a button to drop it.
+fn pollen_line(ui: &mut egui::Ui, tools: &mut Tools) {
+    let Some((_, from)) = &tools.pollen else {
+        return;
+    };
+    let text = format!("Pollen from {from}");
+    ui.horizontal(|ui| {
+        ui.label(text).on_hover_text(
+            "Select an open flower on another plant and choose Pollinate in the inspector",
+        );
+        if ui.small_button("Drop").clicked() {
+            tools.pollen = None;
+        }
+    });
+}
+
 /// The seed library section of the right panel.
 pub(crate) fn seed_library(ui: &mut egui::Ui, tools: &Tools) {
     egui::CollapsingHeader::new(format!("Seed library ({})", tools.seed_library.len()))
@@ -384,13 +421,14 @@ pub(crate) fn seed_library(ui: &mut egui::Ui, tools: &Tools) {
             let mass: f64 = tools.seed_library.iter().map(|r| r.mass_g).sum();
             ui.label(format!("{seeds} seeds, {mass:.1} g in all"));
             egui::Grid::new("seeds")
-                .num_columns(4)
+                .num_columns(5)
                 .striped(true)
                 .show(ui, |ui| {
                     ui.strong("Day");
                     ui.strong("From");
                     ui.strong("Seeds");
                     ui.strong("Mass");
+                    ui.strong("Parents");
                     ui.end_row();
                     for r in tools.seed_library.iter().rev() {
                         ui.label(r.day.to_string());
@@ -401,6 +439,7 @@ pub(crate) fn seed_library(ui: &mut egui::Ui, tools: &Tools) {
                         ));
                         ui.label(r.seeds.to_string());
                         ui.label(format!("{:.2} g", r.mass_g));
+                        ui.label(&r.parents);
                         ui.end_row();
                     }
                 });
