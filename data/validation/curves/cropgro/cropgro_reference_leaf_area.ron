@@ -1,0 +1,21 @@
+// CROPGRO-Drybean species file BNGRO048.SPE (DSSAT CSM 4.8), "LEAF GROWTH PARAMETERS, XVGROW/YVREF".
+// Model calibration curve, not a measurement: use it as a shape check (gate Info).
+Curve(
+  schema: 1,
+  id: "cropgro_reference_leaf_area",
+  source: "cropgro_drybean_spe",
+  conditions: "CROPGRO reference plant-level leaf area against main-stem V-stage, standard conditions (no stress)",
+  x: Axis(variable: "main_nodes", unit: "nodes"),
+  y: Axis(variable: "leaf_area_m2", unit: "m2/plant"),
+  basis: Some("x is the CROPGRO V-stage (main-stem nodes with an unfolded leaf, unifoliate node = V1); compared against main_nodes"),
+  method: "BNGRO048.SPE lines XVGROW and YVREF (cm2 per plant), read from the file and converted to m2",
+  gate: Info,
+  points: [
+    Point(x: 0.0, y: 0.003, sd: None),
+    Point(x: 1.83, y: 0.006, sd: None),
+    Point(x: 2.8, y: 0.011, sd: None),
+    Point(x: 4.3, y: 0.028, sd: None),
+    Point(x: 6.8, y: 0.1, sd: None),
+    Point(x: 9.6, y: 0.18, sd: None),
+  ],
+)
