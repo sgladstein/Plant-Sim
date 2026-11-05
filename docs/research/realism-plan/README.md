@@ -399,14 +399,18 @@ Accepted ones get WP numbers and issues when specced.
 
 ---
 
-## 6. Decisions for the owner
+## 6. Owner decisions (answered 2026-11-05)
 
-1. **Which priorities get full specs.** Recommended: R1 carbon sinks, R2 root system
-   and R3 plant hydraulics, with R4 phototropism folded into R1. The order above.
-2. **The level-of-detail rule** (§4.2). Recommended: fidelity fixed by scale at run start,
-   plus a display-only detailed view of one plant in a big plot. The alternative is
-   switching with zoom and speed, logged in the action log, so replays still match but
-   results depend on how the run was watched.
+1. **Which priorities get full specs:** R1 carbon sinks (with phototropism folded in),
+   R2 root system and R3 plant hydraulics, in that order (the recommendation). Specs:
+   [r1-carbon-sinks.md](r1-carbon-sinks.md), [r2-root-system.md](r2-root-system.md),
+   [r3-plant-hydraulics.md](r3-plant-hydraulics.md).
+2. **The level-of-detail rule** (§4.2): the owner chose option 2, **the level follows
+   zoom and speed for now**, to be evaluated and changed later if it is a problem. Every
+   switch is an action in the log, so replays match. R3 keeps a hook to lock a challenge
+   to one level, and the fidelity report checks that neither level is systematically
+   better, so watching closely can't become a strategy. The recommendation was option 1
+   (fixed by scale).
 
 ---
 
