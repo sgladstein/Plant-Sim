@@ -58,14 +58,20 @@ a third of the full rate, and both twins had grown the same buds within days.
   one 3-node branch with no buds of its own, and the nodes above the cut are gone.
   Branches on branches, and a branch taking over as leader after topping, are
   follow-ups.
-- The bush bean keeps 6 branches, but grows bigger: 32.8 g at maturity instead of
-  25.0, 18 pods instead of 12 and 15.9 g of seed instead of 10.6, all still inside their
-  bands. The cause is not traced; later branches come out higher, in better light, and
-  early low branches no longer compete with the main stem's leaves. Every M0 check
-  passes. Validation goes from 67 to 66 passes of 87:
+- On world seed 7 the bush bean keeps 6 branches and ends at 32.8 g instead of 25.0,
+  with 18 pods instead of 12 and 15.9 g of seed instead of 10.6, all inside their bands.
+  The hold did not cause that (review of WP25). The plant has the same 9 racemes and 54
+  flowers on both sides; it sets 18 pods instead of 12 because the per-flower pod-set
+  draws land differently once the bud stream's history changes, and the sink-limited
+  budget follows pod count. Over world seeds 11 to 18 the bean averages 30.4 g and 13.1
+  pods on 0.7.0 and 28.0 g and 12.4 pods on 0.8.0. One plant spans 21 to 39 g and 8 to 17
+  pods with the seed alone, so single-seed checks, and the sweep above, read partly noise;
+  evaluating each target on the mean of several seeds is a harness follow-up. Every M0
+  check passes. Validation on seed 7 goes from 67 to 66 passes of 87:
   - `nar_early` now misses (6.9);
   - `heat_seeds_per_pod` now misses (−7%);
   - `drought_shoot_mass` now passes (−45%);
   - `pole_unstaked_seed_yield` stays in band at −67% (−34% before), near its edge.
+  The first two flips are seed noise of the kind above.
 - The viewer needs tools for harvest, obstacles and supports, a seed library view, and
   the weather file dialog. The sim side is the actions above.
