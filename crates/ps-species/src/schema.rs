@@ -116,6 +116,8 @@ param_group!(
         seed_fill: "Cd",
         /// Root length per root dry mass.
         specific_root_length: "m/g",
+        /// Root water uptake coefficient: root length density times this is the hourly share of available water a cell can give.
+        root_uptake_rate: "m2/h",
         /// Stem tissue density.
         stem_density: "g/m3",
         /// Root tissue density.

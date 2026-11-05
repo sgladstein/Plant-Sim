@@ -264,6 +264,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-soil"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "proptest",
+ "ps-units",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "ps-species"
 version = "0.1.0"
 dependencies = [

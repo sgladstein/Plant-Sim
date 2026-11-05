@@ -10,7 +10,7 @@ with units. §3.12 says each locus has "an additive effect and a dominance devia
 but does not give the formula for continuous allele values.
 
 ## Decision
-- Schema 1 fixes the parameter set in `crates/ps-species/src/schema.rs`: 39 constants,
+- Schema 1 fixes the parameter set in `crates/ps-species/src/schema.rs`: 40 constants (39 at first; `root_uptake_rate` added with WP5),
   16 heritable parameters, 6 phenology fields and 5 numeric fields per root type, each
   with an exact unit string. Unknown keys are errors; all keys are required.
 - `constants` and `phenology` use RON struct syntax (as in §6.1); `heritable` is a map.
