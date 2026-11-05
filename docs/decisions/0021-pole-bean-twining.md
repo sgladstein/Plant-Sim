@@ -38,10 +38,13 @@ at a 20 °C mean, the top of the published range, and recommended at least 1.5 m
    to 0 at 20 cm (Darwin: fails on 23 cm). A day holds a dozen or more sweeps, so the
    catch is immediate.
 5. **Coil.** Internodes made while twining lie on a helix around the support axis at
-   radius `support radius + stem radius` and 60° above horizontal (Rutjens 2025: 35 to
-   75°, use 50 to 60), turning anticlockwise seen from above. Layout places the tip of
+   radius `R = support radius + stem radius`, turning anticlockwise seen from above. Its
+   angle above horizontal follows the support: `atan(pitch / 2πR)` with a 10 cm pitch,
+   kept within 35 to 75° (Rutjens 2025), so a 5 mm string gives 75° and a 1.5 cm stake
+   about 61°. Layout places the tip of
    a coiled internode on the helix at its current length; the coil is fixed once made.
-   When the tip passes the support's top, the axis lets go and new internodes hang over.
+   When the tip passes the support's top, the axis lets go and new internodes hang
+   down beside it (1.2 rad below level).
 6. **Lodging.** An unsupported vine axis holds up `self_support_length` (40 cm) of new
    stem. Past that it falls: every internode of the axis turns toward one random
    direction and dips to the lodge height (2 cm), and for the main stem every branch
@@ -49,34 +52,49 @@ at a 20 °C mean, the top of the published range, and recommended at least 1.5 m
    mechanical failure. New internodes then wander along the ground, turning back when
    they leave a 15 cm heap around the collar, and new branches start fallen.
 7. **Pod rot.** A vine's pod that hangs onto the soil (its foot lower than its length)
-   rots with a daily chance of 0.02 and is shed with its seeds. Staking keeps pods off
+   rots with a daily chance of 0.02 (its own stream, `Rot`) and is shed with its seeds.
+   It stands in for the disease of pods and leaves on damp soil. Staking keeps pods off
    wet soil (IITA PROPAS; Reckling 2011). Only vines run this rule: a bush bean's pods
    hang clear, and the M0 lock stays untouched.
 8. **Pole bean file.** data/species/pole_bean.ron is the bush bean file with `habit` 1,
    CROPGRO's later pole-type flowering (EM-FL 34 against 26: 575 °C·d) and maturity
    (1150 °C·d), and a thinner, longer climbing stem: 120 cm/g specific stem length (a
-   2.6 mm stem), internodes 6 cm at node 2 rising to 19 cm from node 10.
+   2.6 mm stem), internodes 6 cm at node 2 rising to 19 cm from node 10, and three times
+   the bush bean's phloem conductance (1500 g/m/h, see 10).
+10. **Transport in a vine** (review of WP22). The edge conductance `k π r² / ℓ` of a
+   2.6 mm, 14 cm twining internode is about 8 times smaller than that of a bush bean
+   internode, so at the bush bean's 500 g/m/h the leaves filled up (70% of potential
+   assimilation lost to the sink feedback) while the upper internodes reached 70% of
+   their potential length. Climbing stems conduct more per cross-section than
+   self-supporting ones (Ewers 1985; Ewers and Fisher 1991), so the pole bean's
+   conductance is 1500 (~). The review's other suggestion, a higher spending priority
+   for the two youngest internodes, was tried and dropped: their own reserves were
+   empty, so a larger share of them changed nothing (1.26 to 1.29 m at day 60).
 9. **Schemas and version.** Species schema 3 adds the `climbing` group (every species
    carries it; the bush bean's values are unused). Model 0.5.0 → 0.6.0, golden hashes
    regenerated.
 
 ## Consequences
 - In m2/pole_trellis (4 pots, a 2 m stake 1.5 cm across 5 cm from each seed, sown 10
-  June at 45 N) the vines catch their stakes at emergence and climb to 1.28 m at day 60,
-  1.63 m at day 75 and 1.71 m at the end (Kentucky Wonder 1.5 to 2.1 m). That misses the
-  research recommendation of 1.5 m by day 60 and 2 m by day 75. The main stem makes 13
-  nodes by day 60 and 14 in all. Its upper internodes reach about 70% of their
-  potential, because pods take the carbon from flowering on (day 47), so longer
-  potentials buy little height. A 1.5 m day-60 target needs either a later flower, more
-  main-stem nodes after it, or vegetative priority while the stem climbs. The
-  `pole_height_day60` target is Info and misses; `pole_height_final` passes.
-- Without stakes (m2/pole_no_trellis) the vines fall at about node 5 and stay under
-  25 cm, and seed yield is 53% lower (band −30 to −70%). Most of the loss is pod rot,
-  which is encoded. The fallen canopy alone does not cost yield in the sim: before pod
-  rot was added, fallen vines yielded 9 to 21% more than staked ones, because their
-  leaves spread over more ground (area-weighted light index 0.68 against 0.54 in the
-  row, 0.79 against 0.70 in the pots, measured at day 75).
-- m2/pole_row_trellis is a showcase bed: 8 pole beans 15 cm apart on 5 mm strings.
+  June at 45 N) the vines catch their stakes at emergence and climb to 1.55 m at day 60,
+  1.99 m at day 75 and 2.08 m at the end (Kentucky Wonder 1.5 to 2.1 m), which meets
+  the research recommendation of 1.5 m by day 60 and 2 m by day 75. The main stem makes
+  13 nodes by day 60 and 14 in all. Before the review's transport fix (point 10) they
+  reached 1.28, 1.63 and 1.71 m. The row on 5 mm strings (m2/pole_row_trellis) reaches
+  1.68 m at day 60 and 2.24 m at the end: its steeper coil climbs faster, and the
+  internode that passes the string's top overtops it. Both height targets are Info and
+  pass; the owner's choice of target is still open.
+- Without strings, the same row (m2/pole_row_no_trellis) falls at about node 5, stays
+  under 25 cm, and yields 34% less seed (band −30 to −70%; the isolated pots lose 44%).
+  The response is measured on the row because the field trials are rows. Most of the
+  loss is pod rot, which is encoded. The fallen canopy alone does not cost yield in the
+  sim: before pod rot was added, fallen vines yielded 9 to 21% more than staked ones,
+  because their leaves spread over more ground (area-weighted light index 0.68 against
+  0.54 in the row, 0.79 against 0.70 in the pots, measured at day 75). A leaf-on-soil
+  rot rule was considered and left out: a fallen vine's leaves sit 4 to 6 cm up on their
+  petioles, so it would rarely fire.
+- The plant stays sink-limited after flowering (about 75% of potential assimilation
+  lost to the sink feedback), as the bush bean does.
 - The viewer draws a coiled internode as a straight segment from its base to its tip
   on the helix. Drawing the helix needs `Meta::twine` and `Twine::point`.
 - Follow-ups: climbing branches (branches stay herb-like with 3 nodes and a terminal

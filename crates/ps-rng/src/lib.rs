@@ -49,6 +49,8 @@ pub enum Purpose {
     Light,
     /// A vine tip catching a support (WP22).
     Twining,
+    /// Rot of an organ on the soil (WP22).
+    Rot,
     /// Test-only purpose; never used by the model.
     Test,
 }
@@ -71,6 +73,7 @@ impl Purpose {
             Purpose::Mutation => 11,
             Purpose::Light => 12,
             Purpose::Twining => 13,
+            Purpose::Rot => 14,
             Purpose::Test => 0xFFFF,
         }
     }

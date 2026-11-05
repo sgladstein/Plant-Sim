@@ -27,13 +27,13 @@ fn mean(w: &World, variable: &str, at: &At) -> f64 {
     replicate_mean(w.state(), variable, at).unwrap().value
 }
 
-/// Every staked vine catches its stake, coils its main stem around it, and climbs
-/// past 1.5 m; the unstaked ones fall over and stay under 30 cm. Unstaked seed
-/// yield is 30 to 70% lower (IITA, Reckling; decision 0021).
+/// In a row of 8, every vine on a string catches it, coils its main stem around it,
+/// and climbs past 1.5 m; in the same row without strings they fall over and stay
+/// under 30 cm. Unstaked seed yield is 30 to 70% lower (IITA, Reckling; decision 0021).
 #[test]
 fn staked_pole_beans_climb_and_unstaked_ones_lodge() {
-    let staked = run("m2/pole_trellis.ron", None);
-    let unstaked = run("m2/pole_no_trellis.ron", None);
+    let staked = run("m2/pole_row_trellis.ron", None);
+    let unstaked = run("m2/pole_row_no_trellis.ron", None);
     for p in &staked.state().plants {
         let plant = &p.plant;
         let main = &plant.axes[0];

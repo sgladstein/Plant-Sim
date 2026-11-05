@@ -334,8 +334,13 @@ param_group!(
         support_diameter_sure: "cm",
         /// Supports this thick or more are never caught.
         support_diameter_max: "cm",
-        /// Angle of the twining helix above the horizontal.
-        helix_inclination: "deg",
+        /// Rise of the twining helix per turn; with the support's radius it sets the
+        /// helix angle.
+        helix_pitch: "cm",
+        /// Flattest helix angle above the horizontal (thick supports).
+        helix_inclination_min: "deg",
+        /// Steepest helix angle above the horizontal (thin strings).
+        helix_inclination_max: "deg",
         /// Stem length an unsupported vine holds up before it lodges.
         self_support_length: "cm",
         /// Radius around the collar within which a lodged vine coils.

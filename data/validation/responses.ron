@@ -294,15 +294,15 @@ ValidationResponses(
     ),
     Response(
       id: "pole_unstaked_seed_yield",
-      scenario: "m2/pole_no_trellis",
-      baseline: "m2/pole_trellis",
+      scenario: "m2/pole_row_no_trellis",
+      baseline: "m2/pole_row_trellis",
       variable: "seed_mass_g",
       at: Final,
       expect: RelChange(min: -0.7, max: -0.3),
       sources: ["iita_propas_staking", "reckling2011"],
       gate: Info,
       tag: Emergent,
-      note: "WP22 done-when: without a support the vine falls over and yields less; staked against unstaked climbing beans, -30 to -70% (a direction-plus-band check). In the sim most of the loss is pods on the soil rotting (pod_rot_rate, encoded), the rest the fallen canopy. The cargo test staked_pole_beans_climb_and_unstaked_ones_lodge enforces it (decision 0021).",
+      note: "WP22 done-when: without a support the vine falls over and yields less; staked against unstaked climbing beans, -30 to -70% (a direction-plus-band check), measured on a row because the field trials are rows. In the sim most of the loss is pods on the soil rotting (pod_rot_rate, encoded), the rest the fallen canopy. The cargo test staked_pole_beans_climb_and_unstaked_ones_lodge enforces it (decision 0021).",
     ),
   ],
 )

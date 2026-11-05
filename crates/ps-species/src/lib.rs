@@ -365,11 +365,62 @@ impl Species {
         for (spec, p) in self.climbing.entries() {
             check_param(&format!("climbing.{}", spec.key), spec.unit, p)?;
         }
+        self.validate_climbing()?;
         self.validate_roots()?;
         for r in &self.roots {
             for (spec, p) in r.entries() {
                 check_param(&format!("roots[{}].{}", r.name, spec.key), spec.unit, p)?;
             }
+        }
+        Ok(())
+    }
+
+    fn validate_climbing(&self) -> Result<(), SpeciesError> {
+        let c = &self.climbing;
+        let bad = |key: &str, why: &str| {
+            Err(SpeciesError::Value {
+                at: format!("climbing.{key}"),
+                why: why.into(),
+            })
+        };
+        let v = |p: &Param| p.value;
+        if !(0.0..=1.0).contains(&v(&c.pod_rot_rate)) {
+            return bad("pod_rot_rate", "a daily chance, 0 to 1");
+        }
+        if !(v(&c.support_diameter_sure) >= 0.0
+            && v(&c.support_diameter_max) > v(&c.support_diameter_sure))
+        {
+            return bad(
+                "support_diameter_max",
+                "must exceed support_diameter_sure, which is 0 or more",
+            );
+        }
+        if !(v(&c.helix_inclination_min) > 0.0
+            && v(&c.helix_inclination_max) >= v(&c.helix_inclination_min)
+            && v(&c.helix_inclination_max) < 90.0)
+        {
+            return bad(
+                "helix_inclination_max",
+                "0 < helix_inclination_min <= helix_inclination_max < 90",
+            );
+        }
+        for (key, p) in [
+            ("max_main_nodes", &c.max_main_nodes),
+            ("internode_ramp_nodes", &c.internode_ramp_nodes),
+            ("circumnutation_radius", &c.circumnutation_radius),
+            ("helix_pitch", &c.helix_pitch),
+            ("self_support_length", &c.self_support_length),
+            ("heap_radius", &c.heap_radius),
+        ] {
+            if v(p) <= 0.0 {
+                return bad(key, "must be positive");
+            }
+        }
+        if !(v(&c.vegetative_after_flowering) >= 0.0 && v(&c.lodge_height) >= 0.0) {
+            return bad(
+                "lodge_height",
+                "lodge_height and vegetative_after_flowering must be 0 or more",
+            );
         }
         Ok(())
     }

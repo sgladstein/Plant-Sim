@@ -27,11 +27,13 @@ Decision 0021.
    with `g ≤ r_sweep` is caught with probability `P(d) = 1` for `d ≤ d_sure`,
    `(d_max − d)/(d_max − d_sure)` up to `d_max`, 0 beyond (stream `Twining`).
 5. **Coil.** A twining internode of length `s` from base `b`, around axis `c` at radius
-   `R = d/2 + r_stem` (`r_stem = √(1/(π · SSL · ρ_stem))`) and inclination `η`:
+   `R = d/2 + r_stem` (`r_stem = √(1/(π · SSL · ρ_stem))`) and inclination
+   `η = clamp(atan(pitch / 2πR), η_min, η_max)`, so a thin string makes a steep coil and
+   a thick stake a flat one:
    `φ = atan2(b_y − c_y, b_x − c_x) + s cos η / R`, tip `= (c_x + R cos φ, c_y + R sin φ, b_z + s sin η)`.
    `φ` increases: anticlockwise seen from above, a right-handed helix.
 6. **Topping.** When a twining tip passes the support's top, new internodes hang
-   `0.4 rad` below level.
+   `1.2 rad` below level, draping beside the support.
 7. **Lodging.** A free axis sums the potential length of its new internodes; past
    `self_support_length` it falls: each internode from the axis' base to its apex turns
    to one random azimuth at elevation `−asin(clamp((z − h_lodge)/ℓ, 0, 1))`, walking up
@@ -41,7 +43,10 @@ Decision 0021.
    `Tropism`), or back toward the collar (±0.4 rad) once the tip is more than
    `heap_radius` from it, dipping to the lodge height as in 7.
 9. **Pod rot**, daily step 4, vines only: a pod whose foot is no higher than its length
-   is shed with probability `pod_rot_rate` (stream `PodSet`).
+   is shed with probability `pod_rot_rate` (stream `Rot`).
+10. **Transport.** No new equation: the pole bean's phloem conductance is 1500 g/m/h,
+   three times the bush bean's, because the edge conductance `k π r² / ℓ` of a thin,
+   long twining internode is about 8 times smaller than a bush bean internode's.
 
 ## Parameters
 | Name | Value | Unit | Source |
@@ -50,13 +55,15 @@ Decision 0021.
 | max_main_nodes | 30 | - | ~ research notes: cap 25 to 35 |
 | vegetative_after_flowering | 260 | Cd | CROPGRO BNGRO048.ECO FL-VS 13 PTD × 20 Cd |
 | internode_ramp_nodes | 8 | - | ~ CROPGRO YVSHT |
-| internode_length_potential (pole bean) | 12 | cm | ~ tuned to the height target |
+| internode_length_potential (pole bean) | 12 | cm | ~ research notes: 15 cm internodes at 20 °C |
 | internode_last_fraction (pole bean) | 1.6 | - | ~ tuned to the height target |
 | specific_stem_length (pole bean) | 120 | cm/g | ~ a 2.6 mm twining stem |
 | flowering, maturity (pole bean) | 575, 1150 | Cd | CROPGRO CUL EM-FL 34/26 × 440; ~ |
 | circumnutation_radius | 6 | cm | ~ 3 to 10 (Sothern 1998) |
 | support_diameter_sure, support_diameter_max | 5, 20 | cm | Darwin 1875 |
-| helix_inclination | 60 | deg | Rutjens 2025 (35 to 75) |
+| helix_pitch | 10 | cm | ~ review of WP22 |
+| helix_inclination_min, helix_inclination_max | 35, 75 | deg | Rutjens 2025 |
+| phloem_conductance (pole bean) | 1500 | g/m/h | ~ climbers conduct more per area (Ewers 1985) |
 | self_support_length | 40 | cm | ~ |
 | heap_radius | 15 | cm | ~ |
 | lodge_height | 2 | cm | ~ |
@@ -80,26 +87,32 @@ Emergent: height on a support, the extra stem a climber builds, the canopy of a 
 vine, and its yield loss together with pod rot.
 
 ## Known limits
-- A staked vine reaches 1.28 m at day 60 and 1.71 m at the end, short of the 1.5 m by
-  day 60 the research recommends: from first flower the pods take the carbon its upper
-  internodes need (decision 0021).
-- Most of the unstaked yield loss is the encoded pod rot. In the sim a fallen vine's
-  leaves are lit better, not worse, than a staked vine's.
+- A seed must be sown within 6 cm of a support for the vine to find it; it does not
+  grow toward a support farther away.
+- The vine's height depends on its raised phloem conductance (~), a stand-in for the
+  climber's wide vessels.
+- Most of the unstaked yield loss is the encoded pod rot, a stand-in for disease of
+  pods and leaves on damp soil. An isolated fallen vine's leaves are lit better, not
+  worse, than a staked vine's; the yield response is measured on a row, where they
+  pile up.
 - Branches do not climb; they stay herb-like (3 nodes, a terminal raceme).
 - Supports do not shade and are not obstacles; vines do not twine around each other.
 - The coil does not tighten or slip; grown organs move only when a vine falls.
-- Handedness does not mirror in the southern hemisphere, as in real beans (to verify).
+- Handedness is genetic and the same in both hemispheres, as in real beans; the sim has
+  no left-handed bean.
 
 ## Validation
 - `ps_arch::vine::tests`: capture probability against Darwin's stakes (0.5, 1.5, 5 cm
   caught, 25 cm not); the coil is anticlockwise from above, keeps its radius and rises
   at its inclination; the lodge dip.
 - `ps-validate/tests/pole_bean.rs::staked_pole_beans_climb_and_unstaked_ones_lodge`
-  (WP22 done-when): every staked main stem twines (10 or more coiled internodes) and ends
-  above 1.5 m; unstaked ones lodge, stay under 30 cm and yield 30 to 70% less.
+  (WP22 done-when): in the row of 8, every staked main stem twines (10 or more coiled
+  internodes) and ends above 1.5 m; unstaked ones lodge, stay under 30 cm and yield 30 to
+  70% less.
 - `ps-validate/tests/pole_bean.rs::bush_beans_ignore_supports`.
-- Validation report: `pole_height_day60` (Info, misses at 1.28 m), `pole_height_final`
-  (Info, 1.71 m in 1.5 to 2.1), `pole_unstaked_seed_yield` (Info, −53% in −30 to −70%).
+- Validation report: `pole_height_day60` (Info, 1.55 m in 1.5 to 2.1), `pole_height_final`
+  (Info, 2.08 m in 1.5 to 2.1), `pole_unstaked_seed_yield` (Info, the row pair, −34% in
+  −30 to −70%).
 
 ## References
 - Darwin C. (1875) The Movements and Habits of Climbing Plants.

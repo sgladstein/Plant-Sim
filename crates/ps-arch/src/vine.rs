@@ -27,9 +27,9 @@ const CM: f64 = 0.01;
 
 /// Most a lodged tip turns in a day, either way, radians (~).
 const LODGED_WANDER: f64 = 0.8;
-/// Elevation of an internode hanging over the top of its support, radians below the
-/// horizontal (~).
-const TOPPED_HANG: f64 = 0.4;
+/// Elevation of an internode hanging down from the top of its support, radians below
+/// the horizontal (~): it drapes beside the support instead of reaching sideways.
+const TOPPED_HANG: f64 = 1.2;
 
 /// A vertical support (stake, pole or string), in the plant's soil frame.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,8 +57,10 @@ pub struct ClimbingParams {
     pub sure_diameter: Meters,
     /// Supports this thick or more are never caught.
     pub max_diameter: Meters,
-    /// Helix angle above the horizontal.
-    pub inclination: Radians,
+    /// Rise of the helix per turn.
+    pub pitch: Meters,
+    /// Steepest and flattest helix angles above the horizontal.
+    pub inclination: (Radians, Radians),
     /// Stem length held up without a support.
     pub self_support: Meters,
     /// Radius of the heap a lodged vine makes around its collar.
@@ -70,19 +72,21 @@ pub struct ClimbingParams {
 }
 
 impl Default for ClimbingParams {
+    /// The pole bean's values (`data/species/pole_bean.ron`).
     fn default() -> Self {
         Self {
             max_main_nodes: 30,
-            vegetative_after_flowering: DegreeDays(0.0),
-            ramp_nodes: 10,
+            vegetative_after_flowering: DegreeDays(260.0),
+            ramp_nodes: 8,
             sweep_radius: Meters(0.06),
             sure_diameter: Meters(0.05),
             max_diameter: Meters(0.2),
-            inclination: Radians(55f64.to_radians()),
+            pitch: Meters(0.10),
+            inclination: (Radians(35f64.to_radians()), Radians(75f64.to_radians())),
             self_support: Meters(0.4),
-            heap_radius: Meters(0.4),
-            lodge_height: Meters(0.1),
-            pod_rot_rate: 0.0,
+            heap_radius: Meters(0.15),
+            lodge_height: Meters(0.02),
+            pod_rot_rate: 0.02,
         }
     }
 }
@@ -101,12 +105,25 @@ impl ClimbingParams {
             sweep_radius: Meters(c.circumnutation_radius.value * CM),
             sure_diameter: Meters(c.support_diameter_sure.value * CM),
             max_diameter: Meters(c.support_diameter_max.value * CM),
-            inclination: Radians(c.helix_inclination.value.to_radians()),
+            pitch: Meters(c.helix_pitch.value * CM),
+            inclination: (
+                Radians(c.helix_inclination_min.value.to_radians()),
+                Radians(c.helix_inclination_max.value.to_radians()),
+            ),
             self_support: Meters(c.self_support_length.value * CM),
             heap_radius: Meters(c.heap_radius.value * CM),
             lodge_height: Meters(c.lodge_height.value * CM),
-            pod_rot_rate: c.pod_rot_rate.value.clamp(0.0, 1.0),
+            pod_rot_rate: c.pod_rot_rate.value,
         }
+    }
+
+    /// Helix angle around a support whose stem centerline runs at radius `r` (m): the
+    /// angle that gives the pitch, `atan(pitch / 2πr)`, kept within the species' range.
+    /// Thin strings make steep coils, thick stakes flat ones.
+    #[must_use]
+    pub fn inclination_for(&self, r: f64) -> f64 {
+        let eta = libm::atan(self.pitch.0 / (2.0 * PI * r.max(1e-6)));
+        eta.clamp(self.inclination.0.0, self.inclination.1.0)
     }
 
     /// Probability that a tip touching a support of diameter `d` (m) wraps it: 1 up to
@@ -252,11 +269,11 @@ impl Plant {
         match ax.climb {
             Climb::Twining(k) => {
                 let s = self.supports[k as usize];
-                let stem = self.stem_radius();
+                let radius = 0.5 * s.diameter + self.stem_radius();
                 let twine = Twine {
                     center: [s.base[0], s.base[1]],
-                    radius: 0.5 * s.diameter + stem,
-                    inclination: cp.inclination.0,
+                    radius,
+                    inclination: cp.inclination_for(radius),
                 };
                 ([0.0, 0.0, 1.0], Some(twine))
             }
@@ -364,7 +381,7 @@ impl Plant {
             }
             let foot = self.positions[i].0[2];
             if foot <= self.arena.size[i].length.0
-                && self.stream(pod.id, now, Purpose::PodSet).bernoulli(rate)
+                && self.stream(pod.id, now, Purpose::Rot).bernoulli(rate)
             {
                 rotten.push(pod.id);
             }
