@@ -139,6 +139,69 @@ pub struct SupportSpec {
     pub diameter_cm: f64,
 }
 
+/// A box that shades the soil's plants: a wall, fence, shade cloth or bucket (WP25).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ObstacleSpec {
+    /// Soil id whose light it shades.
+    pub soil: u32,
+    /// Lower corner from the soil's center and surface, cm (east, north, up).
+    pub min_cm: (f64, f64, f64),
+    /// Upper corner, cm.
+    pub max_cm: (f64, f64, f64),
+    /// Share of light passing straight through its thinnest side, 0 (opaque) to 1.
+    pub transmittance: f64,
+}
+
+/// Largest obstacle extent along any axis, cm.
+pub const MAX_OBSTACLE_CM: f64 = 1000.0;
+
+impl ObstacleSpec {
+    /// Checks the box is finite, not inverted, at most [`MAX_OBSTACLE_CM`] on a side,
+    /// and its transmittance is 0 to 1.
+    ///
+    /// # Errors
+    /// The reason, for the scenario or action error.
+    pub fn check(&self) -> Result<(), String> {
+        let lo = [self.min_cm.0, self.min_cm.1, self.min_cm.2];
+        let hi = [self.max_cm.0, self.max_cm.1, self.max_cm.2];
+        let fine = lo.iter().chain(&hi).all(|v| v.is_finite())
+            && lo
+                .iter()
+                .zip(&hi)
+                .all(|(a, b)| b > a && b - a <= MAX_OBSTACLE_CM)
+            && (0.0..=1.0).contains(&self.transmittance);
+        if fine {
+            Ok(())
+        } else {
+            Err(format!(
+                "obstacle {self:?}: corners finite, max above min, sides up to {MAX_OBSTACLE_CM} cm, transmittance 0 to 1"
+            ))
+        }
+    }
+}
+
+impl SupportSpec {
+    /// Checks height and diameter are in range and the position is finite.
+    ///
+    /// # Errors
+    /// The reason, for the scenario or action error.
+    pub fn check(&self) -> Result<(), String> {
+        let fine = |v: f64, hi: f64| v.is_finite() && v > 0.0 && v <= hi;
+        let (x, y) = self.offset_cm;
+        if fine(self.height_cm, MAX_SUPPORT_HEIGHT_CM)
+            && fine(self.diameter_cm, MAX_SUPPORT_DIAMETER_CM)
+            && x.is_finite()
+            && y.is_finite()
+        {
+            Ok(())
+        } else {
+            Err(format!(
+                "support {self:?}: height up to {MAX_SUPPORT_HEIGHT_CM} cm, diameter up to {MAX_SUPPORT_DIAMETER_CM} cm"
+            ))
+        }
+    }
+}
+
 /// Tallest support a scenario may stand, cm.
 pub const MAX_SUPPORT_HEIGHT_CM: f64 = 500.0;
 /// Thickest support a scenario may stand, cm.
@@ -197,6 +260,9 @@ pub struct Scenario {
     /// Vertical supports for climbing plants; none if absent (WP22).
     #[serde(default)]
     pub supports: Vec<SupportSpec>,
+    /// Boxes that shade the light grid; none if absent (WP25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub obstacles: Vec<ObstacleSpec>,
     /// Length of the run, days.
     pub duration_days: u32,
     /// A hot spell replacing the preset's own (preset weather only).
@@ -224,18 +290,20 @@ impl Scenario {
     /// Checks the supports: a known soil, a finite position, height and diameter in range.
     fn validate_supports(&self, ids: &[u32]) -> Result<(), WorldError> {
         for p in &self.supports {
-            let fine = |v: f64, hi: f64| v.is_finite() && v > 0.0 && v <= hi;
-            let (x, y) = p.offset_cm;
-            let valid = ids.contains(&p.soil)
-                && fine(p.height_cm, MAX_SUPPORT_HEIGHT_CM)
-                && fine(p.diameter_cm, MAX_SUPPORT_DIAMETER_CM)
-                && x.is_finite()
-                && y.is_finite();
-            if !valid {
+            if !ids.contains(&p.soil) {
                 return Err(WorldError::Scenario(format!(
-                    "support {p:?}: height up to {MAX_SUPPORT_HEIGHT_CM} cm, diameter up to {MAX_SUPPORT_DIAMETER_CM} cm, on a known soil"
+                    "support {p:?} on unknown soil"
                 )));
             }
+            p.check().map_err(WorldError::Scenario)?;
+        }
+        for o in &self.obstacles {
+            if !ids.contains(&o.soil) {
+                return Err(WorldError::Scenario(format!(
+                    "obstacle {o:?} on unknown soil"
+                )));
+            }
+            o.check().map_err(WorldError::Scenario)?;
         }
         Ok(())
     }
@@ -391,6 +459,17 @@ pub enum ActionKind {
         /// Organ id within the plant.
         organ: u32,
     },
+    /// Pick a pod or ear; its seeds go to the seed library (§2 "Harvest pods", WP25).
+    Harvest {
+        /// Plant id.
+        plant: u32,
+        /// Organ id of the pod or ear within the plant.
+        organ: u32,
+    },
+    /// Place an obstacle that shades the soil's plants from now on (WP25).
+    PlaceObstacle(ObstacleSpec),
+    /// Stand a stake, pole or trellis string; vines in the soil can climb it (WP25).
+    AddSupport(SupportSpec),
     /// Spread mineral nitrogen fertilizer over a soil's surface (§2 "Fertilize", WP24).
     Fertilize {
         /// Soil id.

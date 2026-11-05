@@ -149,6 +149,8 @@ pub struct HerbParams {
     pub pod_set_reserve_reference: f64,
     /// Apical dominance decay length in nodes.
     pub dominance_nodes: f64,
+    /// Nodes below a growing main-stem apex whose buds stay dormant (WP25).
+    pub hold_nodes: f64,
     /// Shade senescence light threshold.
     pub shade_light: f64,
     /// Days below it before a leaf senesces.
@@ -317,6 +319,7 @@ impl HerbParams {
             bud_reserve_reference: c.bud_reserve_reference.value,
             pod_set_reserve_reference: c.pod_set_reserve_reference.value,
             dominance_nodes: c.apical_dominance_nodes.value.max(1e-9),
+            hold_nodes: c.apical_hold_nodes.value.max(0.0),
             shade_light: c.shade_light_threshold.value,
             shade_days: round(c.shade_senescence_days.value),
             shade_rfr: c.shade_rfr_threshold.value,

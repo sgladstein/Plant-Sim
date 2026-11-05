@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 4;
+pub const SCHEMA: u32 = 5;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -189,8 +189,11 @@ param_group!(
         /// Reserve concentration at the raceme's node at which a closing flower sets a
         /// pod with the full base probability (decision 0018).
         pod_set_reserve_reference: "g C / g DM",
-        /// Distance, in nodes, over which apical dominance decays by a factor e.
+        /// Distance, in nodes, over which apical dominance decays by a factor e, past
+        /// the held nodes.
         apical_dominance_nodes: "-",
+        /// Nodes below a growing main-stem apex whose buds stay fully dormant (WP25).
+        apical_hold_nodes: "-",
         /// Days from emergence until the cotyledons drop.
         cotyledon_lifespan: "day",
         /// Absorptance of leaves for PAR.

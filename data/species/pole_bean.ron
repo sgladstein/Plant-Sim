@@ -3,7 +3,7 @@
 // later pole-type phenology, and longer internodes; everything else is the bush bean's.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 4,
+  schema: 5,
   id: "pole_bean",
   name: "Pole bean archetype",
   growth_form: Vine,
@@ -76,7 +76,8 @@ Species(
     branch_angle: (value: 45.0, unit: "deg", source: "~"),
     pod_set_reserve_reference: (value: 0.22, unit: "g C / g DM", source: "~ node reserve at which a flower sets with the full base probability; near the reserve of a well-fed plant (feedback halfway between onset 0.10 and full 0.30), so pod set follows the carbon supply below it (decision 0018)"),
     bud_reserve_reference: (value: 0.1, unit: "g C / g DM", source: "~ (Helios flower-abortion threshold 0.1, research review item 22)"),
-    apical_dominance_nodes: (value: 2.0, unit: "-", source: "~ (decision 0013)"),
+    apical_dominance_nodes: (value: 0.7, unit: "-", source: "~ WP25 (decision 0024): with the hold below, dominance fades within about one node; chosen with the hold by a sweep that keeps the 90-day bean, the 20-seed pod sweep and the unstaked pole row in range"),
+    apical_hold_nodes: (value: 1.5, unit: "-", source: "~ WP25 (decision 0024): the axillary buds of the top nodes (1.5 here) below a growing bean apex stay dormant until it is cut or stops; decapitation releases them within days (Cline 1991, review of apical dominance, bean as the classic system) [K, to verify]"),
     cotyledon_lifespan: (value: 14.0, unit: "day", source: "~ (design plan §3.10)"),
     leaf_absorptance: (value: 0.85, unit: "-", source: "typical green leaf PAR absorptance"),
     root_segment_length: (value: 2.0, unit: "cm", source: "model resolution (decision 0013)"),

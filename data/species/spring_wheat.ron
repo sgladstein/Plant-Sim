@@ -2,7 +2,7 @@
 // Every number has a unit and a source; "~" means a guess to validate. Bean-only
 // constants the grass module does not read say so in their source.
 Species(
-  schema: 4,
+  schema: 5,
   id: "spring_wheat",
   name: "Spring wheat",
   growth_form: Grass,
@@ -76,6 +76,7 @@ Species(
     pod_set_reserve_reference: (value: 0.22, unit: "g C / g DM", source: "~ node reserve at which a flower sets with the full base probability; near the reserve of a well-fed plant (feedback halfway between onset 0.10 and full 0.30), so pod set follows the carbon supply below it (decision 0018)"),
     bud_reserve_reference: (value: 0.1, unit: "g C / g DM", source: "~ (Helios flower-abortion threshold 0.1, research review item 22)"),
     apical_dominance_nodes: (value: 2.0, unit: "-", source: "unused by the grass"),
+    apical_hold_nodes: (value: 0.0, unit: "-", source: "unused by the grass"),
     cotyledon_lifespan: (value: 21.0, unit: "day", source: "~ the endosperm feeds the seedling for about three weeks"),
     leaf_absorptance: (value: 0.85, unit: "-", source: "typical green leaf PAR absorptance"),
     root_segment_length: (value: 2.0, unit: "cm", source: "model resolution (decision 0013)"),

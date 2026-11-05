@@ -1,0 +1,19 @@
+// WP25 (decision 0024): single_pot driven by an hourly weather file instead of a preset
+// (M2 exit: "weather file import drives a run"). The file is synthetic; see
+// data/weather/README.md.
+Scenario(
+  schema: 1,
+  model_version: "0.8.0",
+  world_seed: 7,
+  latitude_deg: 45.0,
+  start: (year: 2026, month: 5, day: 15, hour: 0),
+  weather: File("weather/sample_hourly_45n.csv"),
+  soils: [ Pot(id: 0, diameter_cm: 24.0, depth_cm: 24.0, texture: Loam, position_m: (0.0, 0.0)) ],
+  irrigation: { 0: ToFieldCapacity(every_days: 1) },
+  // Non-limiting nitrogen control: 300 ppm NO3 (about 4.2 g N in each 14 kg pot), so
+  // the M0 checks compare plants that nitrogen does not limit (decision 0020).
+  nitrogen: { 0: (no3_ppm: 300.0, nh4_ppm: 2.0, organic_g_per_kg: 1.0, rhizobia: true) },
+  co2_ppm: 420.0,
+  sowings: [ (soil: 0, species: "bush_bean", seed: Default, depth_cm: 3.0) ],
+  duration_days: 90,
+)
