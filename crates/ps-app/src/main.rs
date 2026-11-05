@@ -8,7 +8,8 @@
 //! plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
 //!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 //!           [--bench-frames N] [--bench-out FILE.csv]
-//!           [--scenario FILE.ron] [--data DIR] [--demo] [--window WxH] [--fps-cap N]
+//!           [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated]
+//!           [--window WxH] [--fps-cap N]
 //! ```
 //!
 //! The default present mode is mailbox with a frame cap at twice the monitor's refresh rate
@@ -79,6 +80,7 @@ struct Options {
     bench_frames: Option<u32>,
     bench_out: PathBuf,
     demo: bool,
+    look: ps_view::toon::Style,
     scenario: PathBuf,
     data: Option<PathBuf>,
     fps_cap: Option<f64>,
@@ -153,6 +155,7 @@ fn parse_args() -> Result<Options> {
         bench_frames: None,
         bench_out: PathBuf::from("frame-times.csv"),
         demo: false,
+        look: ps_view::toon::Style::default(),
         scenario: PathBuf::from(sim_source::DEFAULT_SCENARIO),
         data: None,
         fps_cap: None,
@@ -193,6 +196,12 @@ fn parse_args() -> Result<Options> {
             }
             "--bench-out" => o.bench_out = PathBuf::from(value()?),
             "--demo" => o.demo = true,
+            "--look" => {
+                let v = value()?;
+                o.look = anyhow::Context::with_context(ps_view::toon::Style::parse(&v), || {
+                    format!("--look takes natural or illustrated, got {v}")
+                })?;
+            }
             "--fps-cap" => {
                 o.fps_cap = Some(anyhow::Context::context(
                     value()?.parse::<f64>(),
@@ -218,7 +227,7 @@ fn parse_args() -> Result<Options> {
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--window WxH] [--fps-cap N]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--look natural|illustrated] [--window WxH] [--fps-cap N]"
                 );
                 std::process::exit(0);
             }
@@ -245,6 +254,7 @@ fn main() -> Result<()> {
     }))
     .add_plugins((PlantViewPlugin, ps_ui::PlantUiPlugin))
     .insert_resource(options.lens)
+    .insert_resource(options.look)
     .insert_resource(ps_view::Selection {
         picked: options.inspect,
     })

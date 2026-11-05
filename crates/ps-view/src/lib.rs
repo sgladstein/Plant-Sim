@@ -26,6 +26,7 @@ pub mod pick;
 pub mod ready;
 pub mod scene;
 pub mod sky;
+pub mod toon;
 
 use bevy::prelude::*;
 
@@ -53,6 +54,7 @@ pub struct PlantViewPlugin;
 impl Plugin for PlantViewPlugin {
     fn build(&self, app: &mut App) {
         ready::build(app);
+        toon::register(app);
         app.init_resource::<Garden>()
             .init_resource::<SkyState>()
             .init_resource::<Lens>()

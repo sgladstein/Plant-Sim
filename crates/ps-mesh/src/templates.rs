@@ -292,7 +292,7 @@ fn blade_shade(u: f32, v: f32, underside: bool) -> f32 {
 
 /// Appends a two-sided leaflet and returns its one-sided area. `shade` gets one
 /// brightness multiplier per vertex (padded with 1 for vertices added before).
-fn leaflet(mesh: &mut MeshData, shade: &mut Vec<f32>, shape: Leaflet, pose: Pose) -> f32 {
+fn leaflet(mesh: &mut MeshData, shade: &mut Vec<[f32; 2]>, shape: Leaflet, pose: Pose) -> f32 {
     let peak_u = shape.a / (shape.a + shape.b);
     let peak = peak_u.powf(shape.a) * (1.0 - peak_u).powf(shape.b);
     let half_width = |u: f32, v: f32| {
@@ -334,7 +334,10 @@ fn leaflet(mesh: &mut MeshData, shade: &mut Vec<f32>, shape: Leaflet, pose: Pose
             normals.push(rotation * n);
         }
     }
-    shade.resize(mesh.positions.len(), 1.0);
+    shade.resize(mesh.positions.len(), [1.0, 0.0]);
+    // Ink weight: 1 on the margin (outer columns and the tip row), for an illustrated
+    // outline; renderers that don't ink ignore it.
+    let margin = |i: u32, j: u32| f32::from(u8::from(j == 0 || j == nv || i == nu));
     let front = mesh.positions.len() as u32;
     for (k, p) in points.iter().enumerate() {
         let i = k as u32 / (nv + 1);
@@ -342,15 +345,16 @@ fn leaflet(mesh: &mut MeshData, shade: &mut Vec<f32>, shape: Leaflet, pose: Pose
         let uv = Vec2::new(j as f32 / nv as f32, i as f32 / nu as f32);
         let n = normals[k];
         mesh.push_vertex(pose.base + rotation * *p, n, uv);
-        shade.push(blade_shade(uv.y, 2.0 * uv.x - 1.0, false));
+        shade.push([blade_shade(uv.y, 2.0 * uv.x - 1.0, false), margin(i, j)]);
     }
     let back = mesh.positions.len() as u32;
     for k in 0..points.len() {
+        let (i, j) = (k as u32 / (nv + 1), k as u32 % (nv + 1));
         let p = Vec3::from(mesh.positions[(front as usize) + k]);
         let n = -Vec3::from(mesh.normals[(front as usize) + k]);
         let uv = Vec2::from(mesh.uvs[(front as usize) + k]);
         mesh.push_vertex(p, n, uv);
-        shade.push(blade_shade(uv.y, 2.0 * uv.x - 1.0, true));
+        shade.push([blade_shade(uv.y, 2.0 * uv.x - 1.0, true), margin(i, j)]);
     }
     let mut area = 0.0;
     for i in 0..nu {
@@ -376,21 +380,21 @@ fn leaf(form: LeafForm, droop: f32) -> MeshData {
     leaf_shaded(form, droop).0
 }
 
-fn leaf_shaded(form: LeafForm, droop: f32) -> (MeshData, Vec<f32>) {
+fn leaf_shaded(form: LeafForm, droop: f32) -> (MeshData, Vec<[f32; 2]>) {
     let (mut mesh, mut shade, _) = leaf_raw(form, droop, false);
     let (_, _, flat_area) = leaf_raw(form, 0.0, true);
     if flat_area > 0.0 {
         mesh.scale(1.0 / flat_area.sqrt());
     }
-    shade.resize(mesh.positions.len(), 1.0);
+    shade.resize(mesh.positions.len(), [1.0, 0.0]);
     (mesh, shade)
 }
 
-/// Like [`build_template`], plus one brightness multiplier per vertex (leaf veins,
-/// margins and pale undersides; 1 everywhere for other templates). A renderer uploads
-/// it as a grey vertex color, which multiplies the organ's color.
+/// Like [`build_template`], plus per vertex `[brightness, ink]`: a brightness multiplier
+/// (leaf veins, margins and pale undersides; 1 for other templates) and an ink weight
+/// (1 on leaf margins, else 0) for an outlined style.
 #[must_use]
-pub fn build_template_shaded(key: TemplateKey) -> (MeshData, Vec<f32>) {
+pub fn build_template_shaded(key: TemplateKey) -> (MeshData, Vec<[f32; 2]>) {
     let droop = if key.template.droops() {
         f32::from(key.droop.min(DROOP_LEVELS - 1)) / f32::from(DROOP_LEVELS - 1)
     } else {
@@ -402,13 +406,13 @@ pub fn build_template_shaded(key: TemplateKey) -> (MeshData, Vec<f32>) {
         _ => {
             let m = build_template(key);
             let n = m.vertex_count();
-            (m, vec![1.0; n])
+            (m, vec![[1.0, 0.0]; n])
         }
     }
 }
 
 #[allow(clippy::too_many_lines)]
-fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, Vec<f32>, f32) {
+fn leaf_raw(form: LeafForm, droop: f32, flat: bool) -> (MeshData, Vec<[f32; 2]>, f32) {
     let mut mesh = MeshData::new();
     let mut shade = Vec::new();
     let leaflet_length = 1.0;

@@ -26,6 +26,7 @@ use crate::camera::CameraRig;
 use crate::diorama::{self, ColoredMesh};
 use crate::garden::{Garden, PotSize, PotView, natural_color};
 use crate::lens::Lens;
+use crate::toon::{Toon, toon};
 
 /// Rebuild threshold for stem and root meshes (§4).
 pub const REBUILD_THRESHOLD: f32 = 0.02;
@@ -67,14 +68,14 @@ fn colored(m: &ColoredMesh) -> Mesh {
 #[derive(Resource)]
 pub struct SceneAssets {
     templates: BTreeMap<TemplateKey, Handle<Mesh>>,
-    vertex_color: Handle<StandardMaterial>,
+    vertex_color: Handle<Toon>,
     /// Stems and roots while a lens colors them: unlit, so the color reads as the value.
-    vertex_color_lens: Handle<StandardMaterial>,
-    soil: Handle<StandardMaterial>,
+    vertex_color_lens: Handle<Toon>,
+    soil: Handle<Toon>,
     glass: Handle<StandardMaterial>,
     haze: Handle<StandardMaterial>,
     overlay: Handle<StandardMaterial>,
-    palette: HashMap<([u8; 3], bool), Handle<StandardMaterial>>,
+    palette: HashMap<([u8; 3], bool), Handle<Toon>>,
 }
 
 /// Quantizes a linear color with a square-root curve, so dark greens do not band.
@@ -87,10 +88,10 @@ impl SceneAssets {
     /// value: most of it is then emitted, so shadows cannot move it along the scale.
     fn material(
         &mut self,
-        materials: &mut Assets<StandardMaterial>,
+        materials: &mut Assets<Toon>,
         rgb: [f32; 3],
         glow: bool,
-    ) -> (Handle<StandardMaterial>, ([u8; 3], bool)) {
+    ) -> (Handle<Toon>, ([u8; 3], bool)) {
         let key = (quantize(rgb), glow);
         let handle = self
             .palette
@@ -102,23 +103,22 @@ impl SceneAssets {
                     // Emissive ignores camera exposure (emissive_exposure_weight 0), so this is
                     // the displayed share directly.
                     let e = crate::look::LENS_GLOW;
-                    materials.add(StandardMaterial {
+                    materials.add(toon(StandardMaterial {
                         base_color: Color::linear_rgb(c[0] * lit, c[1] * lit, c[2] * lit),
                         emissive: LinearRgba::rgb(c[0] * e, c[1] * e, c[2] * e),
                         perceptual_roughness: 0.9,
                         reflectance: 0.1,
                         ..default()
-                    })
+                    }))
                 } else {
-                    materials.add(StandardMaterial {
+                    materials.add(toon(StandardMaterial {
                         base_color: Color::linear_rgb(c[0], c[1], c[2]),
-                        // Leaves are matte with a little waxy sheen, and let some light
-                        // through, so backlit leaves glow instead of going black.
+                        // Leaves let some light through, so backlit leaves glow.
                         perceptual_roughness: 0.8,
                         reflectance: 0.22,
                         diffuse_transmission: 0.35,
                         ..default()
-                    })
+                    }))
                 }
             })
             .clone();
@@ -171,6 +171,7 @@ pub(crate) fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut toons: ResMut<Assets<Toon>>,
     mut index: ResMut<SceneIndex>,
 ) {
     let templates = TemplateKey::all()
@@ -179,27 +180,28 @@ pub(crate) fn setup_scene(
             // Leaf veins and pale undersides as a grey vertex color that multiplies the
             // organ's (or lens's) color.
             let (m, shade) = build_template_shaded(k);
-            let grey: Vec<[f32; 4]> = shade.iter().map(|&g| [g, g, g, 1.0]).collect();
+            // Alpha carries the ink weight for the illustrated shader (1 − ink).
+            let grey: Vec<[f32; 4]> = shade.iter().map(|&[g, ink]| [g, g, g, 1.0 - ink]).collect();
             (k, meshes.add(to_bevy_mesh(&m, Some(&grey))))
         })
         .collect();
-    let vertex_color = materials.add(StandardMaterial {
+    let vertex_color = toons.add(toon(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.8,
         reflectance: 0.2,
         ..default()
-    });
-    let vertex_color_lens = materials.add(StandardMaterial {
+    }));
+    let vertex_color_lens = toons.add(toon(StandardMaterial {
         base_color: Color::WHITE,
         unlit: true,
         ..default()
-    });
-    let soil = materials.add(StandardMaterial {
+    }));
+    let soil = toons.add(toon(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 1.0,
         reflectance: 0.1,
         ..default()
-    });
+    }));
     let glass = materials.add(StandardMaterial {
         // Nearly invisible: a faint sky reflection says "glass" without greying the soil.
         base_color: Color::linear_rgba(0.9, 0.95, 1.0, 0.0),
@@ -245,7 +247,7 @@ pub(crate) fn setup_scene(
     let floor = -PotSize::RHIZOBOX.soil_depth - 0.042;
     // Bench, lawn, pebbles and distant trees: vertex-colored, double-sided, rebuilt when
     // the pot layout changes (crate::dressing).
-    let dressing_material = materials.add(StandardMaterial {
+    let dressing_material = toons.add(toon(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 0.9,
         reflectance: 0.15,
@@ -254,7 +256,7 @@ pub(crate) fn setup_scene(
         double_sided: false,
         cull_mode: None,
         ..default()
-    });
+    }));
     let bench_mesh = meshes.add(colored(&crate::dressing::bench(Vec2::new(0.95, 0.42))));
     commands.spawn((
         Mesh3d(bench_mesh.clone()),
@@ -276,12 +278,12 @@ pub(crate) fn setup_scene(
         garden: garden_mesh,
     });
     let g = crate::look::GROUND;
-    let ground = materials.add(StandardMaterial {
+    let ground = toons.add(toon(StandardMaterial {
         base_color: Color::linear_rgb(g[0], g[1], g[2]),
         perceptual_roughness: 1.0,
         reflectance: 0.1,
         ..default()
-    });
+    }));
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(240.0, 240.0))),
         MeshMaterial3d(ground),
@@ -508,7 +510,7 @@ pub(crate) fn sync_scene(
     mut index: ResMut<SceneIndex>,
     mut assets: ResMut<SceneAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<Toon>>,
     mut rig: ResMut<CameraRig>,
     mut floors: Query<(&Floor, &mut Transform)>,
     dressing: Option<Res<DressingMeshes>>,
@@ -572,8 +574,8 @@ pub(crate) fn sync_scene(
         }
         if let Some(mut m) = materials.get_mut(&assets.soil) {
             let a = lens.soil_opacity();
-            m.base_color = Color::linear_rgba(1.0, 1.0, 1.0, a);
-            m.alpha_mode = if a < 1.0 {
+            m.base.base_color = Color::linear_rgba(1.0, 1.0, 1.0, a);
+            m.base.alpha_mode = if a < 1.0 {
                 AlphaMode::Blend
             } else {
                 AlphaMode::Opaque
