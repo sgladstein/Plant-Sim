@@ -174,7 +174,7 @@ Shared rules:
 
 Turbid-medium voxel model (Beer's law with a leaf-angle G-function, RATP and Sinoquet style), multi-rate: geometry coefficients daily, radiation hourly.
 
-- **Grid.** An axis-aligned box around all shoot organs with 20% margin, at most 48 cells per axis and no cell smaller than 5 mm. A seedling gets millimeter cells; a mature bean gets 2 to 3 cm cells. Rebuilt in the daily step.
+- **Grid.** An axis-aligned box around all shoot organs with 20% margin, at most 32 cells per axis (amended from 48 by decision 0010) and no cell smaller than 5 mm. A seedling gets millimeter cells; a mature bean gets 3 to 4 cm cells. Rebuilt in the daily step.
 - **Leaf area density** per cell is accumulated from each leaf's area at its center. Extinction along a path uses the G-function; spherical distribution (G = 0.5) is the default and a species parameter.
 - **Direct beam.** For each of the 24 hourly sun positions, march a ray from each leaf's center toward the sun through the grid, accumulating optical depth. The transmittance is the probability the leaf is sunlit that hour. Below the horizon it is zero.
 - **Diffuse.** 16 sky sectors (two elevation bands × eight azimuths) with a standard overcast sky weighting; one ray per sector per leaf; the diffuse coefficient is the weighted mean transmittance.

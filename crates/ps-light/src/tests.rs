@@ -139,7 +139,7 @@ fn grid_respects_limits() {
     ];
     let g = LightGrid::fit(&tiny, &[], 0.5).unwrap();
     assert!((g.cell.0 - MIN_CELL_M).abs() < 1e-15);
-    // Mature plant 1 m tall: at most 48 cells per axis.
+    // Mature plant 1 m tall: at most 32 cells per axis (decision 0010).
     let tall = [
         LeafPoint {
             center: [0.0, 0.0, 0.0],
@@ -213,4 +213,38 @@ fn absorbed_par_splits_sunlit_and_shaded() {
     assert!((a.sunlit_fraction - 0.6).abs() < 1e-15);
     let night = absorbed_par(&c, 0, WPerM2(0.0), WPerM2(0.0), -0.3, 0.5, 0.85);
     assert!(night.mean().0.abs() < 1e-15);
+}
+
+#[test]
+fn bounded_traversal_is_bit_identical() {
+    // A sparse cluster in one corner of a larger grid, so the bounds cut most rays short.
+    let mut g = LightGrid::with_geometry([0.0, 0.0, 0.0], Meters(0.02), [12, 10, 8], 0.5);
+    let leaves: Vec<LeafPoint> = (0..20usize)
+        .map(|i| {
+            let f = as_f64(i);
+            LeafPoint {
+                center: [0.03 + 0.004 * f, 0.05 + 0.003 * (f % 5.0), 0.04 + 0.002 * f],
+                area: M2(4e-4),
+                normal: [0.1, 0.0, 1.0],
+            }
+        })
+        .collect();
+    g.add_leaves(&leaves);
+    let bounds = g.occupied_bounds();
+    assert!(bounds.1[0] < 11 && bounds.1[2] < 7, "{bounds:?}");
+    let mut dirs: Vec<[f64; 3]> = sky_sectors().iter().map(|s| s.direction).collect();
+    dirs.extend([unit(15.0, 250.0), unit(80.0, 10.0), [0.0, 0.0, 1.0]]);
+    for l in &leaves {
+        let own = g.own_depth(&g.footprint(l));
+        for p in sample_points(l) {
+            for d in &dirs {
+                let a = g.path_depth(p, *d, &own);
+                let b = g.path_depth_bounded(p, *d, &own, &bounds);
+                assert_eq!(a.to_bits(), b.to_bits(), "{p:?} {d:?}");
+            }
+        }
+    }
+    // An empty grid bounds to the whole grid.
+    let e = LightGrid::with_geometry([0.0, 0.0, 0.0], Meters(0.02), [3, 4, 5], 0.5);
+    assert_eq!(e.occupied_bounds(), ([0; 3], [2, 3, 4]));
 }

@@ -30,7 +30,7 @@ use ps_units::{M2, Meters, UmolPerM2S, WPerM2};
 use serde::{Deserialize, Serialize};
 
 /// Most cells along any axis (§3.5).
-pub const MAX_CELLS_PER_AXIS: usize = 48;
+pub const MAX_CELLS_PER_AXIS: usize = 32;
 /// Smallest cell edge (§3.5).
 pub const MIN_CELL_M: f64 = 0.005;
 /// Margin added to the shoot's bounding box, as a fraction of its extent per side
@@ -293,7 +293,57 @@ impl LightGrid {
     /// `Σ field · length` along the ray from `from` in unit direction `dir` until it
     /// leaves the grid (Amanatides and Woo 1987 traversal). `own` is the leaf's own
     /// contribution to `field` (sorted by cell), excluded wherever the ray crosses it.
+    /// Inclusive cell-coordinate bounds of the cells with nonzero optical depth (the
+    /// whole grid when it is empty). A ray can stop once it leaves this box.
+    #[must_use]
+    pub fn occupied_bounds(&self) -> ([usize; 3], [usize; 3]) {
+        let mut lo = self.n;
+        let mut hi = [0usize; 3];
+        for (i, d) in self.depth.iter().enumerate() {
+            if *d != 0.0 {
+                let c = [
+                    i % self.n[0],
+                    (i / self.n[0]) % self.n[1],
+                    i / (self.n[0] * self.n[1]),
+                ];
+                for a in 0..3 {
+                    lo[a] = lo[a].min(c[a]);
+                    hi[a] = hi[a].max(c[a]);
+                }
+            }
+        }
+        if lo[0] > hi[0] {
+            return ([0; 3], [self.n[0] - 1, self.n[1] - 1, self.n[2] - 1]);
+        }
+        (lo, hi)
+    }
+
+    /// Optical depth along a ray that stops once it leaves `bounds` (from
+    /// [`LightGrid::occupied_bounds`]); bit-identical to [`LightGrid::path_depth`].
+    #[must_use]
+    pub fn path_depth_bounded(
+        &self,
+        from: [f64; 3],
+        dir: [f64; 3],
+        own: &[(usize, f64)],
+        bounds: &([usize; 3], [usize; 3]),
+    ) -> f64 {
+        self.path_sum_b(&self.depth, from, dir, own, Some(bounds))
+    }
+
     fn path_sum(&self, field: &[f64], from: [f64; 3], dir: [f64; 3], own: &[(usize, f64)]) -> f64 {
+        self.path_sum_b(field, from, dir, own, None)
+    }
+
+    /// The traversal behind [`LightGrid::path_sum`], optionally stopping at `bounds`.
+    fn path_sum_b(
+        &self,
+        field: &[f64],
+        from: [f64; 3],
+        dir: [f64; 3],
+        own: &[(usize, f64)],
+        bounds: Option<&([usize; 3], [usize; 3])>,
+    ) -> f64 {
         // A ray that starts outside the grid (a ring point of a tilted blade can lie
         // just above or below the box) is advanced to where it enters the box.
         let from = match self.locate(from) {
@@ -323,6 +373,17 @@ impl LightGrid {
                 t_delta[a] = -s / dir[a];
             }
         }
+        let (lo, hi) = match bounds {
+            Some((lo, hi)) => (*lo, *hi),
+            None => ([0; 3], [self.n[0] - 1, self.n[1] - 1, self.n[2] - 1]),
+        };
+        // The own footprint is one horizontal layer: skip the search outside its range.
+        let (own_lo, own_hi) = match (own.first(), own.last()) {
+            (Some(a), Some(b)) => (a.0, b.0),
+            _ => (1, 0),
+        };
+        let stride = [1, self.n[0], self.n[0] * self.n[1]];
+        let mut idx = self.flat(c);
         let mut t = 0.0;
         let mut sum = 0.0;
         loop {
@@ -334,18 +395,27 @@ impl LightGrid {
                 2
             };
             let t_next = t_max[a];
-            let idx = self.flat(c);
             let mut v = field[idx];
-            if let Ok(k) = own.binary_search_by_key(&idx, |o| o.0) {
+            if (own_lo..=own_hi).contains(&idx)
+                && let Ok(k) = own.binary_search_by_key(&idx, |o| o.0)
+            {
                 v = (v - own[k].1).max(0.0);
             }
             sum += v * (t_next - t);
             t = t_next;
-            // Advance along axis a.
-            let next = c[a].checked_add_signed(step[a]);
-            match next {
-                Some(i) if i < self.n[a] => c[a] = i,
-                _ => break,
+            // Advance along axis a; stop on leaving the grid or the bounds.
+            if step[a] > 0 {
+                if c[a] >= hi[a] {
+                    break;
+                }
+                c[a] += 1;
+                idx += stride[a];
+            } else {
+                if c[a] <= lo[a] {
+                    break;
+                }
+                c[a] -= 1;
+                idx -= stride[a];
             }
             t_max[a] += t_delta[a];
             if !t_next.is_finite() {
@@ -444,8 +514,12 @@ pub fn coefficients(
     sun_path: &[Option<[f64; 3]>; 24],
     sky: &[SkySector],
 ) -> Vec<LightCoeffs> {
+    use rayon::prelude::*;
+    let bounds = grid.occupied_bounds();
+    // Each leaf is independent; collect keeps the input order, so the result does not
+    // depend on the thread count.
     leaves
-        .iter()
+        .par_iter()
         .map(|l| {
             let own = grid.footprint(l);
             let own_depth = grid.own_depth(&own);
@@ -453,7 +527,7 @@ pub fn coefficients(
             // Mean transmittance over the leaf's sample points (decision 0008).
             let trans = |d: [f64; 3]| {
                 pts.iter()
-                    .map(|p| libm::exp(-grid.path_depth(*p, d, &own_depth)))
+                    .map(|p| libm::exp(-grid.path_depth_bounded(*p, d, &own_depth, &bounds)))
                     .fold(0.0, |a, b| a + b)
                     / as_f64(pts.len())
             };

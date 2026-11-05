@@ -13,8 +13,8 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 3 Organ graph | #4 | done (PR #14) |
 | 4 Species schema | #5 | done (PR #15) |
 | 5 Soil and water | #6 | done (PR #16) |
-| 6 Light | #7 | done (this PR); owner accepted 95% of leaves within 10% for M0, re-check in WP12 (decision 0008) |
-| 7 Physiology | #8 | done (this PR) |
+| 6 Light | #7 | done (PRs #17, #18); owner accepted 95% of leaves within 10% for M0, re-check in WP12 (decision 0008) |
+| 7 Physiology | #8 | done (PR #20) |
 | 8 Herb architecture and roots | #9 | next |
 | 9 World | #10 | not started |
 | 10 Export and CLI | #11 | not started |
@@ -26,7 +26,6 @@ None yet (WP11).
 
 ## Open questions for the owner
 - WP7 (decision 0009): two readings of the plan's text to confirm. Priority is the share of an organ's own available reserve it may spend per hour (taken literally, §3.9 would cap every organ below its potential), and the water stress factor multiplies the stomatal slope.
-- WP7: the CI job `plantecophys` proves the gas-exchange fixture against plantecophys in R; the fixture was generated without R.
 - Set `main` as the repository's default branch in GitHub settings (the agent cannot change repo settings).
 - WP13 (Bevy smoke test on the GTX 1070) should run around sessions 3 or 4 of M0.
 
@@ -36,7 +35,9 @@ None yet (WP11).
 
 - WP6 review (/mnt/project-files/reviews/wp6-review.md), for WP12: correlated normals for sibling leaflets in the ray tracer fixture, a Monte Carlo diffuse reference drawn from the overcast radiance, a planophile G for bean, per-leaf normals for the beam, and a const table for the sky sectors.
 
-- Performance review (/mnt/project-files/perf/perf-review-1.md): light rebuild is 31 ms/day for 300 leaves vs the 2 ms whole-plant budget. Apply /mnt/project-files/perf/wp6-light-speedups.patch (own-footprint range check, rays stop at the occupied box, rayon over leaves with ordered collect; bit-identical) on top of #18; decision record for MAX_CELLS_PER_AXIS 32 (27% faster, fixture total +1.7%). Before WP8: sparse (cell, length) root lists in ps-soil and one joint uptake call per hour.
+- Performance: the light speedups and 32 cells per axis landed (decision 0010), and class-table lookups cache their node PAR values. Before WP8: sparse (cell, length) root lists in ps-soil and one joint uptake call per hour. Before WP21: reusable scratch buffers in `allocation::hourly`, one class table per distinct (params, stress) at plot scale, and a look at `ExpansionCurve::increment`. Optional: cache the footprints `LightGrid::fit` computes.
+
+- WP7 review (/mnt/project-files/reviews/wp7-review.md): before WP8, decide the expansion temperature multiplier (proposal: advance the organ's expansion clock by dt × factor rather than scale demand, since thermal time already slows cold growth and no-catch-up makes the loss permanent); add a per-organ "transport cap bound" counter (switch to the harmonic cap if it fires on the bean); count flowering and maturity from germination; a test that class-table lookup stays within 3% of a direct solve; `HourInputs.temperature` length check instead of the 20 °C fallback; consider charging a dead organ's negative reserve to its ancestor. Plan amendments: §3.9 step 4 formula, §8.1 light metric wording.
 
 ## Notes for the next session
 - WP8 consumes ps-physio: build a `ClassTable` per plant-hour, read leaf rates with `lookup(par, leaf_capacity(...))`, pass income to `allocation::hourly`, run `starvation_deaths` in daily step 4, report `phenology::Events`. Leaf lifespan and shade senescence (daily step 4) belong to WP8.

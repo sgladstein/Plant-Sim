@@ -12,6 +12,7 @@ ps-units.workspace = true
 ps-graph.workspace = true
 serde.workspace = true
 libm.workspace = true
+rayon.workspace = true
 
 [lints]
 workspace = true
