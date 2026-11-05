@@ -408,7 +408,7 @@ pub fn drive(
             skeleton,
             water_stress,
             first_flower: None,
-            organ_values,
+            organ_values: std::sync::Arc::new(organ_values),
             soil_water,
             container: true,
             supports: Vec::new(),

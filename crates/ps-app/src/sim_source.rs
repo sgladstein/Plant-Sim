@@ -152,7 +152,7 @@ pub struct SimSource {
     /// Each plant's lens values and the (snapshot sequence, high-speed flag) they were
     /// computed for: they do not change between sim hours, so frames that only
     /// interpolate reuse them.
-    lens_values: BTreeMap<u32, ((u64, bool), LensValues)>,
+    lens_values: BTreeMap<u32, ((u64, bool), std::sync::Arc<LensValues>)>,
     seq: u64,
     snapshot: std::sync::Arc<Snapshot>,
     /// Resume at this speed once the startup step (`--day`) has finished.
@@ -626,6 +626,29 @@ pub fn charts_from(history: &[DayRow], pot_of: &BTreeMap<u32, usize>) -> Vec<Cha
         .collect()
 }
 
+/// How often the interpolated garden is rebuilt while running, per wall second. Plants
+/// move slowly; the camera still moves every frame. Rebuilding a 30-bean plot every frame
+/// of a 60 Hz display cost more than the rest of the frame.
+const GARDEN_UPDATES_PER_SECOND: f64 = 20.0;
+/// The finest step between sim hours, as a fraction of an hour.
+const GARDEN_STEPS_PER_HOUR: f64 = 16.0;
+
+/// The interpolation fraction `frac` of the hour on screen, rounded down to the garden's
+/// step at `speed` sim hours per second: at most [`GARDEN_STEPS_PER_HOUR`] steps an hour,
+/// and few enough that the garden changes about [`GARDEN_UPDATES_PER_SECOND`] times a
+/// second.
+#[must_use]
+pub fn garden_step(frac: f64, speed: f64, paused: bool) -> f32 {
+    let steps = if paused || speed <= 0.0 {
+        GARDEN_STEPS_PER_HOUR
+    } else {
+        (GARDEN_UPDATES_PER_SECOND / speed)
+            .floor()
+            .clamp(1.0, GARDEN_STEPS_PER_HOUR)
+    };
+    ((frac.clamp(0.0, 1.0) * steps).floor() / steps) as f32
+}
+
 /// A plant's lens values, by organ.
 type LensValues = BTreeMap<Lens, Vec<f32>>;
 
@@ -702,7 +725,7 @@ fn show(
             organ_values: {
                 let key = (snap.seq, high_speed);
                 match src.lens_values.get(&p.id) {
-                    Some((k, v)) if *k == key => v.clone(),
+                    Some((k, v)) if *k == key => std::sync::Arc::clone(v),
                     _ => {
                         let mut v = organ_values(
                             p,
@@ -717,7 +740,9 @@ fn show(
                             .as_deref()
                             .and_then(|l| l.plants.iter().find(|x| x.plant == p.id));
                         v.extend(recorded_values(p, recorded));
-                        src.lens_values.insert(p.id, (key, v.clone()));
+                        let v = std::sync::Arc::new(v);
+                        src.lens_values
+                            .insert(p.id, (key, std::sync::Arc::clone(&v)));
                         v
                     }
                 }
@@ -918,7 +943,11 @@ pub fn drive(
     }
     let snap = std::sync::Arc::clone(&src.snapshot);
     let tick = snap.tick;
-    let frac = (snap.hour - tick as f64).clamp(0.0, 1.0) as f32;
+    let frac = garden_step(
+        (snap.hour - tick as f64).clamp(0.0, 1.0),
+        snap.speed,
+        snap.paused,
+    );
     let high_speed = !snap.paused && snap.speed > ps_ui::HIGH_SPEED;
     // The garden and sky on screen are a function of these three: leave them (and their
     // change flags) alone while they hold, so a paused garden costs nothing to draw.
@@ -1116,6 +1145,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_garden_steps_about_twenty_times_a_second() {
+        // One sim hour a second: 16 steps an hour.
+        assert!((garden_step(0.99, 1.0, false) - 15.0 / 16.0).abs() < 1e-6);
+        // Four hours a second: 5 steps an hour, 20 a second.
+        assert!((garden_step(0.5, 4.0, false) - 0.4).abs() < 1e-6);
+        // Fast: only whole hours.
+        assert!(garden_step(0.9, 30.0, false).abs() < 1e-6);
+        // Paused or slow: the finest step.
+        assert!((garden_step(0.5, 0.1, false) - 0.5).abs() < 1e-6);
+        assert!((garden_step(0.5, 4.0, true) - 0.5).abs() < 1e-6);
     }
 
     #[test]
