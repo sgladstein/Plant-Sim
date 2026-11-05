@@ -77,7 +77,7 @@ one at a time, with options and a recommendation.
 
 ## 4. State of the project (2026-11-05, main at the handoff merge)
 
-- **Model version 0.15.0** (`ps_world::MODEL_VERSION`; the research re-tune: development trapezoid, Medlyn g1 5.79, per-organ construction cost keys, decision 0032; before it, grass blades sample light at 3 points, decision 0030, and pole beans find their stake, decision 0029). Species schema 10.
+- **Model version 0.15.0** (`ps_world::MODEL_VERSION`; the research re-tune: development trapezoid, Medlyn g1 5.79, per-organ construction cost keys, decision 0032; before it, the bean genome's 40 loci, decision 0031, grass blades sample light at 3 points, decision 0030, and pole beans find their stake, decision 0029). Species schema 10.
 - **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
   a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.

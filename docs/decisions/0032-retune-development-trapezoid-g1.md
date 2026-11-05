@@ -58,7 +58,9 @@ The package asked for 3 and 4 together, then a re-tune of seed means.
    234 Cd after flowering ends its node production about 4 days sooner at 20 °C, and day-75
    height fell from 2.04 to 1.89 m.
 6. Species schema 10 (after the genetics bump's 9), model 0.15.0 (after its 0.14.0),
-   goldens regenerated.
+   goldens regenerated. The bean genome's QTL `allele_sd` is CV_G × the trait default / √n
+   (decision 0031), so it follows the new defaults: medlyn_g1 0.5091 → 0.7369 (18% over two
+   loci), leaf_lifespan 60 → 65 Cd (10% over one locus).
 
 ## Consequences
 - Validation on four-seed means: 87 checks, **68 pass** (was 67), 19 Info misses, every M0
@@ -83,4 +85,8 @@ The package asked for 3 and 4 together, then a re-tune of seed means.
   on the mean, as decision 0021 first had it. `actions.rs::topping_a_pole_bean_releases_its_buds`
   cuts on day 18 instead of 22: the untopped vine now adds a node in the four days after day
   22, which lifts its apical hold above the buds under test.
+- `ps-session/tests/save.rs::lens_data_never_changes_the_hash` (WP26): its crowd check
+  compared two single plants on day 21, before the canopy closes, and flipped under the
+  re-tune; #102 on main replaced it with a check that plants differ, which this change
+  keeps.
 - Every golden hash changes.

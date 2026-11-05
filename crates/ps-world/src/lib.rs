@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use ps_arch::{ArchError, DayReport, HourCtx, HourLens, Plant};
 use ps_soil::{SoilError, SoilGrid, SoilHour, WaterLedger};
-use ps_species::Species;
+use ps_species::{Genotype, Species};
 use ps_units::{Celsius, Degrees, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
 use ps_weather::{DateHour, HourWeather, Preset, WeatherSeries};
 use rayon::prelude::*;
@@ -168,6 +168,8 @@ pub struct PlantEntry {
     pub soil: usize,
     /// Species id.
     pub species: String,
+    /// The genotype it grew from (WP28): its alleles, in the species' locus order.
+    pub genotype: Genotype,
     /// The plant.
     pub plant: Plant,
 }
@@ -1108,6 +1110,7 @@ impl World {
             id,
             soil,
             species: s.species.clone(),
+            genotype,
             plant,
         });
         Ok(())

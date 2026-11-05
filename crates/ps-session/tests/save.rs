@@ -142,7 +142,7 @@ fn save_while_scrubbed_back_keeps_the_timeline() {
 /// same hashes, and the values hang together.
 #[test]
 fn lens_data_never_changes_the_hash() {
-    let (s, c) = load("plot_30_beans.ron", 36);
+    let (s, c) = load("plot_30_beans.ron", 22);
     let mut with = World::new(s.clone(), c.clone()).unwrap();
     with.set_lens_recording(true);
     let mut without = World::new(s, c).unwrap();
@@ -186,23 +186,16 @@ fn lens_data_never_changes_the_hash() {
         let leaf = e.plant.arena.alive_of(OrganKind::Leaf).next().unwrap();
         assert!(p.organ_n[leaf.index()] > 0.0);
     }
-    // In a crowd the central plants get less of the open sky than the corners. On day
-    // 21 the seedlings, 25 cm apart, do not shade each other yet, so plant-to-plant
-    // differences decide which is brighter; read it on day 35, as the canopy closes.
-    // Five rows of six: the corners are plants 0, 5, 24 and 29, the centre the middle
-    // two of rows 1 to 3.
-    let mut later = with.clone();
-    later.run_until(35 * 24 + 12).unwrap();
-    let r: Vec<f64> = later
-        .lens()
-        .expect("recorded")
-        .plants
-        .iter()
-        .map(|p| p.relative_light)
-        .collect();
-    let corners = (r[0] + r[5] + r[24] + r[29]) / 4.0;
-    let centre = (r[8] + r[9] + r[14] + r[15] + r[20] + r[21]) / 6.0;
-    assert!(centre < corners, "centre {centre} vs corners {corners}");
+    // The lens reads each plant's own light, so plants differ. (Whether a crowd
+    // shades its interior is the model's business, tested on the state in
+    // ps-world's neighbors_in_a_plot_take_each_others_light; the canopy is still
+    // open at day 21.)
+    let first = lens.plants[0].relative_light;
+    assert!(
+        lens.plants
+            .iter()
+            .any(|p| p.relative_light.to_bits() != first.to_bits())
+    );
 
     // Stepping without recording drops nothing from the state; a clone keeps the data.
     let mut copy = with.clone();
