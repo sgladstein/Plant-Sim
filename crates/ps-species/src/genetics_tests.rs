@@ -23,6 +23,9 @@ fn qtl(trait_name: &str, effect: f64, at: Option<(u8, f64)>) -> Locus {
         tier: None,
         chromosome: at.map(|a| a.0),
         position_cm: at.map(|a| a.1),
+        line: None,
+        frequencies: None,
+        source: Some("test".into()),
     }
 }
 
@@ -39,6 +42,7 @@ fn named(name: &str, states: u8, at: Option<(u8, f64)>) -> Locus {
 fn with_loci(loci: Vec<Locus>) -> Species {
     let mut s = bean();
     s.genome.loci = loci;
+    s.genome.chromosome_lengths_cm = None;
     s.genome.mutation_rate.value = 0.0;
     s.genome.named_mutation_rate = Some(Param {
         value: 0.0,
@@ -47,6 +51,10 @@ fn with_loci(loci: Vec<Locus>) -> Species {
     });
     s.validate().expect("test species is valid");
     s
+}
+
+fn wheat() -> Species {
+    Species::from_ron(include_str!("../../../data/species/spring_wheat.ron")).expect("wheat loads")
 }
 
 fn key(entity: u64, side: GameteSide) -> MeiosisKey {
@@ -181,14 +189,48 @@ fn adding_a_locus_keeps_other_draws() {
     }
 }
 
-/// The M0 species (zero allele variance) is unchanged by meiosis and crossing.
+/// A species with zero allele variance (the M0 wheat) breeds true; a bean pure line
+/// breeds true but for rare QTL mutations.
 #[test]
-fn m0_species_breeds_true() {
-    let s = bean();
+fn pure_lines_breed_true() {
+    let s = wheat();
     let g = s.default_genotype();
     for e in 0..100 {
         assert_eq!(s.seed_genotype(&g, &g, 3, e, 500), g);
     }
+    let b = bean();
+    let g = b.default_genotype();
+    let changed: usize = (0..1000)
+        .map(|e| {
+            let child = b.seed_genotype(&g, &g, 3, e, 500);
+            child
+                .alleles
+                .iter()
+                .zip(&g.alleles)
+                .filter(|(x, y)| x != y)
+                .count()
+        })
+        .sum();
+    // 1,000 seeds × 2 gametes × 23 QTL at 1e-3: about 46 changed alleles.
+    assert!((20..=80).contains(&changed), "{changed}");
+}
+
+/// Bush × pole: Fin is dominant, so the F1 climbs and the F2 splits 3 : 1.
+#[test]
+fn habit_segregates_three_to_one() {
+    let bush = bean();
+    let pole = Species::from_ron(include_str!("../../../data/species/pole_bean.ron")).unwrap();
+    let habit = |g: &Genotype| bush.phenotype(g).get("habit").unwrap();
+    let f1 = bush.seed_genotype(&bush.default_genotype(), &pole.default_genotype(), 5, 1, 10);
+    assert_eq!(habit(&f1), 1.0);
+    let n = 4000u64;
+    let climbing = (0..n)
+        .filter(|&e| habit(&bush.seed_genotype(&f1, &f1, 5, 100 + e, 2000)) > 0.5)
+        .count();
+    #[allow(clippy::cast_precision_loss)]
+    let share = climbing as f64 / n as f64;
+    // 3 SD of a binomial share at n = 4,000 is 0.021.
+    assert!((share - 0.75).abs() < 0.021, "{share}");
 }
 
 /// WP28 done-when 2: F2 variance exceeds F1 variance (with linkage).
@@ -270,7 +312,7 @@ fn allele_states_round_and_clamp() {
 #[test]
 fn linkage_map_is_validated() {
     let check = |l: Locus| {
-        let mut s = bean();
+        let mut s = with_loci(vec![]);
         s.genome.loci.push(l);
         s.validate()
     };
@@ -317,7 +359,7 @@ fn linkage_map_is_validated() {
 /// Species files without the decision-0023 keys still load and serialize as before.
 #[test]
 fn optional_genome_keys_round_trip() {
-    let s = bean();
+    let s = wheat();
     let text = ron::ser::to_string(&s.genome).unwrap();
     assert!(
         !text.contains("chromosome") && !text.contains("tier"),
@@ -446,4 +488,116 @@ fn expressed_reads_an_allelic_series() {
     assert_eq!(flower(0.0, 0.0).flower, "#ffffff");
     let bad = table.replacen("coverage: Some(0.35)", "coverage: Some(1.5)", 1);
     assert!(SeedColourTable::from_ron(&bad, &s).is_err());
+}
+
+/// The bean seed-colour table loads against the bean files and reproduces the
+/// genotype → colour pairs the research read in primary papers.
+#[test]
+fn bean_seed_colour_table() {
+    let s = bean();
+    let t = SeedColourTable::from_ron(
+        include_str!("../../../data/genetics/bean_seed_colour.ron"),
+        &s,
+    )
+    .expect("bean table loads");
+    let pole = Species::from_ron(include_str!("../../../data/species/pole_bean.ron")).unwrap();
+    t.validate(&pole).expect("the table fits the pole bean too");
+    let index = |sym: &str| {
+        s.genome
+            .loci
+            .iter()
+            .position(|l| l.name.as_deref() == Some(sym))
+            .unwrap()
+    };
+    // A genotype: the bean line with the named loci given as homozygous states.
+    let look = |states: &[(&str, u8)]| {
+        let mut g = s.default_genotype();
+        for &(sym, v) in states {
+            g.alleles[index(sym)] = (f64::from(v), f64::from(v));
+        }
+        t.evaluate(&s, &g)
+    };
+    let coloured = [("P", 2), ("T", 1), ("C", 2), ("J", 1), ("Asp", 1)];
+    let with = |extra: &[(&'static str, u8)]| {
+        let mut v: Vec<(&str, u8)> = coloured.to_vec();
+        v.extend_from_slice(extra);
+        look(&v)
+    };
+    // The archetype line is pp: white seed, white flower (its appearance colour).
+    let line = t.evaluate(&s, &s.default_genotype());
+    assert_eq!(
+        (line.seed_coat.as_str(), line.flower.as_str()),
+        ("#F4F1E8", "#F4F1E8")
+    );
+    // H3: P C J G B V black, purple flower; asp asp matte.
+    let black = with(&[("G", 1), ("B", 1), ("V", 2)]);
+    assert_eq!(black.seed_coat, "#1A1416");
+    assert_eq!(black.flower, "#8A4FB5");
+    assert!(black.glossy && (black.coverage - 1.0).abs() < 1e-15);
+    assert!(!with(&[("G", 1), ("B", 1), ("V", 2), ("Asp", 0)]).glossy);
+    // H5, H6, H7.
+    assert_eq!(with(&[("G", 1), ("B", 0), ("V", 2)]).seed_coat, "#3F2630");
+    assert_eq!(with(&[("G", 1), ("B", 1), ("V", 0)]).seed_coat, "#4A3020");
+    assert_eq!(with(&[("G", 1), ("B", 0), ("V", 0)]).seed_coat, "#A5773A");
+    // H10 dark red kidney: J g B v rk.
+    assert_eq!(
+        with(&[("G", 0), ("B", 1), ("V", 0), ("Rk", 0)]).seed_coat,
+        "#6B1A1F"
+    );
+    // H13 Prim: j G b v^lae, light yellow with a pink flower.
+    let prim = with(&[("J", 0), ("G", 1), ("B", 0), ("V", 1)]);
+    assert_eq!(
+        (prim.seed_coat.as_str(), prim.flower.as_str()),
+        ("#E8D58A", "#D99BB8")
+    );
+    // Grey-white p^gri stops the pipeline.
+    assert_eq!(look(&[("P", 1)]).seed_coat, "#DAD6CC");
+    // Partly coloured (tt): white flower even with V; the pattern follows Z and Bip.
+    let tt = |z: u8, bip: u8| with(&[("T", 0), ("V", 2), ("Z", z), ("Bip", bip)]);
+    let full = tt(2, 2);
+    assert_eq!(
+        (full.pattern.as_str(), full.flower.as_str()),
+        ("self", "#F4F1E8")
+    );
+    assert_eq!(tt(0, 2).pattern, "virgarcus");
+    assert_eq!(tt(0, 0).pattern, "bipunctata");
+    assert_eq!(tt(2, 1).pattern, "anasazi");
+    assert_eq!(tt(1, 2).pattern, "sellatus");
+    assert!((tt(0, 0).coverage - 0.1).abs() < 1e-15);
+}
+
+#[test]
+fn lines_and_frequencies_are_validated() {
+    let check = |l: Locus| {
+        let mut s = with_loci(vec![]);
+        s.genome.loci.push(l);
+        s.validate()
+    };
+    let mut l = named("P", 3, None);
+    l.frequencies = Some(vec![0.2, 0.3, 0.5]);
+    l.line = Some(2.0);
+    assert!(check(l.clone()).is_ok());
+    let mut bad_line = l.clone();
+    bad_line.line = Some(3.0);
+    assert!(check(bad_line).is_err());
+    let mut half_state = l.clone();
+    half_state.line = Some(0.5);
+    assert!(check(half_state).is_err());
+    let mut bad_sum = l.clone();
+    bad_sum.frequencies = Some(vec![0.2, 0.3, 0.4]);
+    assert!(check(bad_sum).is_err());
+    let mut wrong_len = l;
+    wrong_len.frequencies = Some(vec![0.5, 0.5]);
+    assert!(check(wrong_len).is_err());
+    let mut qtl_freq = qtl("habit", 1.0, None);
+    qtl_freq.frequencies = Some(vec![1.0]);
+    assert!(check(qtl_freq).is_err());
+    let mut no_source = qtl("habit", 1.0, None);
+    no_source.source = None;
+    assert!(check(no_source).is_err());
+    // A visual-only named locus needs no trait; a QTL does.
+    assert!(check(named("V", 3, None)).is_ok());
+    let mut no_trait = qtl("habit", 1.0, None);
+    no_trait.trait_name = String::new();
+    assert!(check(no_trait).is_err());
 }
