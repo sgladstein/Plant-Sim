@@ -58,6 +58,11 @@ pub struct LeafPoint {
     pub area: M2,
     /// Unit normal of the leaf blade (pointing up); `[0, 0, 1]` for a flat leaf.
     pub normal: [f64; 3],
+    /// A narrow strip (a third of a grass blade) instead of a broad leaf: the offset
+    /// from its center to each of its two end sample points, along the strip. `None`
+    /// for a broad leaf, sampled on a disc (decision 0030).
+    #[serde(default)]
+    pub strip: Option<[f64; 3]>,
 }
 
 /// A leaf's footprint on a grid and its optical depth there (see
@@ -1060,7 +1065,7 @@ pub(crate) fn coefficients_with(
     debug_assert_eq!(grid.directions, dirs.all, "grid built for these directions");
     let bounds = grid.ray_bounds();
     let nd = dirs.all.len();
-    let pts: Vec<[[f64; 3]; SAMPLE_POINTS]> = leaves.iter().map(sample_points).collect();
+    let pts: Vec<Samples> = leaves.iter().map(sample_points).collect();
     // Leaves in chunks, in parallel; within a chunk, direction by direction, so a
     // thread's rays read one direction's depth at a time. Each leaf is independent and
     // collect keeps the input order, so the result does not depend on the thread count.
@@ -1072,13 +1077,14 @@ pub(crate) fn coefficients_with(
             for j in 0..nd {
                 for (c, &i) in chunk.iter().enumerate() {
                     // Mean transmittance over the leaf's sample points (decision 0008).
-                    t[c * nd + j] = pts[i]
+                    let own = pts[i].points();
+                    t[c * nd + j] = own
                         .iter()
                         .map(|p| {
                             libm::exp(-grid.path_depth_b(*p, j, &feet[i], &index[c], Some(&bounds)))
                         })
                         .fold(0.0, |a, b| a + b)
-                        / as_f64(SAMPLE_POINTS);
+                        / as_f64(own.len());
                 }
             }
             chunk
@@ -1143,11 +1149,49 @@ fn leaf_coeffs(
 
 /// Number of points on a leaf's disc from which rays are cast: the center and a ring.
 pub const SAMPLE_POINTS: usize = 7;
+/// Number of points along a narrow strip (a third of a grass blade) from which rays are
+/// cast: its center and one toward each end (decision 0030).
+pub const STRIP_SAMPLE_POINTS: usize = 3;
 
-/// The leaf's sample points: its center and six points on a ring at `r/√2` (the ring
-/// that splits the disc into equal-area halves), in the plane of the leaf blade.
+/// A leaf's sample points: up to [`SAMPLE_POINTS`] of them.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Samples {
+    at: [[f64; 3]; SAMPLE_POINTS],
+    len: usize,
+}
+
+impl Samples {
+    /// The points.
+    #[must_use]
+    pub fn points(&self) -> &[[f64; 3]] {
+        &self.at[..self.len]
+    }
+}
+
+/// The leaf's sample points. A broad leaf: its center and six points on a ring at
+/// `r/√2` (the ring that splits the disc into equal-area halves), in the plane of the
+/// leaf blade. A narrow strip: its center and the two points its `strip` offset puts
+/// along it (decision 0030).
 #[must_use]
-pub fn sample_points(l: &LeafPoint) -> [[f64; 3]; SAMPLE_POINTS] {
+pub fn sample_points(l: &LeafPoint) -> Samples {
+    let mut at = [l.center; SAMPLE_POINTS];
+    if let Some(o) = l.strip {
+        for i in 0..3 {
+            at[1][i] += o[i];
+            at[2][i] -= o[i];
+        }
+        return Samples {
+            at,
+            len: STRIP_SAMPLE_POINTS,
+        };
+    }
+    Samples {
+        at: disc_points(l),
+        len: SAMPLE_POINTS,
+    }
+}
+
+fn disc_points(l: &LeafPoint) -> [[f64; 3]; SAMPLE_POINTS] {
     let rr = leaf_radius(l.area) * core::f64::consts::FRAC_1_SQRT_2;
     let (u, v) = blade_basis(l.normal);
     let mut out = [l.center; SAMPLE_POINTS];

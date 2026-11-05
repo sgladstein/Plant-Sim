@@ -5085,6 +5085,7 @@ dependencies = [
 name = "ps-session"
 version = "0.1.0"
 dependencies = [
+ "ps-graph",
  "ps-weather",
  "ps-world",
  "thiserror 2.0.21",

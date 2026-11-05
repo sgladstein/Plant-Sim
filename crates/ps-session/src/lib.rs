@@ -18,6 +18,13 @@
 //! tick. An action taken while behind the latest tick starts a new branch: the recorded
 //! future (later actions and midnight copies) is discarded, as in a save loaded and
 //! changed. Decision 0016.
+//!
+//! Saving (WP26): [`Session::save_ron`] asks the thread for the world's state as RON
+//! between two hours and keeps running. The save holds the timeline's whole log (a
+//! save made while scrubbed back keeps the recorded future as scheduled actions), so
+//! loading it with [`World::from_snapshot_ron`] and stepping on reaches the same hashes
+//! as the session. Lens data ([`ps_world::LensData`]) rides in each snapshot and is
+//! never saved or hashed.
 
 mod snapshot;
 
@@ -31,6 +38,7 @@ use std::time::Instant; // determinism: allow (pacing only; see the module docs)
 use ps_weather::DateHour;
 use ps_world::{Action, ActionKind, DayRow, World, WorldError, WorldState};
 
+pub use ps_world::{LensData, PlantLens, SoilLens};
 pub use snapshot::{Snapshot, SnapshotBuffer};
 
 /// A request to the owner of sim time. Mirrors `ps_ui::TimeCommand` one to one.
@@ -75,6 +83,8 @@ pub struct SessionOptions {
     /// Longest real time the sim may fall behind the requested speed before it drops
     /// the backlog instead of racing to catch up.
     pub max_lag: Duration,
+    /// Record lens data every hour (WP26). It never changes the state or its hashes.
+    pub lens: bool,
 }
 
 impl Default for SessionOptions {
@@ -85,6 +95,7 @@ impl Default for SessionOptions {
             keyframe_every_days: 1,
             publish_interval: Duration::from_millis(8),
             max_lag: Duration::from_millis(250),
+            lens: true,
         }
     }
 }
@@ -96,7 +107,20 @@ enum Command {
     Time(TimeCommand),
     Act(ActionKind, Option<Sender<ActResult>>),
     WhenIdle(Sender<u64>),
+    Save(Sender<Result<Saved, String>>),
     Stop,
+}
+
+/// A save taken from a running session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Saved {
+    /// The world's state as RON ([`World::snapshot_ron`]); load it with
+    /// [`World::from_snapshot_ron`].
+    pub ron: String,
+    /// The tick the save was taken at.
+    pub tick: u64,
+    /// The full-state hash at that tick ([`World::state_hash`]); a loaded save has it.
+    pub hash: u64,
 }
 
 /// The handle the app keeps: sends commands, reads snapshots, stops the thread.
@@ -164,6 +188,23 @@ impl Session {
             .send(Command::WhenIdle(tx))
             .map_err(|_| SessionError::Lost)?;
         rx.recv().map_err(|_| SessionError::Lost)
+    }
+
+    /// Saves the world as it stands between two hours, without stopping the sim: the
+    /// thread serializes its state and carries on (paused stays paused, running keeps
+    /// running). A step or seek in progress is saved where it has got to.
+    ///
+    /// # Errors
+    /// [`SessionError::Lost`] if the thread is gone, or [`SessionError::World`] if the
+    /// state cannot be serialized.
+    pub fn save_ron(&self) -> Result<Saved, SessionError> {
+        let (tx, rx) = mpsc::channel();
+        self.tx
+            .send(Command::Save(tx))
+            .map_err(|_| SessionError::Lost)?;
+        rx.recv()
+            .map_err(|_| SessionError::Lost)?
+            .map_err(|e| SessionError::World(WorldError::Snapshot(e)))
     }
 
     /// The latest snapshot, without waiting for the sim.
@@ -234,7 +275,8 @@ struct Runner {
 }
 
 impl Runner {
-    fn new(world: World, options: SessionOptions) -> Self {
+    fn new(mut world: World, options: SessionOptions) -> Self {
+        world.set_lens_recording(options.lens);
         let mut keyframes = BTreeMap::new();
         keyframes.insert(world.tick(), world.state().clone());
         let log = world.state().log.clone();
@@ -391,6 +433,18 @@ impl Runner {
             }
             // Answered after the next publish, so the waiter sees a current snapshot.
             Command::WhenIdle(w) => self.waiters.push(w),
+            Command::Save(reply) => {
+                let world = &self.world;
+                let r = world
+                    .snapshot_ron()
+                    .map(|ron| Saved {
+                        ron,
+                        tick: world.tick(),
+                        hash: world.state_hash(),
+                    })
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(r);
+            }
             Command::Stop => {}
         }
     }
@@ -472,6 +526,7 @@ impl Runner {
         state.log.truncate(state.applied);
         let applied = state.applied;
         let mut w = World::from_state(state)?;
+        w.set_lens_recording(self.options.lens);
         for a in log.iter().skip(applied) {
             w.schedule(a.clone())?;
         }
@@ -591,6 +646,7 @@ impl Runner {
             added_supports: st.added_supports.clone(),
             added_obstacles: st.added_obstacles.clone(),
             day_hash: st.hashes.last().copied(),
+            lens: self.world.lens().cloned(),
             rejected: self.rejected.clone(),
             error: self.error.clone(),
         }

@@ -27,6 +27,7 @@ fn uniform_canopy(
                         ],
                         area: M2(leaf_area),
                         normal: normal(leaves.len()),
+                        strip: None,
                     });
                 }
             }
@@ -112,6 +113,7 @@ fn isolated_leaf_is_fully_lit() {
         center: [0.0, 0.0, 0.1],
         area: M2(0.0075),
         normal: [0.0, 0.0, 1.0],
+        strip: None,
     }];
     let mut sun = [None; 24];
     sun[12] = Some([0.0, 0.0, 1.0]);
@@ -142,11 +144,13 @@ fn leaf_under_another_is_shaded() {
             center: [0.0, 0.0, 0.15],
             area: M2(0.0075),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
         LeafPoint {
             center: [0.0, 0.0, 0.10],
             area: M2(0.0075),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
     ];
     let mut sun = [None; 24];
@@ -173,11 +177,13 @@ fn grid_respects_limits() {
             center: [0.0, 0.0, 0.02],
             area: M2(1e-4),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
         LeafPoint {
             center: [0.004, 0.0, 0.025],
             area: M2(1e-4),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
     ];
     let g = LightGrid::fit(&tiny, &[], &[]).unwrap();
@@ -188,11 +194,13 @@ fn grid_respects_limits() {
             center: [0.0, 0.0, 0.0],
             area: M2(0.01),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
         LeafPoint {
             center: [0.3, -0.2, 1.0],
             area: M2(0.01),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
     ];
     let g = LightGrid::fit(&tall, &[], &[]).unwrap();
@@ -272,6 +280,7 @@ fn bounded_traversal_is_bit_identical() {
                 center: [0.03 + 0.004 * f, 0.05 + 0.003 * (f % 5.0), 0.04 + 0.002 * f],
                 area: M2(4e-4),
                 normal: [0.1, 0.0, 1.0],
+                strip: None,
             }
         })
         .collect();
@@ -284,7 +293,7 @@ fn bounded_traversal_is_bit_identical() {
     );
     for l in &leaves {
         let own = g.footprint_of(l);
-        for p in sample_points(l) {
+        for &p in sample_points(l).points() {
             for j in 0..dirs.len() {
                 let a = g.path_depth(p, j, &own);
                 let b = g.path_depth_bounded(p, j, &own, &bounds);
@@ -307,6 +316,8 @@ fn bounded_traversal_is_bit_identical() {
                 center: [x + 0.003 * f, y + 0.002 * (f % 7.0), z + 0.0025 * f],
                 area: M2(3e-4),
                 normal: [0.2, -0.1, 1.0],
+                // Every third leaf a strip (decision 0030), so its 3 points are covered.
+                strip: (i % 3 == 0).then_some([0.012, 0.004, 0.003]),
             }
         })
         .collect();
@@ -314,7 +325,7 @@ fn bounded_traversal_is_bit_identical() {
     let bounds = g.ray_bounds();
     for l in &clumps {
         let own = g.footprint_of(l);
-        for p in sample_points(l) {
+        for &p in sample_points(l).points() {
             for j in 0..dirs.len() {
                 let a = g.path_depth(p, j, &own);
                 let b = g.path_depth_bounded(p, j, &own, &bounds);
@@ -353,11 +364,13 @@ fn a_tilted_leaf_shades_by_its_projection() {
                 center: [0.0, 0.0, 0.15],
                 area: M2(0.0075),
                 normal,
+                strip: None,
             },
             LeafPoint {
                 center: [0.0, 0.0, 0.10],
                 area: M2(0.0075),
                 normal: [0.0, 0.0, 1.0],
+                strip: None,
             },
         ];
         let (_, c) = rebuild_daily(&leaves, &[], &sun, &sky_sectors());
@@ -429,6 +442,7 @@ fn footprint_matches_the_reference_bit_for_bit() {
             center: [-0.02 + 0.0007 * f, 0.13 - 0.00041 * f, -0.005 + 0.00029 * f],
             area: M2(1e-6 + 2.3e-5 * as_f64(i % 37)),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         };
         let a = g.footprint(&l);
         let b = footprint_reference(&g, &l);
@@ -436,6 +450,31 @@ fn footprint_matches_the_reference_bit_for_bit() {
         for (x, y) in a.iter().zip(&b) {
             assert_eq!(x.0, y.0, "leaf {i}");
             assert_eq!(x.1.to_bits(), y.1.to_bits(), "leaf {i}");
+        }
+    }
+}
+
+/// Decision 0030: a narrow strip casts rays from its center and one point toward each
+/// end; a broad leaf keeps the seven-point disc.
+#[test]
+fn strips_sample_three_points_along_them() {
+    let disc = LeafPoint {
+        center: [0.1, 0.2, 0.3],
+        area: M2(0.002),
+        normal: [0.0, 0.0, 1.0],
+        strip: None,
+    };
+    assert_eq!(sample_points(&disc).points().len(), SAMPLE_POINTS);
+    let strip = LeafPoint {
+        strip: Some([0.01, 0.0, 0.02]),
+        ..disc
+    };
+    let s = sample_points(&strip);
+    let want = [[0.1, 0.2, 0.3], [0.11, 0.2, 0.32], [0.09, 0.2, 0.28]];
+    assert_eq!(s.points().len(), STRIP_SAMPLE_POINTS);
+    for (p, q) in s.points().iter().zip(&want) {
+        for i in 0..3 {
+            assert!((p[i] - q[i]).abs() < 1e-12, "{p:?} vs {q:?}");
         }
     }
 }

@@ -606,6 +606,19 @@ pub struct HourCtx<'a> {
     pub patm: KPa,
 }
 
+/// One plant's hourly lens data (WP26), filled by [`Plant::grow_hour_recording`]:
+/// values the step computes anyway, kept for the viewer. Never part of the state, so
+/// never saved or hashed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HourLens {
+    /// Carbon moved from each organ's parent into it during the hour (negative: an
+    /// export to the parent), indexed by organ id.
+    pub phloem_import: Vec<GramsC>,
+    /// The temperature each organ grew at (air for the shoot, soil layer for roots
+    /// and the seed; leaf temperature replaces air for leaves with WP27).
+    pub temperature: Vec<Celsius>,
+}
+
 /// Share of potential mass a new organ starts with (decision 0013; ~).
 pub const PRIMORDIUM: f64 = 0.02;
 
@@ -993,6 +1006,65 @@ impl Plant {
         KgWater(water)
     }
 
+    /// Light on the plant this hour, for the competition lens (WP26): the leaf area
+    /// and its area-weighted mean absorbed PAR, read from the leaves' light
+    /// coefficients exactly as [`Plant::water_demand_with`] reads them. Pure; call after
+    /// the day's light rebuild.
+    #[must_use]
+    pub fn absorbed_par(&self, ctx: &HourCtx<'_>) -> (ps_units::M2, UmolPerM2S) {
+        let wx = ctx.weather;
+        let sin_e = if wx.sun.is_up() {
+            wx.sun.direction()[2]
+        } else {
+            0.0
+        };
+        let (mut area, mut sum) = (0.0, 0.0);
+        for id in self.arena.alive_of(OrganKind::Leaf) {
+            let i = id.index();
+            let a_leaf = self.arena.size[i].area.0;
+            if a_leaf <= 0.0 {
+                continue;
+            }
+            let a = ps_light::absorbed_par(
+                &self.arena.light[i],
+                ctx.hour,
+                wx.direct,
+                wx.diffuse,
+                sin_e,
+                self.params.absorptance,
+            );
+            area += a_leaf;
+            sum += a.mean().0 * a_leaf;
+        }
+        let mean = if area > 0.0 { sum / area } else { 0.0 };
+        (ps_units::M2(area), UmolPerM2S(mean))
+    }
+
+    /// PAR a horizontal, unshaded leaf of this plant would absorb under this hour's
+    /// open sky (the competition lens's reference, WP26).
+    #[must_use]
+    pub fn open_sky_par(&self, ctx: &HourCtx<'_>) -> UmolPerM2S {
+        let wx = ctx.weather;
+        let to_par = ps_light::PAR_FRACTION * ps_light::UMOL_PER_J_PAR * self.params.absorptance;
+        UmolPerM2S((wx.direct.0.max(0.0) + wx.diffuse.0.max(0.0)) * to_par)
+    }
+
+    /// Each organ's nitrogen per unit dry mass, g N g⁻¹, indexed by organ id (zero for
+    /// dead or massless organs), for the nitrogen lens (WP26).
+    #[must_use]
+    pub fn organ_n_concentration(&self) -> Vec<f64> {
+        (0..self.arena.len())
+            .map(|i| {
+                let dm = self.arena.structural_all()[i].0;
+                if self.arena.alive[i] && dm > 0.0 {
+                    self.arena.nitrogen[i].0 / dm
+                } else {
+                    0.0
+                }
+            })
+            .collect()
+    }
+
     /// The plant's roots, for the world's joint uptake.
     #[must_use]
     pub fn uptake_request(&self, demand: KgWater) -> ps_soil::PlantUptake<'_> {
@@ -1014,6 +1086,22 @@ impl Plant {
         ctx: &HourCtx<'_>,
         soil: &SoilGrid,
         uptake: Option<&Uptake>,
+    ) -> Result<HourReport, ArchError> {
+        self.grow_hour_recording(ctx, soil, uptake, None)
+    }
+
+    /// [`Plant::grow_hour`], also filling `lens` with the hour's organ temperatures and
+    /// phloem fluxes (WP26). Recording only copies values the step computes, so the
+    /// plant ends bit for bit as after [`Plant::grow_hour`].
+    ///
+    /// # Errors
+    /// As [`Plant::grow_hour`].
+    pub fn grow_hour_recording(
+        &mut self,
+        ctx: &HourCtx<'_>,
+        soil: &SoilGrid,
+        uptake: Option<&Uptake>,
+        lens: Option<&mut HourLens>,
     ) -> Result<HourReport, ArchError> {
         let wx = ctx.weather;
         if let Some(u) = uptake {
@@ -1051,7 +1139,11 @@ impl Plant {
         // Nodules pay for the hour's fixation first (decision 0020).
         self.fix_hour();
         let respiring = self.phenology.stage != Stage::Mature;
-        let rep = allocation::hourly(
+        let (flows, lens_temps) = match lens {
+            Some(l) => (Some(&mut l.phloem_import), Some(&mut l.temperature)),
+            None => (None, None),
+        };
+        let rep = allocation::hourly_recording(
             &mut self.arena,
             &self.params.allometry,
             &self.params.carbon,
@@ -1065,7 +1157,11 @@ impl Plant {
                 n_floor: Some(&self.params.nitrogen.growth_floor),
             },
             &mut self.ledger,
+            flows,
         )?;
+        if let Some(t) = lens_temps {
+            t.clone_from(&temps);
+        }
         // Growing organs draw nitrogen for the hour's growth from the pool.
         self.top_up_hour();
         // Plant thermal time: soil at seed depth until emergence, then air.

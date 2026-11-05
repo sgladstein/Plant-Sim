@@ -12,5 +12,8 @@ ps-weather.workspace = true
 ps-world.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+ps-graph.workspace = true
+
 [lints]
 workspace = true

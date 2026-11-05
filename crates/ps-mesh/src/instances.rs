@@ -29,6 +29,32 @@ pub fn jitter(id: u32, k: u32) -> f32 {
     2.0 * f - 1.0
 }
 
+/// Cotyledon instance scale per metre of the sim's bulk length: the template is about
+/// 1.4 scale units long, so a cotyledon draws about 1.5 times its bulk length.
+pub const COTYLEDON_SCALE: f32 = 1.1;
+
+/// Drawn length of an open bean flower, m: the standard and wings are 12 to 15 mm. The
+/// sim's flower is a 1 to 4 mm carbon sink that lives about a day before it sets a pod or
+/// drops, so the viewer draws it at a flower's size while it is open (WP20).
+pub const FLOWER_LENGTH: f32 = 0.013;
+
+/// Thermal age over which a flower opens from a bud, °C·day (about half a day).
+pub const FLOWER_OPENING: f32 = 8.0;
+
+/// The drawn length of a flower: a bud of a third of [`FLOWER_LENGTH`] opening to the
+/// full size over [`FLOWER_OPENING`], never smaller than the sim's own length.
+#[must_use]
+pub fn flower_length(p: &Placement) -> f32 {
+    let age = if p.thermal_age.is_finite() {
+        p.thermal_age
+    } else {
+        FLOWER_OPENING
+    };
+    let open = (age / FLOWER_OPENING).clamp(0.0, 1.0);
+    let drawn = FLOWER_LENGTH * (1.0 + 2.0 * open) / 3.0;
+    drawn.max(p.length)
+}
+
 /// Thermal age by which a bean leaf has unfolded, °C·day: trifoliates emerge folded
 /// along their midribs and open over about the first week (at 20 °C mean, base 10 °C).
 pub const UNFOLD_THERMAL_AGE: f32 = 70.0;
@@ -109,18 +135,15 @@ impl Default for InstanceOptions {
     }
 }
 
-/// Droop level for a water stress factor (1 = turgid → level 0).
+/// Droop level for a water stress factor (1 = turgid → level 0), from
+/// [`crate::wilt_of_stress`].
 #[must_use]
 pub fn droop_level(water_stress_factor: f32) -> u8 {
-    let s = if water_stress_factor.is_finite() {
-        water_stress_factor.clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
+    let w = crate::wilt_of_stress(water_stress_factor);
     let levels = f32::from(DROOP_LEVELS - 1);
-    // In 0..=levels by the clamp above, so the cast is exact.
+    // In 0..=levels as wilt is in 0..=1, so the cast is exact.
     #[allow(clippy::cast_sign_loss)]
-    let level = ((1.0 - s) * levels).round() as u8;
+    let level = (w * levels).round() as u8;
     level
 }
 
@@ -191,9 +214,10 @@ pub fn instances(skeleton: &Skeleton, options: InstanceOptions) -> Vec<Instance>
             continue;
         }
         let scale = match template {
-            Template::Cotyledon | Template::Unifoliate | Template::Trifoliate => {
-                Vec3::splat(p.area.sqrt())
-            }
+            Template::Unifoliate | Template::Trifoliate => Vec3::splat(p.area.sqrt()),
+            // The sim sizes a cotyledon as a bulk organ (length and radius, no area);
+            // drawn about 1.5 times its bulk length, as a fleshy seed half is.
+            Template::Cotyledon => Vec3::splat(p.area.sqrt().max(COTYLEDON_SCALE * p.length)),
             Template::GrassBlade => {
                 let aspect = grass.unwrap_or(1.0);
                 let width = (p.area.max(0.0) / (BLADE_SHAPE * aspect)).sqrt();
@@ -202,7 +226,7 @@ pub fn instances(skeleton: &Skeleton, options: InstanceOptions) -> Vec<Instance>
             Template::Pod | Template::Seed | Template::WheatEar => {
                 Vec3::new(p.length, p.radius, p.radius)
             }
-            Template::Flower => Vec3::splat(p.length),
+            Template::Flower => Vec3::splat(flower_length(p)),
             Template::Bud => Vec3::splat(p.radius),
             Template::Nodule => Vec3::splat(if p.radius > 0.0 {
                 p.radius.clamp(0.001_5, 0.004)
