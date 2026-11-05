@@ -69,10 +69,10 @@ cap, elongation rate) from OpenSimRoot [F].
 
 ### 3.3 Uptake from real root length
 - **Water.** Today `min(k · L/V · (W − W_p), u_max · L, available)` per cell. With 10 to
-  100 times more `L` early, re-fit `k` and `u_max` to the CERES value of about 0.03 cm³
-  of water per cm of root per day, and add saturation in root length density,
-  `L/V ÷ (L/V + 0.5 cm cm⁻³)` [F, archive roots note §4; the saturating form is an
-  inference there].
+  100 times more `L` early, keep `u_max` (already the CERES value of 0.03 cm³ of water
+  per cm of root per day), re-fit `k` on seed means, and add saturation in root length
+  density, `L/V ÷ (L/V + 0.5 cm cm⁻³)` [F, archive roots note §4; the saturating form is
+  an inference there].
 - **Nitrogen.** Remove the 25× capacity factor and the 4 cm reach: uptake capacity per
   cell from the cell's own root length, with CROPGRO's RTNO3 per unit length (decision
   0020 second review round names it) [F].
