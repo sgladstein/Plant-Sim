@@ -2,7 +2,7 @@
 // Every number has a unit and a source; "~" means a guess to validate. Bean-only
 // constants the grass module does not read say so in their source.
 Species(
-  schema: 6,
+  schema: 7,
   id: "spring_wheat",
   name: "Spring wheat",
   growth_form: Grass,
@@ -188,6 +188,15 @@ Species(
     heap_radius: (value: 15.0, unit: "cm", source: "~ a fallen vine coils back on itself"),
     lodge_height: (value: 2.0, unit: "cm", source: "~ a fallen stem lies on the soil"),
     pod_rot_rate: (value: 0.02, unit: "1/day", source: "~ staking keeps pods off wet soil and cuts pod rot (IITA PROPAS; Reckling 2011); set so unstaked yield falls inside the -30 to -70% band (decision 0021)"),
+  ),
+  variation: (            // schema 7, decision 0027: non-heritable plant-to-plant variation within a pure line
+    seed_mass_cv: (value: 0.15, unit: "-", source: "~ wheat kernel weight varies with spikelet and floret position, about 15 to 20% CV within a seed lot"),
+    seed_leaf_exponent: (value: 0.5, unit: "-", source: "~ first-leaf area of a wheat seedling rises with kernel weight (seed-size vigour); square root as a partial effect"),
+    emergence_cv: (value: 0.15, unit: "-", source: "~ hydrothermal time: each seed of a lot has its own threshold, normally distributed (Gummerson 1986; Bradford 2002)"),
+    emergence_per_depth: (value: 10.2, unit: "Cd/cm", source: "CERES-Wheat: emergence takes 40 + 10.2 Cd per cm of sowing depth (Ritchie 1991)"),
+    emergence_reference_depth: (value: 3.0, unit: "cm", source: "the emergence sum was set for the 3 cm the scenarios sow at"),
+    leaf_size_cv: (value: 0.1, unit: "-", source: "~ blade-to-blade scatter of final area about the profile, about 10%"),
+    divergence_sd: (value: 10.0, unit: "deg", source: "~ distichous blades scatter by about 5 to 15 degrees about 180"),
   ),
   grass: Some((           // WP23, decision 0022
     crown_internode_length: (value: 0.3, unit: "cm", source: "~ crown internodes stay a few mm long until jointing"),

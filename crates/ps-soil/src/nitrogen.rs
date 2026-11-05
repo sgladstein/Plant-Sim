@@ -196,6 +196,29 @@ impl SoilGrid {
         };
     }
 
+    /// Multiplies each soil column's nitrogen (nitrate, ammonium and humus, every
+    /// depth) by its factor in `columns`, indexed `y * nx + x`, and restarts the ledger:
+    /// small-scale patchiness of a field soil (decision 0027). Missing or non-finite
+    /// factors count as 1, and negative ones as 0.
+    pub fn scale_nitrogen_columns(&mut self, columns: &[f64]) {
+        let plane = self.nx * self.ny;
+        for i in 0..self.water.len() {
+            let f = columns
+                .get(i % plane)
+                .copied()
+                .filter(|f| f.is_finite())
+                .unwrap_or(1.0)
+                .max(0.0);
+            self.no3[i] = GramsN(self.no3[i].0 * f);
+            self.nh4[i] = GramsN(self.nh4[i].0 * f);
+            self.organic_n[i] = GramsN(self.organic_n[i].0 * f);
+        }
+        self.n_ledger = NitrogenLedger {
+            start: self.total_nitrogen(),
+            ..NitrogenLedger::default()
+        };
+    }
+
     /// Whether the soil can nodulate a legume.
     #[must_use]
     pub fn has_rhizobia(&self) -> bool {

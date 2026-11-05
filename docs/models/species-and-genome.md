@@ -4,8 +4,10 @@
 A species is a recipe: how a bean builds leaves, how fast its roots grow, how it
 responds to heat or shade. Some parts of the recipe are inherited and vary from seed to
 seed (leaf size, branching, photosynthetic capacity); others are fixed chemistry that
-every plant shares. In this first version every bush bean seed is identical, so
-differences you see between plants come from where they grow, not from their genes.
+every plant shares. In this version every bush bean of a variety has the same genes, as
+in a real pure line. The differences you see between plants come from the seed each one
+grew from, when it came up, and where it grows (the `variation` group, decision 0027;
+see plant-variation.md), not from its genes.
 
 ## Equations
 For heritable parameter `k` with species default `d_k`, bounds `[min_k, max_k]` and the

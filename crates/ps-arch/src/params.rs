@@ -67,6 +67,49 @@ pub struct RootParams {
     pub gravitropism: f64,
 }
 
+/// Non-heritable plant-to-plant variation (decision 0027), in model units.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct VariationParams {
+    /// Coefficient of variation of the sown seed's mass.
+    pub seed_mass_cv: f64,
+    /// Exponent of the preformed leaves' size on the relative seed mass.
+    pub seed_leaf_exponent: f64,
+    /// Coefficient of variation of the thermal time to emergence.
+    pub emergence_cv: f64,
+    /// Extra thermal time to emergence per metre sown below the reference depth.
+    pub emergence_per_depth: f64,
+    /// Depth the species' emergence threshold applies at.
+    pub reference_depth: Meters,
+    /// Coefficient of variation of a leaf's potential area.
+    pub leaf_size_cv: f64,
+    /// Standard deviation of a node's divergence angle.
+    pub divergence_sd: Radians,
+}
+
+impl VariationParams {
+    /// Converts the species' `variation` group.
+    #[must_use]
+    pub fn new(s: &Species) -> Self {
+        let v = &s.variation;
+        Self {
+            seed_mass_cv: v.seed_mass_cv.value,
+            seed_leaf_exponent: v.seed_leaf_exponent.value,
+            emergence_cv: v.emergence_cv.value,
+            emergence_per_depth: v.emergence_per_depth.value / CM,
+            reference_depth: Meters(v.emergence_reference_depth.value * CM),
+            leaf_size_cv: v.leaf_size_cv.value,
+            divergence_sd: Radians(v.divergence_sd.value.to_radians()),
+        }
+    }
+}
+
+/// A relative size `1 + cv·z` from a standard normal draw `z`, with `z` held to ±2.5
+/// so a factor stays positive and bounded (at most cv 0.3 gives 0.25 to 1.75).
+#[must_use]
+pub fn scatter(z: f64, cv: f64) -> f64 {
+    (1.0 + cv * z.clamp(-2.5, 2.5)).max(0.25)
+}
+
 /// Everything the herb module reads, in model units.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::struct_field_names)]
@@ -79,6 +122,9 @@ pub struct HerbParams {
     pub leaf: LeafParams,
     /// Phenology thresholds.
     pub thresholds: Thresholds,
+    /// Plant-to-plant variation (decision 0027).
+    #[serde(default)]
+    pub variation: VariationParams,
     /// Organ allometry.
     pub allometry: Allometry,
     /// PAR absorptance of leaves.
@@ -268,6 +314,7 @@ impl HerbParams {
             },
             leaf: LeafParams::from_species(s, t),
             thresholds: Thresholds::from_species(s),
+            variation: VariationParams::new(s),
             allometry: Allometry {
                 stem_density: GPerM3(c.stem_density.value),
                 root_density: GPerM3(root_density),

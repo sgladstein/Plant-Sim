@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use ps_rng::{Purpose, RngKey};
 use serde::{Deserialize, Serialize};
 
-pub use schema::{Climbing, Constants, Grass, Nitrogen, Phenology, SCHEMA, Spec};
+pub use schema::{Climbing, Constants, Grass, Nitrogen, Phenology, SCHEMA, Spec, Variation};
 pub use traits::{TRAIT_KEYS, Traits};
 
 /// A numeric parameter with provenance.
@@ -187,6 +187,8 @@ pub struct Species {
     pub nitrogen: Nitrogen,
     /// Climbing and indeterminate growth (schema 3, WP22).
     pub climbing: Climbing,
+    /// Non-heritable plant-to-plant variation (schema 7, decision 0027).
+    pub variation: Variation,
     /// The grass shoot (schema 4, WP23); present exactly when the growth form is
     /// `Grass`.
     #[serde(default)]
@@ -369,12 +371,41 @@ impl Species {
         for (spec, p) in self.climbing.entries() {
             check_param(&format!("climbing.{}", spec.key), spec.unit, p)?;
         }
+        for (spec, p) in self.variation.entries() {
+            check_param(&format!("variation.{}", spec.key), spec.unit, p)?;
+        }
         self.validate_climbing()?;
+        self.validate_variation()?;
         self.validate_grass()?;
         self.validate_roots()?;
         for r in &self.roots {
             for (spec, p) in r.entries() {
                 check_param(&format!("roots[{}].{}", r.name, spec.key), spec.unit, p)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_variation(&self) -> Result<(), SpeciesError> {
+        let v = &self.variation;
+        for (key, p, hi) in [
+            ("seed_mass_cv", &v.seed_mass_cv, 0.5),
+            ("seed_leaf_exponent", &v.seed_leaf_exponent, 2.0),
+            ("emergence_cv", &v.emergence_cv, 0.5),
+            ("emergence_per_depth", &v.emergence_per_depth, 100.0),
+            (
+                "emergence_reference_depth",
+                &v.emergence_reference_depth,
+                20.0,
+            ),
+            ("leaf_size_cv", &v.leaf_size_cv, 0.5),
+            ("divergence_sd", &v.divergence_sd, 90.0),
+        ] {
+            if !(0.0..=hi).contains(&p.value) {
+                return Err(SpeciesError::Value {
+                    at: format!("variation.{key}"),
+                    why: format!("must lie within 0 to {hi}"),
+                });
             }
         }
         Ok(())
@@ -618,6 +649,14 @@ impl Species {
         for (spec, p) in self.climbing.entries() {
             out.push((
                 format!("climbing.{}", spec.key),
+                p.value,
+                p.unit.clone(),
+                p.source.clone(),
+            ));
+        }
+        for (spec, p) in self.variation.entries() {
+            out.push((
+                format!("variation.{}", spec.key),
                 p.value,
                 p.unit.clone(),
                 p.source.clone(),
