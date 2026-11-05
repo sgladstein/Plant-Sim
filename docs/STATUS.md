@@ -27,7 +27,7 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 13 Lock the engine | Bevy 0.20.1 + bevy_egui 0.43.1 pinned (docs/bevy-notes.md); waiting on the owner's screenshot from the GTX 1070 (CI artifact `plant-sim-windows`) |
 | 14 Mesh generation (ps-mesh) | done (PR #23) |
 | 15 Scene sync and look | started: ps-view draws two rhizobox pots, tubes and instanced organs, 2% rebuild rule, sky from ps-weather, auto-framing orbit camera, high-speed daily-mean light |
-| 16 Sim thread | not started; ps-app's `demo_source` stands in (time commands from the UI, no action log). The WP9 snapshot will carry organ positions and root cohort Meta; read those instead of `Skeleton::from_arena` placement |
+| 16 Sim thread | sim side done (PR #32, decision 0016): ps-session runs the world on its own thread, double-buffered `Snapshot`, time commands, seek by midnight copies, session hash equals replay hash. ps-app side (Session resource, Garden from snapshot plants and positions) is the viewer thread's; `demo_source` stands in until then |
 | 17 UI | started: ps-ui top bar (speeds, steps, replay scrubber) and lens panel with legends |
 | 18 Lenses | framework and all seven M1 lenses; Light and Shade signal run the real ps-light on stand-in plants; the rest are stand-in data, flagged in the legend |
 

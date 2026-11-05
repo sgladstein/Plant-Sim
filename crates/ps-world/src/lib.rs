@@ -379,6 +379,25 @@ impl World {
         self.state.tick
     }
 
+    /// The weather series the world steps through (rebuilt from the scenario).
+    #[must_use]
+    pub fn weather(&self) -> &WeatherSeries {
+        &self.weather
+    }
+
+    /// The weather of the hour the world steps next, as open sky (before any soil's
+    /// radiation fraction), or `None` past the series.
+    #[must_use]
+    pub fn weather_now(&self) -> Option<&HourWeather> {
+        self.weather.at(Hours(self.state.tick))
+    }
+
+    /// The last tick the scenario covers.
+    #[must_use]
+    pub fn end_tick(&self) -> u64 {
+        u64::from(self.state.scenario.duration_days) * 24
+    }
+
     /// Full-state hash now.
     #[must_use]
     pub fn state_hash(&self) -> u64 {
@@ -462,7 +481,7 @@ impl World {
     /// # Errors
     /// Any [`WorldError`] from a step.
     pub fn run_to_end(&mut self) -> Result<(), WorldError> {
-        self.run_until(u64::from(self.state.scenario.duration_days) * 24)
+        self.run_until(self.end_tick())
     }
 
     fn soil_index(&self, id: u32) -> Option<usize> {
