@@ -749,5 +749,8 @@ pub fn absorbed_par(
     }
 }
 
+pub mod plot;
+pub use plot::rebuild_plot;
+
 #[cfg(test)]
 mod tests;

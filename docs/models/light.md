@@ -14,6 +14,10 @@ Daily (§3.2 daily step 6), in crate `ps-light`:
 - **Grid.** Bounding box of all leaf footprints (and any extra points), extent `E_a`
   per axis, largest `E`. Cell edge `s = max(1.2 E / 32, 5 mm)`; cells per axis
   `n_a = min(⌈1.2 E_a / s⌉, 32)`, centered on the box.
+- **Plot grid** (decision 0019). All plants on a plot share one grid with fixed cells
+  of 3 cm (larger if the widest axis would need more than 96), a 10 cm margin around
+  the leaves, and its bottom at the ground. `n_a = ⌊span_a / s⌋ + 1`. Each leaf still
+  traces its own rays; per-voxel transmittance was measured and is not used.
 - **Footprint.** Leaf `i` of area `A_i` (m²) is a horizontal disc of radius
   `r_i = √(A_i/π)` at its center height, sampled on a square lattice of spacing at most
   `s/2`; each lattice point carries `A_i / N_points`. Leaf area density in cell `c`:
@@ -60,6 +64,9 @@ elevation; `α`: leaf PAR absorptance; `f_PAR`, `q` below.
 | --- | --- | --- | --- |
 | G-function, spherical leaf angles | 0.5 | 1 | Ross 1981; species parameter (`g_function` in schema) |
 | Max cells per axis | 32 | 1 | decision 0010 (plan §3.5 said 48) |
+| Plot cell edge | 0.03 | m | decision 0019 |
+| Plot max cells per horizontal axis | 96 | 1 | decision 0019 (2.9 m of canopy and margin at 3 cm; a wider canopy gets larger cells) |
+| Plot margin | 0.10 | m | decision 0019 |
 | Min cell edge | 0.005 | m | design plan §3.5 |
 | Margin per side | 0.10 | fraction of extent | design plan §3.5 (20% total) |
 | Sky sectors | 16 (2 × 8) | 1 | design plan §3.5 |
@@ -110,7 +117,10 @@ interception as it grows, and shade between neighboring plants.
 - No scattering: light reflected or transmitted by leaves is ignored, so deep shade is a
   little too dark. Fine for M0; revisit if gas exchange in deep shade looks low.
 - Coefficients are computed once a day; leaf movement within the day is ignored.
-- One plant's grid in M0. Merging grids for neighbors is part of the world (WP9).
+- A plot shares one grid and one G (the first plant's) for all its plants. Pots keep a
+  grid each, so pots side by side do not shade each other.
+- At bean scale, per-voxel light is no cheaper and less accurate than per-leaf rays, so
+  the plan's M2 per-voxel coefficients are deferred to the tree (M4; decision 0019).
 - Cost: leaves × 40 directions × 7 origins × about 30 cells. Rays stop when they leave
   the box of occupied cells, and leaves run in parallel (ordered collect, so the result
   does not depend on the thread count). A 300-leaf plant is about 19 ms of single-core
@@ -135,6 +145,11 @@ interception as it grows, and shade between neighboring plants.
   total is −1.9%, 60 of 74 are within 0.10 and the worst is 0.23. The sim draws every
   blade tilted about 19° from horizontal, a planophile canopy, and G = 0.5 assumes
   spherical leaf angles, so the model shades the plant too little (decision 0018).
+- `plot_grid_light_against_ray_tracer` (same file): both fixtures lit through the 3 cm
+  plot grid. Synthetic shoot: −0.8%, 51 of 57 within 0.10. Sim plant: +5.6%, 51 of 74
+  (decision 0019).
+- `ps_light::plot::tests`: `the_plot_grid_has_fixed_cells_and_starts_at_the_ground`,
+  `neighbors_in_a_plot_shade_each_other`.
 - `isolated_leaf_is_fully_lit`, `leaf_under_another_is_shaded`, `grid_respects_limits`,
   `sky_weights_sum_to_one` (also checks the absorption weights sum to 12/7),
   `ray_from_below_the_grid_enters_it`, `bounded_traversal_is_bit_identical`, `rfr_proxy`, `absorbed_par_splits_sunlit_and_shaded`,

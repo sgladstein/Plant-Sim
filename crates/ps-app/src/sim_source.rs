@@ -29,7 +29,7 @@ use ps_ui::{Chart, Charts, Series, TimeCommand, TimeControl};
 use ps_units::{Hours, WPerM2};
 use ps_view::{Garden, Lens, PotShape, PotSize, PotView, SkyState, SoilFace};
 use ps_weather::{HourWeather, WeatherSeries};
-use ps_world::{Catalog, DayRow, PlantEntry, Scenario, SoilEntry, SoilSpec, World};
+use ps_world::{Catalog, DayRow, PlantEntry, Scenario, SoilEntry, World};
 
 /// The scenario the app runs when none is given.
 pub const DEFAULT_SCENARIO: &str = "scenarios/two_pot_sun_shade.ron";
@@ -238,9 +238,7 @@ fn pot_infos(
     let positions: BTreeMap<u32, (f64, f64)> = scenario
         .soils
         .iter()
-        .map(|s| match s {
-            SoilSpec::Pot { id, position_m, .. } => (*id, *position_m),
-        })
+        .map(|s| (s.id(), s.position_m()))
         .collect();
     let n = positions.len().max(1) as f64;
     let mean_x = positions.values().map(|p| p.0).sum::<f64>() / n;

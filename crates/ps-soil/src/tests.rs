@@ -286,3 +286,18 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn lateral_fraction_scales_as_a_diffusivity() {
+    let at = |cell: f64| {
+        SoilGrid::new_box(2, 2, 1, Meters(cell), Texture::Loam, T20)
+            .unwrap()
+            .lateral_fraction()
+    };
+    // Exactly the §3.6 value at 2 cm, so pots are unchanged.
+    assert_eq!(at(0.02).to_bits(), LATERAL_FRACTION.to_bits());
+    // 4e-5 m² h⁻¹ over (5 cm)² = 0.016 in a plot.
+    assert!((at(0.05) - 0.016).abs() < 1e-15);
+    // Capped for stability in fine grids.
+    assert!((at(0.005) - 0.25).abs() < 1e-15);
+}

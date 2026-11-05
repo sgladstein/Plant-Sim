@@ -276,9 +276,9 @@ ValidationResponses(
       at: Max,
       expect: Cited(rel_change: -0.7),
       sources: ["clavijo2019"],
-      gate: Later,
+      gate: Info,
       tag: Emergent,
-      note: "Baseline m2/density_5. Leaf area per plant above 0.3 m2 at 5 plants/m2 and below 0.1 m2 at 35 (text).",
+      note: "Baseline m2/density_5. Leaf area per plant above 0.3 m2 at 5 plants/m2 and below 0.1 m2 at 35 (text). Info from WP21, when the plot scenarios were written; the M2 exit gate (decision 0019).",
     ),
   ],
 )

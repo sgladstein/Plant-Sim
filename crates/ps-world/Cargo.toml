@@ -14,6 +14,8 @@ ps-species.workspace = true
 ps-soil.workspace = true
 ps-weather.workspace = true
 ps-arch.workspace = true
+ps-light.workspace = true
+rayon.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 libm.workspace = true
@@ -21,7 +23,6 @@ ron.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-rayon.workspace = true
 
 [lints]
 workspace = true

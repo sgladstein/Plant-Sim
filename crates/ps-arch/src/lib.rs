@@ -849,7 +849,8 @@ impl Plant {
     }
 
     /// Daily steps 1 to 6 of §3.2 for this plant. `sun_path` is the next day's sun
-    /// direction for each clock hour (`None` below the horizon), for the light rebuild.
+    /// direction for each clock hour (`None` below the horizon), for the light rebuild,
+    /// which uses this plant's own grid (a pot).
     ///
     /// # Errors
     /// Any [`ArchError`] from an internal inconsistency.
@@ -859,6 +860,19 @@ impl Plant {
         sun_path: &[Option<V3>; 24],
         now: Hours,
     ) -> Result<DayReport, ArchError> {
+        self.day_before_light(soil, now)?;
+        Ok(self.day_after_light(sun_path, None))
+    }
+
+    /// The daily step up to the light rebuild: phenology, buds, organ initiation,
+    /// senescence, root growth, then the layout and root cells. A plot calls this for
+    /// every plant, builds one light grid from their [`Plant::light_inputs`], and hands
+    /// each plant its leaves' coefficients with [`Plant::day_after_light`] (decision
+    /// 0019).
+    ///
+    /// # Errors
+    /// Any [`ArchError`] from an internal inconsistency.
+    pub fn day_before_light(&mut self, soil: &SoilGrid, now: Hours) -> Result<(), ArchError> {
         self.day += 1;
         // 1. Phenology.
         let events = self.events();
@@ -889,13 +903,45 @@ impl Plant {
         // 6. Light geometry, root cells, nitrogen, expansion records.
         self.positions = geometry::layout(&self.arena, &self.meta, self.collar_position);
         self.roots = geometry::root_cells(&self.arena, &self.positions, soil);
-        self.rebuild_light(sun_path);
+        Ok(())
+    }
+
+    /// The light model's input for this plant: its leaflet discs (see
+    /// [`Plant::light_points`]) and the internode tips that bound the shoot, in the
+    /// soil frame.
+    #[must_use]
+    pub fn light_inputs(&self) -> (Vec<ps_light::LeafPoint>, Vec<V3>) {
+        (self.light_points(), self.internode_tips())
+    }
+
+    /// The G-function value of this plant's leaves.
+    #[must_use]
+    pub fn g_function(&self) -> f64 {
+        self.params.g_function
+    }
+
+    fn internode_tips(&self) -> Vec<V3> {
+        self.arena
+            .alive_of(OrganKind::Internode)
+            .map(|id| self.positions[id.index()].1)
+            .collect()
+    }
+
+    /// The rest of the daily step after [`Plant::day_before_light`]: the light rebuild,
+    /// nitrogen and the day's report. `coeffs` holds one entry per leaflet of
+    /// [`Plant::light_inputs`] from a shared grid, or `None` to build this plant's own.
+    pub fn day_after_light(
+        &mut self,
+        sun_path: &[Option<V3>; 24],
+        coeffs: Option<&[LightCoeffs]>,
+    ) -> DayReport {
+        self.rebuild_light(sun_path, coeffs);
         self.update_nitrogen();
         let rep = self.report();
         self.today = DayStats::default();
         self.shortfall = KgWater(0.0);
         self.income.clear();
-        Ok(rep)
+        rep
     }
 
     fn events(&self) -> Events {
@@ -939,7 +985,7 @@ impl Plant {
         (points, owner)
     }
 
-    fn rebuild_light(&mut self, sun_path: &[Option<V3>; 24]) {
+    fn rebuild_light(&mut self, sun_path: &[Option<V3>; 24], shared: Option<&[LightCoeffs]>) {
         // Absorbed PAR, for low-light acclimation of new organs: a running mean that
         // gives yesterday a weight of 1/3, so one dull day does not set a leaf's
         // thickness (decision 0018).
@@ -960,13 +1006,13 @@ impl Plant {
         let hp = &self.params;
         let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
         let (points, owner) = self.leaflets();
-        let extra: Vec<V3> = self
-            .arena
-            .alive_of(OrganKind::Internode)
-            .map(|id| self.positions[id.index()].1)
-            .collect();
-        let (_, coeffs) =
-            ps_light::rebuild_daily(&points, &extra, sun_path, &self.sky, hp.g_function);
+        let coeffs = if let Some(c) = shared {
+            debug_assert_eq!(c.len(), points.len(), "one coefficient per leaflet");
+            c.to_vec()
+        } else {
+            let extra = self.internode_tips();
+            ps_light::rebuild_daily(&points, &extra, sun_path, &self.sky, hp.g_function).1
+        };
         let mut sums: Vec<(LightCoeffs, f64)> = vec![(zero_coeffs(), 0.0); self.arena.len()];
         for (c, &i) in coeffs.iter().zip(&owner) {
             let s = &mut sums[i];

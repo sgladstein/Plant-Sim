@@ -15,7 +15,9 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
    then to `W_s`; leftover is runoff.
 2. **Drainage**: `e_i = max(0, W_i − W_fc)` from the start-of-step state; `W_i −= e_i`,
    added to the cell below, or drained if there is none.
-3. **Lateral**: for each horizontal neighbor pair, `f = 0.1 (W_i − W_j)`; `W_i −= f`, `W_j += f`.
+3. **Lateral**: for each horizontal neighbor pair, `f = a (W_i − W_j)`; `W_i −= f`, `W_j += f`,
+   with `a = min(0.25, 0.1 (0.02 m / Δx)²)`, a diffusivity of 4e-5 m² h⁻¹ (decision 0019):
+   0.1 in 2 cm pot cells, 0.016 in 5 cm plot cells.
 4. **Evaporation** (top layer): `E = 0.5 · R_soil · 3600 / λ · Δx² · clamp((W − W_ad)/(W_fc − W_ad), 0, 1)`,
    at most `W − W_ad`; `λ = 2.45 MJ/kg`.
 5. **Soil temperature** of layer at depth `z`: `T = T̄₂₄ + e^{−z/D} (T_air(t − 24z/(2πD)) − T̄₂₄)`.
@@ -37,10 +39,12 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Wilting point loam, sand, clay | 0.12, 0.05, 0.22 | m3/m3 | design plan §3.6 |
 | Saturation loam, sand, clay | 0.45, 0.40, 0.50 | m3/m3 | ~ (decision 0007) |
 | Air-dry loam, sand, clay | 0.05, 0.02, 0.10 | m3/m3 | ~ (decision 0007) |
-| Lateral fraction | 0.1 | per hour | design plan §3.6 |
+| Lateral fraction at 2 cm | 0.1 | per hour | design plan §3.6 |
+| Lateral reference cell | 0.02 | m | decision 0019 (fraction scales as `(0.02/Δx)²`, cap 0.25) |
 | Evaporation coefficient | 0.5 | - | ~ (decision 0007) |
 | Damping depth | 0.10 | m | ~ (typical moist loam) |
 | Cell size, pots | 0.02 | m | design plan §3.6 |
+| Cell size, plots | 0.05 | m | design plan §3.6 (decision 0019) |
 | FTSW threshold | 0.4 | - | species file |
 | Root uptake rate `k` | 1e-5 | m2/h | species file, ~ |
 | Root uptake ceiling `u_max` | 1.25e-4 | kg/m/h | species file, ~ (0.03 cm³ per cm of root per day; decision 0012) |
@@ -63,14 +67,16 @@ depends on how fast roots explore the pot and how much leaf area transpires.
 
 ## Known limits
 No matric potential, no hysteresis, no capillary rise (§3.6). Drainage is a bucket
-cascade, faster than real soils. Evaporation ignores humidity and wind.
+cascade, faster than real soils. Evaporation ignores humidity and wind. In a plot the
+surface radiation is one value for the whole plot, so the gaps between rows dry no
+faster than the soil under the canopy (decision 0019).
 
 ## Validation
 - `ps_soil::tests::wet_column_drains_to_field_capacity`: loam, sand, clay; closure < 1e-9 every hour;
   analytic outflow exact; drainage time within 5% (WP5 done-when).
 - `ps_soil::tests::random_hours_conserve`: property test, random rain, radiation, temperature and uptake.
 - `infiltration_fills_from_the_top`, `excess_runs_off_when_saturated`,
-  `lateral_redistribution_smooths_and_conserves`, `evaporation_takes_from_top_only_and_stops_dry`,
+  `lateral_redistribution_smooths_and_conserves`, `lateral_fraction_scales_as_a_diffusivity`, `evaporation_takes_from_top_only_and_stops_dry`,
   `ftsw_and_stress`, `uptake_is_proportional_and_limited`, `joint_uptake_shares_cells_fairly`,
   `deeper_soil_is_damped_and_lagged`,
   `pot_mask_area_is_close_to_circle`.
