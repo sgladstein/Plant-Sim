@@ -421,14 +421,19 @@ fn spawn_pot(
             ChildOf(entity),
         ));
     }
-    for (cloth, material) in [(false, &assets.vertex_color), (true, &assets.haze)] {
+    // Boards take the toon vertex-color material; shade cloth stays translucent haze.
+    for cloth in [false, true] {
         if pot.obstacles.iter().any(|o| o.is_cloth() == cloth) {
-            commands.spawn((
+            let mut e = commands.spawn((
                 Mesh3d(meshes.add(colored(&diorama::obstacles(&pot.obstacles, cloth, ground)))),
-                MeshMaterial3d(material.clone()),
                 Transform::default(),
                 ChildOf(entity),
             ));
+            if cloth {
+                e.insert(MeshMaterial3d(assets.haze.clone()));
+            } else {
+                e.insert(MeshMaterial3d(assets.vertex_color.clone()));
+            }
         }
     }
     commands.spawn((
