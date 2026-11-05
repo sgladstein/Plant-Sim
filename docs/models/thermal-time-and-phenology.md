@@ -15,20 +15,24 @@ fill, maturity) when enough have added up. A warm spring makes beans flower soon
   `To − Tb` and sums compare with literature °C·day below the optimum.
 - Organ thermal age accumulates the same way at the organ's temperature.
 - Expansion temperature multiplier: 0 at or below 5 °C, linear to 1 at 25 °C, 1 to
-  30 °C, linear to 0 at 40 °C.
+  30 °C, linear to 0 at 40 °C. It sets the pace of each organ's expansion clock
+  (thermal time × multiplier), so cold delays expansion more than development but
+  does not destroy it (decision 0011).
 - Stages (daily step 1), one transition per day at most, never backward:
   Sown → Germinated (the seed module reports germination, §3.10) → Emerged (thermal time
   since germination ≥ emergence) → FirstTrifoliate (architecture reports an unfolded
-  trifoliate) → Flowering (thermal time since sowing ≥ flowering) → PodSet (a pod has
-  set) → SeedFill (a seed is filling) → Mature (thermal time since sowing ≥ maturity).
+  trifoliate) → Flowering (thermal time since germination ≥ flowering) → PodSet (a pod
+  has set) → SeedFill (a seed is filling) → Mature (thermal time since germination ≥
+  maturity). All thresholds count from germination, so time a seed waits in dry or
+  cold soil does not bring flowering forward (decision 0011).
 
 ## Parameters
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
 | t_base, t_opt, t_max | 8, 28, 38 | °C | "~" design plan §3.11 |
 | emergence | 70 | °C·day | "~" design plan §3.10 (60 to 80) |
-| flowering | 350 | °C·day | "~" 40% of the cycle, design plan §6.1 |
-| maturity | 850 | °C·day | Pinzón-Sandoval 2024 (design plan §8.2) |
+| flowering | 320 | °C·day from germination | "~" 350 from sowing (40% of the cycle, design plan §6.1) less about 30 sowing to germination |
+| maturity | 820 | °C·day from germination | Pinzón-Sandoval 2024, 850 from sowing (design plan §8.2), less about 30 ("~") |
 | growth_t_min, opt_low, opt_high, max | 5, 25, 30, 40 | °C | "~" design plan §3.11 |
 
 ## Inputs and outputs

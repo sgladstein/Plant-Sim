@@ -160,9 +160,9 @@ param_group!(
         t_max: "C",
         /// Thermal time from germination to emergence.
         emergence: "Cd",
-        /// Thermal time from sowing to first flower.
+        /// Thermal time from germination to first flower (decision 0011).
         flowering: "Cd",
-        /// Thermal time from sowing to physiological maturity.
+        /// Thermal time from germination to physiological maturity (decision 0011).
         maturity: "Cd",
     }
 );

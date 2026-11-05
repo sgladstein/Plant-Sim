@@ -9,8 +9,9 @@ organ that went hungry while growing ends up smaller and never catches up. Size 
 screen (leaf area, stem length and thickness) comes from the organ's dry mass.
 
 ## Equations
-**Expansion curve** (Yin et al. 2003, design plan §3.13 and §11.4). With thermal age
-`t` (°C·day), duration `te` and time of maximum rate `tm` (`0 < tm < te`):
+**Expansion curve** (Yin et al. 2003, design plan §3.13 and §11.4). With the organ's
+expansion clock `t` (°C·day: thermal time times the expansion temperature multiplier,
+kept per organ as `expansion_age`; decision 0011), duration `te` and time of maximum rate `tm` (`0 < tm < te`):
 
 - `y(t) = (1 + (te − t)/(te − tm)) · (t/te)^(te/(te − tm))` for `0 ≤ t ≤ te`; `y = 0` before, `1` after.
 - `dy/dt = (2te − tm)(te − t) / (te (te − tm)²) · (t/te)^(tm/(te − tm))`.
@@ -43,7 +44,7 @@ resorption to the parent and the rest as litter (§3.9 step 6).
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
 | --- | --- | --- | --- |
-| in | thermal age | Cd | thermal time (WP7) |
+| in | thermal age, expansion clock | Cd | thermal time (WP7) |
 | in | realized growth | g DM | allocation (WP7) |
 | out | potential growth | g DM | allocation demand |
 | out | length, radius, area | m, m, m2 | light, renderer, CSV |

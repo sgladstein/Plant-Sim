@@ -2,7 +2,8 @@
 
 - **Date:** 2026-11-05
 - **Status:** accepted (implementer); items 4 and 8 read the plan's text in a way the
-  owner may want to confirm
+  owner may want to confirm. Item 10 and the flowering and maturity part of item 12 are
+  superseded by decision 0011, which also changes how temperature enters item 9.
 
 ## Context
 §3.8 to §3.11 and §11.4 give the processes and most constants of WP7. Building them

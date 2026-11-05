@@ -21,7 +21,7 @@ cost a plant more carbon than cool ones.
 ## Parameters
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
-| maintenance_rate_20c | 0.015 | g C g N⁻¹ day⁻¹ | "~" design plan §3.8 |
+| maintenance_rate_20c | 0.218 | g C g N⁻¹ day⁻¹ | Ryan 1991, as CLM's base rate 2.525e-6 g C g N⁻¹ s⁻¹ (decision 0011) |
 | maintenance_q10 | 2.0 | 1 | "~" design plan §3.8 |
 | construction_cost | 1.25 | g C g C⁻¹ | "~" design plan §3.8 |
 
@@ -46,3 +46,5 @@ to break even, starving shaded branches.
 ## References
 - Amthor, J. S. (2000). The McCree–de Wit–Penning de Vries–Thornley respiration
   paradigms: 30 years later. Annals of Botany 86.
+- Ryan, M. G. (1991). Effects of climate change on plant respiration. Ecological
+  Applications 1(2).
