@@ -555,31 +555,64 @@ impl SoilGrid {
     fn drain(&mut self, ledger: &mut WaterLedger) {
         let fc = self.capacity(self.texture.hydraulics().field_capacity);
         let layer = self.nx * self.ny;
-        // Jacobi: compute all excesses from the start-of-step state, then move them.
-        let excess: Vec<KgWater> = self
-            .water
-            .iter()
-            .zip(&self.active)
-            .map(|(w, a)| {
-                if *a {
-                    (*w - fc).max(KgWater(0.0))
-                } else {
-                    KgWater(0.0)
+        let n = self.water.len();
+        // Jacobi: every cell's excess, and the nitrate it carries, comes from the
+        // start-of-step state. A layer's moves are computed before the layer above
+        // pours into it, so one layer of scratch is enough.
+        let mut cur = vec![(KgWater(0.0), GramsN(0.0)); layer];
+        let mut next = cur.clone();
+        self.layer_excess(0, fc, &mut cur);
+        for z in 0..self.nz {
+            if z + 1 < self.nz {
+                self.layer_excess(z + 1, fc, &mut next);
+            }
+            let first = z * layer;
+            for (k, &(e, m)) in cur.iter().enumerate() {
+                let i = first + k;
+                let below = i + layer;
+                let into = below < n && self.active[below];
+                if m.0 > 0.0 {
+                    self.no3[i] -= m;
+                    if into {
+                        self.no3[below] += m;
+                    } else {
+                        self.n_ledger.leached += m;
+                    }
                 }
-            })
-            .collect();
-        self.drain_nitrate(&excess);
-        for (i, e) in excess.iter().enumerate() {
-            if e.0 <= 0.0 {
-                continue;
+                if e.0 > 0.0 {
+                    self.water[i] -= e;
+                    if into {
+                        self.water[below] += e;
+                    } else {
+                        ledger.drained += e;
+                    }
+                }
             }
-            self.water[i] -= *e;
-            let below = i + layer;
-            if below < self.water.len() && self.active[below] {
-                self.water[below] += *e;
+            core::mem::swap(&mut cur, &mut next);
+        }
+    }
+
+    /// Water above field capacity in each cell of layer `z`, and the nitrate it
+    /// carries down, from the current state.
+    fn layer_excess(&self, z: usize, fc: KgWater, out: &mut [(KgWater, GramsN)]) {
+        let layer = self.nx * self.ny;
+        let r = z * layer..(z + 1) * layer;
+        let cells = self.water[r.clone()]
+            .iter()
+            .zip(&self.active[r.clone()])
+            .zip(&self.no3[r]);
+        for (o, ((w, a), no3)) in out.iter_mut().zip(cells) {
+            let e = if *a {
+                (*w - fc).max(KgWater(0.0))
             } else {
-                ledger.drained += *e;
-            }
+                KgWater(0.0)
+            };
+            let m = if e.0 > 0.0 && w.0 > 0.0 {
+                *no3 * (e.0 / w.0).min(1.0)
+            } else {
+                GramsN(0.0)
+            };
+            *o = (e, m);
         }
     }
 
@@ -594,35 +627,25 @@ impl SoilGrid {
 
     fn redistribute_laterally(&mut self) {
         let fraction = self.lateral_fraction();
-        let mut delta = vec![KgWater(0.0); self.water.len()];
-        for z in 0..self.nz {
-            for y in 0..self.ny {
-                for x in 0..self.nx {
-                    let i = self.index(Cell { x, y, z });
-                    if !self.active[i] {
-                        continue;
-                    }
-                    // Each pair once: +x and +y neighbors.
-                    let mut pair = |j: usize| {
-                        if self.active[j] {
-                            let f = (self.water[i] - self.water[j]) * fraction;
-                            delta[i] -= f;
-                            delta[j] += f;
-                        }
-                    };
-                    if x + 1 < self.nx {
-                        pair(self.index(Cell { x: x + 1, y, z }));
-                    }
-                    if y + 1 < self.ny {
-                        pair(self.index(Cell { x, y: y + 1, z }));
-                    }
-                }
-            }
-        }
-        for (w, d) in self.water.iter_mut().zip(delta) {
-            *w += d;
-        }
-        self.spread_nitrate(fraction);
+        let (nx, ny) = (self.nx, self.ny);
+        lateral_exchange(
+            &mut self.water,
+            &self.active,
+            nx,
+            ny,
+            fraction,
+            |w| w.0,
+            KgWater,
+        );
+        lateral_exchange(
+            &mut self.no3,
+            &self.active,
+            nx,
+            ny,
+            fraction,
+            |g| g.0,
+            GramsN,
+        );
     }
 
     fn evaporate(&mut self, radiation: WPerM2, ledger: &mut WaterLedger) {
@@ -833,6 +856,65 @@ impl SoilGrid {
             f(self.organic_n[i].to_bits());
         }
         f(u64::from(self.rhizobia));
+    }
+}
+
+/// One explicit step of lateral exchange between active +x and +y neighbors on each
+/// layer: every pair moves `fraction` of its difference, from the state at the start.
+///
+/// Each pair's flux is computed once, and each cell then adds its fluxes in the
+/// order a scatter over cells in index order would: in from the −y and −x
+/// neighbors, out to +x and +y. A missing pair's flux is +0, which leaves the sum
+/// unchanged (the running sum starts at +0 and is never −0), so the result is the
+/// same bits as the scatter. The loops have no data-dependent branches.
+fn lateral_exchange<T: Copy>(
+    v: &mut [T],
+    active: &[bool],
+    nx: usize,
+    ny: usize,
+    fraction: f64,
+    get: impl Fn(T) -> f64,
+    put: impl Fn(f64) -> T,
+) {
+    let n = v.len();
+    let flux = |a: (&bool, &bool), w: (&T, &T)| {
+        if *a.0 && *a.1 {
+            (get(*w.0) - get(*w.1)) * fraction
+        } else {
+            0.0
+        }
+    };
+    // fx[i + 1] is the flux from i to i + 1; fy[i + nx] the flux from i to i + nx.
+    let mut fx = vec![0.0_f64; n + 1];
+    let mut fy = vec![0.0_f64; n + nx];
+    for ((f, a), w) in fx[1..n]
+        .iter_mut()
+        .zip(active.iter().zip(&active[1..]))
+        .zip(v.iter().zip(&v[1..]))
+    {
+        *f = flux(a, w);
+    }
+    for ((f, a), w) in fy[nx..n]
+        .iter_mut()
+        .zip(active.iter().zip(&active[nx..]))
+        .zip(v.iter().zip(&v[nx..]))
+    {
+        *f = flux(a, w);
+    }
+    // No pairs across the end of a row or of a layer.
+    for row in (0..n).step_by(nx) {
+        fx[row] = 0.0;
+        if (row / nx) % ny == ny - 1 {
+            fy[row + nx..row + 2 * nx].fill(0.0);
+        }
+    }
+    let cells = v
+        .iter_mut()
+        .zip(fx.windows(2))
+        .zip(fy.iter().zip(&fy[nx..]));
+    for ((out, x), (&y_in, &y_out)) in cells {
+        let d = 0.0 + y_in + x[0] - x[1] - y_out;
+        *out = put(get(*out) + d);
     }
 }
 

@@ -83,6 +83,41 @@ hourly growth 5.5 to 6.8 ms, demand 2.2 ms, soil 0.8 ms, uptake 0.8 ms. Further 
 need the owner's call: fewer rays per leaf (a model change), or a cheaper hash
 definition (new golden hashes).
 
+After WP24 (nitrogen, model 0.5.0) the per-cell nitrogen passes and the root reach
+took single_pot to 2.6 ms, two pots to 4.4 and the plot to 25.1 ms per sim-day. Two
+bit-identical follow-ups (golden hashes unchanged) brought them back down:
+
+- #60: `reached_cells` sums root length on a dense scratch grid in the order the
+  stable sort would add it, instead of sorting up to 125 pairs per root cell, and
+  `take_up` uses one scratch grid for totals and factors.
+- This PR: the hourly soil step (pot, 1,728 cells) went from 20.6 to 17.5 µs.
+  Lateral exchange computes each pair's flux once in loops without data-dependent
+  branches, then each cell adds its fluxes in the order the old scatter did (a
+  missing pair adds +0, which changes nothing because the running sum is never
+  −0). Drainage computes each layer's excess and carried nitrate just before the
+  layer above pours into it, so it needs one layer of scratch and one pass, and the
+  nitrate and water moves share it. Tried and rejected, all slower: a branch-free
+  drain (it divides for every cell, and most cells have no excess), splitting the
+  nitrogen transform into a rate pass and an update pass, and a branch-free
+  `water_factor`. The transform is bound by its four divisions per cell, not by
+  branches.
+
+| Scenario, 90 days, 4 cores | main 94b55db | after #60 | this PR |
+| --- | --- | --- | --- |
+| single_pot | 2.6 ms | 2.17 ms | 2.06 ms (fastest 2.00) |
+| two_pot_sun_shade | 4.4 ms | 3.4 ms | 3.28 ms |
+| plot_30_beans | 25.1 ms | 23.6 ms | 23.3 ms |
+
+Medians of 5 runs, `cargo run --release -p ps-bench --example sim_days 5`. The
+single pot is at the M0 budget, not reliably under it, and the plot is about 3 ms
+over the M2 budget. Where a single-pot hour goes now (wall time, instrumented):
+soil step 20%, growth 20%, the class table 12%, uptake 6%, and the daily step
+(light rebuild and growth) 36%.
+
+CI prints the same table into the summary of the linux workflow's `bench-summary`
+job. That job only reports: shared runners are too noisy to gate on wall time, so it
+cannot fail the build.
+
 Full state hash at day 90: 0.25 ms (the daily hash is chained, so it no longer grows
 with run length). RON snapshot at day 90: 3.3 ms, 740 KB, on demand only.
 
@@ -125,5 +160,6 @@ owner's machine.
 3. **Physiology at plot scale.** One class table per plant and per-hour `Vec`s in
    allocation. Dedup tables by (leaf parameters, stress) and reuse scratch buffers
    before WP21.
-4. **Soil hydrology at plot scale** allocates two grid-sized vectors per hour and walks
-   columns with a layer stride. Fine for pots; worth a pass before WP21.
+4. **Soil hydrology and nitrogen per hour.** Lateral exchange and drainage were
+   reworked after WP24 (see above). The nitrogen transform is next: four divisions
+   per active cell per hour, so on a plot it scales with cell count.

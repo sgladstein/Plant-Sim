@@ -281,65 +281,6 @@ impl SoilGrid {
         self.assert_nitrogen_closes();
     }
 
-    /// Nitrate leaving each cell with its drainage, from the start-of-step state: the
-    /// cell's nitrate times the share of its water that drains (complete mixing).
-    pub(crate) fn drain_nitrate(&mut self, excess: &[ps_units::KgWater]) {
-        let layer = self.nx * self.ny;
-        let moved: Vec<GramsN> = (0..self.water.len())
-            .map(|i| {
-                let w = self.water[i].0;
-                if excess[i].0 > 0.0 && w > 0.0 {
-                    self.no3[i] * (excess[i].0 / w).min(1.0)
-                } else {
-                    GramsN(0.0)
-                }
-            })
-            .collect();
-        for (i, m) in moved.into_iter().enumerate() {
-            if m.0 <= 0.0 {
-                continue;
-            }
-            self.no3[i] -= m;
-            let below = i + layer;
-            if below < self.water.len() && self.active[below] {
-                self.no3[below] += m;
-            } else {
-                self.n_ledger.leached += m;
-            }
-        }
-    }
-
-    /// Lateral nitrate exchange with the same fraction as water.
-    pub(crate) fn spread_nitrate(&mut self, fraction: f64) {
-        let mut delta = vec![GramsN(0.0); self.no3.len()];
-        for z in 0..self.nz {
-            for y in 0..self.ny {
-                for x in 0..self.nx {
-                    let i = self.index(Cell { x, y, z });
-                    if !self.active[i] {
-                        continue;
-                    }
-                    let mut pair = |j: usize| {
-                        if self.active[j] {
-                            let f = (self.no3[i] - self.no3[j]) * fraction;
-                            delta[i] -= f;
-                            delta[j] += f;
-                        }
-                    };
-                    if x + 1 < self.nx {
-                        pair(self.index(Cell { x: x + 1, y, z }));
-                    }
-                    if y + 1 < self.ny {
-                        pair(self.index(Cell { x, y: y + 1, z }));
-                    }
-                }
-            }
-        }
-        for (n, d) in self.no3.iter_mut().zip(delta) {
-            *n += d;
-        }
-    }
-
     /// One hour of mineralization and nitrification at each layer's temperature.
     pub(crate) fn transform_nitrogen(&mut self) {
         let hy = self.texture.hydraulics();
