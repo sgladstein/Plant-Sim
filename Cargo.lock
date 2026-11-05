@@ -4968,6 +4968,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ps-export",
+ "ps-world",
+ "ron 0.10.1",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "ps-export"
+version = "0.1.0"
+dependencies = [
+ "ps-arch",
+ "ps-graph",
+ "ps-world",
+]
+
+[[package]]
 name = "ps-graph"
 version = "0.1.0"
 dependencies = [
@@ -5107,6 +5127,7 @@ dependencies = [
  "ron 0.10.1",
  "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

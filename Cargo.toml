@@ -21,6 +21,7 @@ ps-light = { path = "crates/ps-light" }
 ps-physio = { path = "crates/ps-physio" }
 ps-arch = { path = "crates/ps-arch" }
 ps-world = { path = "crates/ps-world" }
+ps-export = { path = "crates/ps-export" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 libm = "0.2"
@@ -36,6 +37,8 @@ ps-ui = { path = "crates/ps-ui" }
 bevy = { version = "=0.20.1", default-features = false, features = ["3d", "ui"] }
 bevy_egui = { version = "=0.43.1", default-features = false, features = ["render", "default_fonts"] }
 anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

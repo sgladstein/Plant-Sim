@@ -56,6 +56,9 @@ pub enum ArchError {
     /// An expansion curve could not be built.
     #[error("expansion curve: {0}")]
     Curve(String),
+    /// The organ cannot be cut (the collar or hypocotyl: cutting it kills the plant).
+    #[error("organ {0:?} cannot be pruned")]
+    NotPrunable(OrganId),
 }
 
 /// What an organ is in the architecture (finer than [`OrganKind`]).
@@ -301,6 +304,12 @@ pub struct DayReport {
     pub feedback_loss: f64,
     /// Pod and seed dry mass, g.
     pub fruit_mass: f64,
+    /// Living leaf blade and petiole dry mass (unifoliates and trifoliates), g.
+    pub leaf_mass: f64,
+    /// Living stem dry mass (internodes, the hypocotyl included), g.
+    pub stem_mass: f64,
+    /// Seed dry mass in pods, g.
+    pub seed_mass: f64,
     /// Height of the highest shoot point above the soil, m.
     pub height: f64,
     /// Water uptake shortfall today, kg.
@@ -957,12 +966,11 @@ impl Plant {
             .sum()
     }
 
-    /// Cuts an organ and everything it carries off the plant (the Prune action). The
-    /// collar and the hypocotyl cannot be cut.
+    /// Whether [`Plant::prune`] would accept `id` now.
     ///
     /// # Errors
-    /// [`ArchError::Graph`] if the organ does not exist or is already dead.
-    pub fn prune(&mut self, id: OrganId, now: Hours) -> Result<(), ArchError> {
+    /// As [`Plant::prune`].
+    pub fn check_prune(&self, id: OrganId) -> Result<(), ArchError> {
         if id.index() >= self.arena.len() {
             return Err(GraphError::NoSuchOrgan(id).into());
         }
@@ -970,9 +978,20 @@ impl Plant {
             return Err(GraphError::Dead(id).into());
         }
         if id == self.collar || id == self.hypocotyl {
-            return Ok(());
+            return Err(ArchError::NotPrunable(id));
         }
-        allocation::shed(
+        Ok(())
+    }
+
+    /// Cuts an organ and everything it carries off the plant; the material leaves the
+    /// plant (`allocation::cut`, ledger `removed`).
+    ///
+    /// # Errors
+    /// [`ArchError::Graph`] for a missing or dead organ, [`ArchError::NotPrunable`] for
+    /// the collar or hypocotyl.
+    pub fn prune(&mut self, id: OrganId, now: Hours) -> Result<(), ArchError> {
+        self.check_prune(id)?;
+        allocation::cut(
             &mut self.arena,
             &self.params.carbon,
             id,
@@ -1034,6 +1053,9 @@ impl Plant {
                 0.0
             },
             fruit_mass: mass(OrganKind::Pod) + mass(OrganKind::SeedInPod),
+            leaf_mass: mass(OrganKind::Leaf),
+            stem_mass: mass(OrganKind::Internode),
+            seed_mass: mass(OrganKind::SeedInPod),
             height,
             shortfall: self.shortfall.0,
         }

@@ -106,7 +106,7 @@ The two-pot screen generalizes into experiment mode, the sandbox's first goal-sh
 
 Hourly steps run 24 times per sim-day. The daily step runs once, at sim-midnight, after the 24th hourly step.
 
-Hourly step, in order:
+Hourly step, in order (in the code, steps 3, 5 and 6 run from the soil as it stands before step 4, so step 7 draws on the hour's infiltrated water; decision 0014):
 
 1. Weather for the hour: air temperature, humidity (converted to vapor pressure deficit), global radiation split into direct and diffuse, rain, cloud fraction.
 2. Solar geometry: sun elevation and azimuth from latitude, day of year and hour.

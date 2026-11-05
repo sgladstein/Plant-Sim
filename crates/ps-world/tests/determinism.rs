@@ -86,6 +86,10 @@ fn extra_plant_does_not_change_the_first() {
     });
     let two = run(&s2, &c);
     assert_eq!(one.plant_hash(0), two.plant_hash(0));
+    assert_eq!(
+        ps_world::hash_of(&one.state().soils[0]),
+        ps_world::hash_of(&two.state().soils[0])
+    );
     assert_ne!(one.state_hash(), two.state_hash());
 }
 
@@ -171,4 +175,76 @@ fn shade_cloth_slows_the_shaded_plant() {
         shade.dry_mass < sun.dry_mass,
         "sun {sun:?}\nshade {shade:?}"
     );
+}
+
+#[test]
+fn pruning_removes_carbon_and_refuses_the_hypocotyl() {
+    let (s, c) = short("single_pot.ron", 30);
+    let mut w = World::new(s, c).unwrap();
+    w.run_days(28).unwrap();
+    let p = &w.state().plants[0].plant;
+    let hyp = p.hypocotyl.0;
+    let litter = p.ledger.litter;
+    let leaf = p
+        .arena
+        .alive_of(ps_graph::OrganKind::Leaf)
+        .last()
+        .map(|id| id.0)
+        .unwrap();
+    assert!(
+        w.apply(ActionKind::Prune {
+            plant: 0,
+            organ: hyp
+        })
+        .is_err()
+    );
+    w.apply(ActionKind::Prune {
+        plant: 0,
+        organ: leaf,
+    })
+    .unwrap();
+    // Actions apply at the start of the next hourly step.
+    w.run_days(1).unwrap();
+    let p = &w.state().plants[0].plant;
+    assert!(!p.arena.alive[leaf as usize]);
+    assert!(p.ledger.removed.0 > 0.0, "{:?}", p.ledger);
+    // The cut leaf went with the gardener, not to litter (other organs may still shed).
+    assert!(p.ledger.litter.0 - litter.0 < p.ledger.removed.0);
+}
+
+#[test]
+fn scenario_events_and_heat_waves_apply() {
+    let (mut s, c) = short("single_pot.ron", 3);
+    s.events = vec![Action {
+        tick: 30,
+        kind: ActionKind::SetRadiationFraction {
+            soil: 0,
+            fraction: 0.25,
+        },
+    }];
+    s.heat_wave = Some(ps_weather::presets::HeatWave {
+        start_day: 1,
+        days: 1,
+        t_max_c: 32.0,
+        t_min_c: 20.0,
+    });
+    let w = run(&s, &c);
+    assert!((w.state().soils[0].radiation_fraction - 0.25).abs() < 1e-15);
+    // Events are part of the scenario, not the player's log.
+    assert!(w.state().log.is_empty());
+    let env = |d: u32| w.state().history.iter().find(|r| r.day == d).unwrap().env;
+    assert!(
+        env(1).t_max_c > 31.0 && env(0).t_max_c < 31.0,
+        "{:?}",
+        env(1)
+    );
+    assert!(env(2).radiation_mj < env(0).radiation_mj);
+}
+
+#[test]
+fn invalid_start_dates_are_rejected() {
+    let (mut s, _) = load("single_pot.ron");
+    s.start.month = 2;
+    s.start.day = 30;
+    assert!(s.validate().is_err());
 }
