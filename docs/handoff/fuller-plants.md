@@ -1,7 +1,7 @@
 # Viewer look: "fuller plants" (option C) — handoff
 
 **Status:** Chosen by Scotttt as the current look on 2026-11-05 and merged as PR #78 (2392f58).
-- Follow-up PR #86 fixes roots poking out of the soil. It is open and merges once CI is green.
+- Roots poking out of the soil: fixed on main by #84 (viewer thread); #86, the same fix from this workstream, was closed as a duplicate.
 - Option C keeps the soft natural shading and changes plant geometry only. Everything is render-only: no sim crate changed.
 
 ## What option C changed
@@ -58,7 +58,7 @@ The changes:
 - The 1070 timing of the plot scene had not been done at handoff.
 
 ## Open and next steps
-1. **Merge PR #86** (root copies keep their depth) once CI is green.
+1. ~~Merge PR #86~~ Done: the same fix landed as #84.
 2. **Leaf angle variety belongs in the sim.** The visuals research (`research/plant-visuals-review.md` items 1–2) wants two things:
    - age-dependent petiole elevation: about 1.15 rad young to −0.35 old, replacing `PETIOLE_ELEVATION = 0.5` in `ps-arch/src/shoot.rs`
    - larger per-leaf yaw, about ±0.55 rad, because 180° phyllotaxis puts every leaf in one plane
@@ -83,4 +83,3 @@ The changes:
 `docs/archive/viewer/look-options/fuller-plants/` holds the following.
 - `pair-*.jpg`: before on the left, after on the right, with the same camera.
 - `before-*` and `after-*`: the full-size shots.
-- `roots-fix-pair-day62.jpg`: the PR #86 before and after.

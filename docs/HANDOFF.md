@@ -99,16 +99,14 @@ for whatever you pick up.
 
 | PR | What | State |
 | --- | --- | --- |
-| #87 | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; follows #81 on `claude/project-thread-ur2udi` |
-| #86 | Viewer root-copy fix from the fuller-plants workstream (overlaps #84; land one) | Fuller plants; merging on green |
-| #84 | Viewer root-copy fix, viewer handoff (`docs/handoff-viewer.md`), STATUS M1 rows | Viewer; merging on green |
-| #82 | Performance handoff doc | Docs only; merge when green |
-| #83 | Plant visuals research into docs/research/plant-visuals/ | Docs only; merge when green |
+| #87 | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; merging on green |
 | #79 | Viewer look option B painterly | **Parked**, owner decides; do not merge |
 | this PR | This handoff and the archive | |
 
-Open issue #58: scale nitrogen uptake capacity with root mass. #81 (multi-seed
-validation, decision 0026) merged as ae5499e.
+Merged during the handoff: #81 (multi-seed validation, decision 0026), #82 (perf
+handoff), #83 (plant visuals research), #84 (viewer root-copy fix and viewer
+handoff; #86 was a duplicate fix and was closed). Open issue #58: scale nitrogen
+uptake capacity with root mass.
 
 ### Branches
 
@@ -268,7 +266,7 @@ change affected the snapshot; Review sent fixes back to Implementation; Performa
 sent findings to Implementation; Research sent WP-keyed findings to Implementation and
 checks to Review. Only one thread edits STATUS for a given WP. Shared write-ups went to
 a project folder that no longer exists; from now on put them in the repo: reviews in
-`docs/reviews/`, new research in `docs/research/<topic>/` (as PR #83 does). Leave
+`docs/reviews/`, new research in `docs/research/<topic>/` (as `docs/research/plant-visuals/` does). Leave
 `docs/archive/` frozen.
 
 ## 9. Next steps, in order
@@ -289,7 +287,7 @@ a project folder that no longer exists; from now on put them in the repo: review
    into the same model bump, since they move the same calibration.
    Validation follow-ups from #81: sort validate jobs by plant count × days,
    descending, and give each job a one-thread rayon pool when several run at once.
-   (Roots through the pot wall: decision 0028. Roots drawn upward: viewer fix, #84/#86.)
+   (Roots through the pot wall: decision 0028. Roots drawn upward: viewer fix, #84.)
 4. WP26: save, load and replay already exist; missing are a non-stopping
    `Session::save_ron`, the plot save/replay done-when test, and lens data (light
    share, organ N, per-organ carbon flux) ([handoff/implementation.md](handoff/implementation.md)
@@ -331,7 +329,7 @@ Copied from the old project's shared folder, which does not move to the new acco
 | `viewer/look-options/` | Before/after renders for option C fuller plants and option B painterly. |
 
 The plant visuals research (report, renders, mockup patch) is in
-`docs/research/plant-visuals/` (PR #83).
+`docs/research/plant-visuals/`.
 
 ## 11. What was lost in the move
 
