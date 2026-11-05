@@ -461,7 +461,7 @@ fn spawn_pot(
 
 /// The color of organ `i` of `pot` under `lens`, and whether it is a lens value.
 fn organ_color(pot: &PotView, lens: Lens, i: usize, p: &Placement) -> ([f32; 3], bool) {
-    let natural = natural_color(p);
+    let natural = crate::garden::varied_color(natural_color(p), p, i);
     let Some(info) = lens.info() else {
         return (natural, false);
     };
@@ -612,18 +612,32 @@ pub(crate) fn sync_scene(
         });
     };
 
-    for (scene, pot) in index.pots.iter_mut().zip(&garden.pots) {
+    let focus = rig.focus;
+    for (k, (scene, pot)) in index.pots.iter_mut().zip(&garden.pots).enumerate() {
         let c = Vec3::new(pot.center[0], pot.center[1], 0.0);
         let half = Vec3::new(pot.size.width / 2.0, pot.size.depth / 2.0, 0.0);
-        grow(c - half - Vec3::Z * pot.size.soil_depth);
-        grow(c + half);
-        if let Some((lo, hi)) = pot.skeleton.bounds() {
+        match focus {
+            // A close-up frames one plant's shoot and the top of its pot.
+            Some(f) if f == k => grow(c - Vec3::Z * 0.03),
+            Some(_) => {}
+            None => {
+                grow(c - half - Vec3::Z * pot.size.soil_depth);
+                grow(c + half);
+            }
+        }
+        if let Some((lo, hi)) = pot
+            .skeleton
+            .bounds()
+            .filter(|_| focus.is_none_or(|f| f == k))
+        {
             // Frame the shoot; roots are framed by the pot.
             grow(c + lo.max(Vec3::new(lo.x, lo.y, 0.0)));
             grow(c + hi);
         }
-        for s in &pot.supports {
-            grow(c + Vec3::new(s.base[0], s.base[1], s.height + 0.05));
+        if focus.is_none() {
+            for s in &pot.supports {
+                grow(c + Vec3::new(s.base[0], s.base[1], s.height + 0.05));
+            }
         }
         for o in &pot.obstacles {
             grow(c + Vec3::from(o.min));
@@ -635,12 +649,12 @@ pub(crate) fn sync_scene(
         let mut seen = Vec::with_capacity(current.len());
         for axis in &current {
             let style = match axis.kind {
-                AxisKind::Shoot => AxisStyle::STEM,
                 // A little thicker than ps-mesh's default so fine roots read against soil.
                 AxisKind::Root => AxisStyle {
                     min_radius: 0.000_5,
                     ..AxisStyle::ROOT
                 },
+                kind => AxisStyle::for_kind(kind),
             };
             let key = axis.key();
             seen.push(key);

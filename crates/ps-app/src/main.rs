@@ -9,10 +9,14 @@
 //!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 //!           [--bench-frames N] [--bench-out FILE.csv]
 //!           [--scenario FILE.ron] [--data DIR] [--demo] [--window WxH] [--fps-cap N]
+//!           [--focus POT] [--orbit YAW,PITCH] [--zoom F]
 //! ```
 //!
 //! The default present mode is mailbox with a frame cap at twice the monitor's refresh rate
 //! (`--fps-cap N` overrides it, 0 turns it off; FIFO and auto vsync are never capped).
+//! `--focus POT` frames one pot's plant in close-up; `--orbit YAW,PITCH` sets the camera
+//! angles in degrees (yaw 0 looks north from the south); `--zoom F` scales the framing
+//! distance (below 1 moves in).
 //! `--window WxH` sets the window size in physical pixels (clamped to fit the monitor);
 //! without it the 1600x900 logical default shrinks to fit the monitor.
 //!
@@ -85,6 +89,9 @@ struct Options {
     fps_cap: Option<f64>,
     window: (u32, u32),
     window_explicit: bool,
+    focus: Option<usize>,
+    orbit: Option<(f32, f32)>,
+    zoom: Option<f32>,
 }
 
 fn parse_present(name: &str) -> Result<PresentMode> {
@@ -134,6 +141,7 @@ fn parse_lens(name: &str) -> Result<Lens> {
     })
 }
 
+#[allow(clippy::too_many_lines)] // One arm per switch.
 fn parse_args() -> Result<Options> {
     let mut o = Options {
         day: 0.0,
@@ -159,6 +167,9 @@ fn parse_args() -> Result<Options> {
         fps_cap: None,
         window: (1600, 900),
         window_explicit: false,
+        focus: None,
+        orbit: None,
+        zoom: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -212,6 +223,24 @@ fn parse_args() -> Result<Options> {
                 o.window_explicit = true;
             }
             "--scenario" => o.scenario = PathBuf::from(value()?),
+            "--focus" => {
+                o.focus = Some(anyhow::Context::context(
+                    value()?.parse::<usize>(),
+                    "--focus",
+                )?);
+            }
+            "--zoom" => {
+                o.zoom = Some(anyhow::Context::context(value()?.parse::<f32>(), "--zoom")?);
+            }
+            "--orbit" => {
+                let v = value()?;
+                let parsed = v
+                    .split_once(',')
+                    .and_then(|(a, b)| Some((a.parse::<f32>().ok()?, b.parse::<f32>().ok()?)));
+                o.orbit = Some(anyhow::Context::with_context(parsed, || {
+                    format!("--orbit wants YAW,PITCH in degrees, got {v:?}")
+                })?);
+            }
             "--data" => o.data = Some(PathBuf::from(value()?)),
             "--frame-latency" => {
                 let n = anyhow::Context::context(value()?.parse::<u32>(), "--frame-latency")?;
@@ -219,7 +248,7 @@ fn parse_args() -> Result<Options> {
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--window WxH] [--fps-cap N]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--window WxH] [--fps-cap N] [--focus POT] [--orbit YAW,PITCH] [--zoom F]"
                 );
                 std::process::exit(0);
             }
@@ -258,6 +287,18 @@ fn main() -> Result<()> {
         ..default()
     })
     .insert_resource(options.clone());
+    if options.focus.is_some() || options.orbit.is_some() || options.zoom.is_some() {
+        let mut rig = ps_view::CameraRig {
+            focus: options.focus,
+            zoom: options.zoom.unwrap_or(1.0).clamp(0.05, 10.0),
+            ..default()
+        };
+        if let Some((yaw, pitch)) = options.orbit {
+            rig.yaw = yaw.to_radians();
+            rig.pitch = pitch.to_radians();
+        }
+        app.insert_resource(rig);
+    }
     let sim = if options.demo {
         None
     } else {

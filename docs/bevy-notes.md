@@ -45,6 +45,11 @@ sudo apt-get install libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev 
 xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plant-sim --day 45.5 --screenshot shot.png
 ```
 
+For close-ups, `--focus POT` frames one pot's shoot, `--orbit YAW,PITCH` sets the camera
+angles in degrees and `--zoom F` scales the framing distance, so before and after shots
+of a look change can use the same camera:
+`plant-sim --day 50.5 --clean --focus 0 --zoom 0.55 --orbit -30,20 --screenshot near.png`.
+
 ## Idioms used
 
 - Sim frame (x east, y north, z up) is kept for all plant geometry; one root entity

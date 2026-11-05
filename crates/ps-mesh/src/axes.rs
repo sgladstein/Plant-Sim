@@ -3,6 +3,9 @@
 //! An axis continues through an organ's first child of the same kind and axis order;
 //! any other child of that kind starts a new axis (a branch or a lateral root). The
 //! hypocotyl starts the main stem; the first root segment starts the tap root.
+//!
+//! Each broadleaf leaf adds a one-organ petiole axis: a curved tube from its node to the
+//! pulvinus where the blade template starts.
 
 use glam::Vec3;
 use ps_graph::{OrganId, OrganKind};
@@ -17,6 +20,8 @@ pub enum AxisKind {
     Shoot,
     /// Root segments.
     Root,
+    /// A leaf's petiole, keyed by the leaf.
+    Petiole,
 }
 
 /// One axis: its organs in base-to-tip order.
@@ -50,8 +55,23 @@ pub fn axes(skeleton: &Skeleton, alive_only: bool) -> Vec<Axis> {
     let mut axis_of: Vec<Option<usize>> = vec![None; n];
     let mut continued = vec![false; n];
     let mut out: Vec<Axis> = Vec::new();
+    let broadleaf = skeleton.blade_aspect.is_none();
     for (i, p) in skeleton.organs.iter().enumerate() {
-        if !is_axis_kind(p.kind) || (alive_only && !p.alive) {
+        if alive_only && !p.alive {
+            continue;
+        }
+        if p.kind == OrganKind::Leaf {
+            if broadleaf && p.petiole_length() > 0.0 {
+                out.push(Axis {
+                    kind: AxisKind::Petiole,
+                    axis_order: p.axis_order,
+                    organs: vec![OrganId(i as u32)],
+                    copies: 1,
+                });
+            }
+            continue;
+        }
+        if !is_axis_kind(p.kind) {
             continue;
         }
         let kind = if p.kind == OrganKind::Root {
@@ -114,7 +134,35 @@ impl AxisStyle {
         min_radius: 0.000_3,
         tip_taper: 0.5,
     };
+    /// Petioles: six sides, 0.35 mm minimum, ending in the pulvinus.
+    pub const PETIOLE: Self = Self {
+        sides: 6,
+        min_radius: 0.000_35,
+        tip_taper: 1.0,
+    };
+
+    /// The usual style for an axis of `kind`.
+    #[must_use]
+    pub fn for_kind(kind: AxisKind) -> Self {
+        match kind {
+            AxisKind::Shoot => Self::STEM,
+            AxisKind::Root => Self::ROOT,
+            AxisKind::Petiole => Self::PETIOLE,
+        }
+    }
 }
+
+/// Centerline points of a petiole after its base. A turgid petiole rises from its node
+/// more steeply than its chord and arches over to the pulvinus.
+pub const PETIOLE_POINTS: usize = 7;
+
+/// Petiole radius over the square root of blade area: about 0.6 mm for a 20 cm² leaf.
+pub const PETIOLE_RADIUS: f32 = 0.013;
+
+/// Where a stem's node swellings sit: the ring before and after each node, as fractions
+/// of the internode, and how much wider the node is than the stem beside it.
+const NODE_SHOULDER: f32 = 0.12;
+const NODE_SWELL: f32 = 1.3;
 
 /// Tube nodes per turn of a twining stem: enough to read as a smooth coil.
 pub const COIL_POINTS_PER_TURN: u32 = 12;
@@ -123,10 +171,50 @@ pub const COIL_POINTS_PER_TURN: u32 = 12;
 /// or a point per twelfth of a turn along its coil.
 #[must_use]
 pub fn nodes_after_base(p: &Placement) -> usize {
+    if p.kind == OrganKind::Leaf {
+        return PETIOLE_POINTS;
+    }
     match p.coil.filter(|_| p.length > 0.0) {
         Some(coil) => coil.sample_count(p.length, COIL_POINTS_PER_TURN),
+        // A straight internode swells at the node it ends in: a ring before the node,
+        // the node, and one after it is added by the next internode.
+        None if p.kind == OrganKind::Internode => 3,
         None => 1,
     }
+}
+
+/// The curved centerline of a leaf's petiole: from the node to [`crate::pulvinus`],
+/// leaving the stem a little steeper than the straight line and arriving a little
+/// flatter, thickest at its two pulvini.
+fn petiole_nodes(p: &Placement, style: AxisStyle) -> Vec<TubeNode> {
+    let length = p.petiole_length();
+    let start = p.base;
+    let end = crate::pulvinus(p);
+    let d = p.direction.normalize_or(Vec3::X);
+    let h = Vec3::new(d.x, d.y, 0.0).normalize_or(Vec3::X);
+    let elevation = d.z.clamp(-1.0, 1.0).asin();
+    // The control point lies along a direction 0.35 rad steeper (at most near vertical).
+    let up = (elevation + 0.35).min(1.45);
+    let control = start + (h * up.cos() + Vec3::Z * up.sin()) * (0.5 * length);
+    let r = (PETIOLE_RADIUS * p.area.max(0.0).sqrt()).max(style.min_radius);
+    let grown = length > 0.0 && p.area > 0.0;
+    (0..=PETIOLE_POINTS)
+        .map(|k| {
+            let t = k as f32 / PETIOLE_POINTS as f32;
+            let s = 1.0 - t;
+            let position = start * (s * s) + control * (2.0 * s * t) + end * (t * t);
+            // Swollen pulvinus at the base, a smaller one under the blade.
+            let swell = 1.0 + 0.6 * (1.0 - t * 5.0).max(0.0) + 0.35 * (t * 6.0 - 5.0).max(0.0);
+            TubeNode {
+                position,
+                radius: if grown {
+                    r * swell * (1.0 - 0.25 * t)
+                } else {
+                    0.0
+                },
+            }
+        })
+        .collect()
 }
 
 /// The centerline of an axis: its base, then each organ's tip (a twining internode adds
@@ -134,6 +222,13 @@ pub fn nodes_after_base(p: &Placement) -> usize {
 /// the mean of the two segments meeting there, so the taper is continuous.
 #[must_use]
 pub fn axis_nodes(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> Vec<TubeNode> {
+    if axis.kind == AxisKind::Petiole {
+        return axis
+            .organs
+            .first()
+            .and_then(|id| skeleton.get(*id))
+            .map_or_else(Vec::new, |p| petiole_nodes(p, style));
+    }
     let parts: Vec<_> = axis
         .organs
         .iter()
@@ -167,6 +262,26 @@ pub fn axis_nodes(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> Vec<Tub
                         radius: r0 + (r - r0) * f,
                     });
                 }
+            }
+            None if p.kind == OrganKind::Internode => {
+                // Shoulders either side of the node, and the node itself swollen (not at
+                // the apex, which tapers to its point).
+                let own = visible(p.radius, p.length > 0.0);
+                let r0 = nodes.last().map_or(own, |n: &TubeNode| n.radius);
+                let below = if k == 0 { r0 } else { own };
+                nodes.push(TubeNode {
+                    position: p.base.lerp(p.tip(), NODE_SHOULDER),
+                    radius: below.max(own),
+                });
+                nodes.push(TubeNode {
+                    position: p.base.lerp(p.tip(), 1.0 - NODE_SHOULDER),
+                    radius: own.max(r),
+                });
+                let swell = if k + 1 < parts.len() { NODE_SWELL } else { 1.0 };
+                nodes.push(TubeNode {
+                    position: p.tip(),
+                    radius: r * swell,
+                });
             }
             None => nodes.push(TubeNode {
                 position: p.tip(),
@@ -209,6 +324,7 @@ pub fn axis_mesh(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> MeshData
     let fallback = match axis.kind {
         AxisKind::Shoot => Vec3::Z,
         AxisKind::Root => Vec3::NEG_Z,
+        AxisKind::Petiole => Vec3::X,
     };
     let mut one = MeshData::new();
     tube(&nodes, style.sides, false, fallback, &mut one);
