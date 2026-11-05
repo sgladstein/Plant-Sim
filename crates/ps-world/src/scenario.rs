@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use ps_soil::Texture;
+use ps_soil::{NitrogenForm, SoilNitrogen, Texture};
 use ps_weather::presets::HeatWave;
 use serde::{Deserialize, Serialize};
 
@@ -165,6 +165,10 @@ pub struct Scenario {
     /// Share of rain reaching each soil (a rain shelter sets 0); 1 if absent.
     #[serde(default)]
     pub rain_fraction: BTreeMap<u32, f64>,
+    /// Starting nitrogen of each soil; a moderately fertile garden loam with rhizobia
+    /// ([`SoilNitrogen::GARDEN`]) if absent (WP24, decision 0020).
+    #[serde(default)]
+    pub nitrogen: BTreeMap<u32, SoilNitrogen>,
     /// Automatic watering per soil; none if absent.
     #[serde(default)]
     pub irrigation: BTreeMap<u32, Irrigation>,
@@ -258,6 +262,13 @@ impl Scenario {
                 return bad(format!("radiation fraction {f} for soil {id}"));
             }
         }
+        for (id, n) in &self.nitrogen {
+            let ok = |v: f64| v.is_finite() && v >= 0.0;
+            let valid = ok(n.no3_ppm) && ok(n.nh4_ppm) && ok(n.organic_g_per_kg);
+            if !known(id) || !valid {
+                return bad(format!("nitrogen {n:?} for soil {id}"));
+            }
+        }
         for (id, f) in &self.rain_fraction {
             if !known(id) || !(0.0..=1.0).contains(f) {
                 return bad(format!("rain fraction {f} for soil {id}"));
@@ -338,5 +349,14 @@ pub enum ActionKind {
         plant: u32,
         /// Organ id within the plant.
         organ: u32,
+    },
+    /// Spread mineral nitrogen fertilizer over a soil's surface (§2 "Fertilize", WP24).
+    Fertilize {
+        /// Soil id.
+        soil: u32,
+        /// Form.
+        form: NitrogenForm,
+        /// Nitrogen, g N per m² of surface (10 g m⁻² is 100 kg N ha⁻¹).
+        g_per_m2: f64,
     },
 }

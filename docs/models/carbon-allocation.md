@@ -53,7 +53,7 @@ reserve `R` (g C), structure `W` (g DM) and concentration `C = R / max(W, 1e-6)`
    flower closing, cotyledon drop) its positive reserve, which is mobile, first moves
    to its parent; only structure is split into resorbed and litter (decision 0013).
    Starvation is not checked after maturity, when tissue is dry and no longer
-   respires (organ nitrogen is set to zero, so maintenance is zero).
+   respires (no organ pays maintenance after maturity; decision 0020).
    A cut (pruning; harvest later) goes through `allocation::cut` instead: nothing is
    resorbed, and each cut organ's structure and reserve (a debt included) leave the
    plant as `removed` (WP10, WP9 review).

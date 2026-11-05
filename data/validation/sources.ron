@@ -211,6 +211,14 @@ Sources(
       cultivar: "BRSMG Marte (red seed; habit not stated in the paper)",
       conditions: "Greenhouse, Lavras MG, Brazil, 919 m; one plant per pot; period 1 April-June 2023, period 2 July-September 2023; GDD base 8.3 C, mean method, no upper threshold",
     ),
+    "plan_wp24_nfree": Source(
+      citation: "Plant-Sim design plan section 7, WP24 done-when, made numeric in the M2-M3 research notes (row 23): nodulated over unnodulated shoot dry mass above 3 at 45 days after emergence in nitrogen-free sand, and unnodulated plant N at or below seed N (about 10 mg, OpenSimRoot).",
+      doi: None,
+      url: "https://github.com/sgladstein/Plant-Sim/blob/main/docs/design-plan.md",
+      licence: "Project document",
+      cultivar: "Any nodulating bean and a non-inoculated control",
+      conditions: "Acceptance criterion inferred from legume physiology, not a measurement",
+    ),
     "rezene2013": Source(
       citation: "Rezene Y., Gebeyehu S., Zelleke H. (2013) Morpho-physiological response to post-flowering drought stress in small red seeded common bean (Phaseolus vulgaris L.) genotypes. Journal of Plant Studies 2(1): 42.",
       doi: Some("10.5539/jps.v2n1p42"),

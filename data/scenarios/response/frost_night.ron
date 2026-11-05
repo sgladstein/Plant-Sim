@@ -3,13 +3,16 @@
 // not regrow (decision 0018).
 Scenario(
   schema: 1,
-  model_version: "0.3.0",
+  model_version: "0.4.0",
   world_seed: 7,
   latitude_deg: 45.0,
   start: (year: 2026, month: 5, day: 15, hour: 0),
   weather: Preset("frost_night"),
   soils: [ Pot(id: 0, diameter_cm: 24.0, depth_cm: 24.0, texture: Loam, position_m: (0.0, 0.0)) ],
   irrigation: { 0: ToFieldCapacity(every_days: 1) },
+  // Fertilized pots: the cited pot experiments fed their plants, and the M0 checks
+  // compare nitrogen-sufficient plants (decision 0020).
+  nitrogen: { 0: (no3_ppm: 300.0, nh4_ppm: 2.0, organic_g_per_kg: 1.0, rhizobia: true) },
   co2_ppm: 420.0,
   sowings: [ (soil: 0, species: "bush_bean", seed: Default, depth_cm: 3.0) ],
   duration_days: 40,

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 1;
+pub const SCHEMA: u32 = 2;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -195,12 +195,6 @@ param_group!(
         cotyledon_lifespan: "day",
         /// Absorptance of leaves for PAR.
         leaf_absorptance: "-",
-        /// Nitrogen per dry mass of stems.
-        stem_n_fraction: "g N / g DM",
-        /// Nitrogen per dry mass of roots.
-        root_n_fraction: "g N / g DM",
-        /// Nitrogen per dry mass of flowers, pods and seeds.
-        fruit_n_fraction: "g N / g DM",
         /// Length of one root segment, and of parent root covered by one cohort of laterals.
         root_segment_length: "cm",
         /// Share of the way to vertical a new internode turns per node (shoot gravitropism).
@@ -227,6 +221,79 @@ param_group!(
         seed_aspect: "-",
         /// Divergence angle between successive leaves.
         phyllotaxis_angle: "deg",
+    }
+);
+
+param_group!(
+    /// Plant nitrogen (§3.6 "Nitrogen (M2)", WP24, decision 0020). "Initial" is the
+    /// concentration of new tissue, which the plant tops organs up to while they grow;
+    /// "final" is what is left when all mobile nitrogen is gone.
+    Nitrogen {
+        /// Nitrogen per dry mass of new leaves.
+        leaf_n_initial: "g N / g DM",
+        /// Nitrogen per dry mass left in a fully mined leaf.
+        leaf_n_final: "g N / g DM",
+        /// Nitrogen per dry mass of new stems (and buds).
+        stem_n_initial: "g N / g DM",
+        /// Nitrogen per dry mass left in a fully mined stem.
+        stem_n_final: "g N / g DM",
+        /// Nitrogen per dry mass of new roots.
+        root_n_initial: "g N / g DM",
+        /// Nitrogen per dry mass left in a fully mined root.
+        root_n_final: "g N / g DM",
+        /// Nitrogen per dry mass of new flowers and pod walls.
+        shell_n_initial: "g N / g DM",
+        /// Nitrogen per dry mass left in a fully mined pod wall.
+        shell_n_final: "g N / g DM",
+        /// Nitrogen per dry mass of filling seeds (and of the sown seed).
+        seed_n_initial: "g N / g DM",
+        /// Nitrogen per dry mass below which a seed stops filling.
+        seed_n_final: "g N / g DM",
+        /// Nitrogen per dry mass of nodules.
+        nodule_n: "g N / g DM",
+        /// Leaf nitrogen per area at which photosynthetic capacity is zero.
+        leaf_n_area_base: "g N / m2",
+        /// Uptake per length of root per day when soil mineral nitrogen is high.
+        uptake_capacity: "g N / m / day",
+        /// How far around each drawn root the plant takes up nitrogen: its unresolved
+        /// fine roots and the nitrate the soil water carries to them.
+        root_reach: "cm",
+        /// Share of an organ's mobile nitrogen that can move out per day once seeds fill.
+        mobilization_rate: "1/day",
+        /// Mobilization rate before seed fill, relative to the rate above.
+        vegetative_mobilization: "-",
+        /// A leaf drops once its mobile nitrogen falls below this share of a new leaf's.
+        leaf_drop_mobile: "-",
+        /// Nitrogen fixed per nodule dry mass per day at best (0 for a non-legume).
+        nodule_activity: "g N / g DM / day",
+        /// Most the plant's nodule mass can grow per day, relative to itself.
+        nodule_relative_growth: "1/day",
+        /// Nodule mass a plant starts when it first nodulates.
+        nodule_initial_mass: "g DM",
+        /// Potential dry mass of one nodule cluster organ.
+        nodule_mass: "g DM",
+        /// Thermal time for a nodule cluster to reach full size.
+        nodule_expansion: "Cd",
+        /// Roots deeper than this carry no nodules.
+        nodule_depth: "cm",
+        /// Carbon respired per nitrogen fixed.
+        fixation_cost: "g C / g N",
+        /// Soil temperature below which nodules fix nothing.
+        fixation_t_min: "C",
+        /// Lower end of the soil temperature range of full fixation.
+        fixation_t_opt_low: "C",
+        /// Upper end of the soil temperature range of full fixation.
+        fixation_t_opt_high: "C",
+        /// Soil temperature above which nodules fix nothing.
+        fixation_t_max: "C",
+        /// Expansion water-stress factor below which fixation falls, linearly to 0.
+        fixation_drought_threshold: "-",
+        /// Root-zone nitrate above which new nodules are suppressed.
+        nodule_nitrate_onset: "mg N / kg",
+        /// Root-zone nitrate at which nodule initiation reaches its floor.
+        nodule_nitrate_full: "mg N / kg",
+        /// Nodule initiation at high nitrate, relative to none.
+        nodule_nitrate_floor: "-",
     }
 );
 
