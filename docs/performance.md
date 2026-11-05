@@ -122,6 +122,15 @@ m2/pole_row_trellis (8 plants on one 1.5 × 1 m plot) 12.2 ms. A 30-plant pole p
 at that rate would be about 45 ms, so pole beans need their own look before a large
 pole plot is a target.
 
+After WP23 (spring wheat, model 0.7.0), medians of 3 runs: m2/wheat_spaced (4
+plants, 140 days) 15.5 ms per sim-day, and m2/wheat_stand (about 200 plants on a
+1 × 1 m bed) 111 ms per sim-day, so a 140-day stand takes about 15.5 s. Callgrind
+on a 60-day stand, single thread: the shared plot light rebuild is 48% of
+instructions (ray traversal 43%), hourly growth 33% (allocation 26%), and the daily
+hash 5.7%. Bit-identical work has little left to give here; the levers are model
+choices for the owner: fewer rays per leaf, or one light sample per tiller rather
+than per blade for grasses.
+
 CI prints the same table into the summary of the linux workflow's `bench-summary`
 job. That job only reports: shared runners are too noisy to gate on wall time, so it
 cannot fail the build.
