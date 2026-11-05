@@ -17,7 +17,7 @@
 //! the recorded timeline, and the world becomes live again when it passes the latest
 //! tick. An action taken while behind the latest tick starts a new branch: the recorded
 //! future (later actions and midnight copies) is discarded, as in a save loaded and
-//! changed. Decision 0015.
+//! changed. Decision 0016.
 
 mod snapshot;
 

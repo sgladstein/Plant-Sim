@@ -1,0 +1,16 @@
+[package]
+name = "ps-view"
+description = "Bevy plugin: the diorama scene, scene sync from plant snapshots, lenses, orbit camera, sky"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-graph.workspace = true
+ps-mesh.workspace = true
+bevy.workspace = true
+
+[lints]
+workspace = true

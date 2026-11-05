@@ -1,4 +1,4 @@
-# 0015: The sim thread, its snapshots and scrubbing (WP16)
+# 0016: The sim thread, its snapshots and scrubbing (WP16)
 
 - **Date:** 2026-11-05
 - **Status:** accepted
