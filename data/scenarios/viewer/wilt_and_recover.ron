@@ -1,0 +1,26 @@
+// Viewer scenario (WP20, the wilting moment): two bush beans under a rain shelter, both
+// watered to field capacity daily. On day 30 the right pot's watering stops; it dries
+// down until its leaves droop (water stress about 0.5 by day 54), and is watered again
+// on day 55 at 07:00, so it recovers within hours. Render the wilting with
+// `--timelapse DIR --clean --day 48 --to-day 57`.
+Scenario(
+  schema: 1,
+  model_version: "0.14.0",
+  world_seed: 7,
+  latitude_deg: 45.0,
+  start: (year: 2026, month: 5, day: 15, hour: 0),
+  weather: Preset("temperate_summer"),
+  soils: [ Pot(id: 0, diameter_cm: 20.0, depth_cm: 20.0, texture: Loam, position_m: (0.0, 0.0)),
+           Pot(id: 1, diameter_cm: 20.0, depth_cm: 20.0, texture: Loam, position_m: (0.6, 0.0)) ],
+  rain_fraction: { 0: 0.0, 1: 0.0 },
+  irrigation: { 0: ToFieldCapacity(every_days: 1), 1: ToFieldCapacity(every_days: 1) },
+  co2_ppm: 420.0,
+  sowings: [ (soil: 0, species: "bush_bean", seed: Default, depth_cm: 3.0),
+             (soil: 1, species: "bush_bean", seed: Default, depth_cm: 3.0) ],
+  duration_days: 60,
+  events: [
+    (tick: 720, kind: SetIrrigation(soil: 1, irrigation: None)),
+    (tick: 1327, kind: Water(soil: 1, mm: 40.0)),
+    (tick: 1327, kind: SetIrrigation(soil: 1, irrigation: ToFieldCapacity(every_days: 1))),
+  ],
+)

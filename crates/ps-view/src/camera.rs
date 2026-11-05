@@ -32,6 +32,8 @@ pub struct CameraRig {
     pub focus: Option<usize>,
     /// Auto-framing distance multiplier (below 1 moves in), for close-up shots.
     pub zoom: f32,
+    /// A further distance factor from the flowering cue (`moments`), 1 when none.
+    pub cue_zoom: f32,
     /// Screen space covered by UI panels, logical pixels: (left, top, right, bottom).
     /// The view is shifted off-center so the scene centers in the uncovered area.
     pub insets: [f32; 4],
@@ -50,6 +52,7 @@ impl Default for CameraRig {
             reset_requested: false,
             focus: None,
             zoom: 1.0,
+            cue_zoom: 1.0,
             insets: [0.0; 4],
         }
     }
@@ -164,7 +167,7 @@ pub(crate) fn apply_rig(
         && let Some(bounds) = rig.frame_bounds
     {
         let (target, distance) = CameraRig::framing(bounds);
-        let distance = distance * rig.zoom;
+        let distance = distance * rig.zoom * rig.cue_zoom;
         let k = 1.0 - (-3.0 * time.delta_secs()).exp();
         rig.target = rig.target.lerp(target, k);
         rig.distance += (distance - rig.distance) * k;

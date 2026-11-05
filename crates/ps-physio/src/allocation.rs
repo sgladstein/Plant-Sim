@@ -284,6 +284,29 @@ pub fn hourly(
     inp: &HourInputs<'_>,
     ledger: &mut CarbonLedger,
 ) -> Result<HourReport, PhysioError> {
+    hourly_recording(arena, allometry, p, temp, inp, ledger, None)
+}
+
+/// [`hourly`], also recording each organ's phloem import for the hour in `flows`
+/// (WP26, the carbon flow lens): the carbon moved from its parent into it, negative
+/// for an export to the parent, indexed by organ id (zero for organs without a living
+/// parent). Recording only reads the fluxes, so the state and ledger are bit for bit
+/// those of [`hourly`].
+///
+/// # Errors
+/// As [`hourly`].
+///
+/// # Panics
+/// As [`hourly`].
+pub fn hourly_recording(
+    arena: &mut OrganArena,
+    allometry: &Allometry,
+    p: &CarbonParams,
+    temp: &Temperature,
+    inp: &HourInputs<'_>,
+    ledger: &mut CarbonLedger,
+    flows: Option<&mut Vec<GramsC>>,
+) -> Result<HourReport, PhysioError> {
     for (what, got) in [
         ("temperature", inp.temperature.len()),
         ("income", inp.income.len()),
@@ -341,7 +364,7 @@ pub fn hourly(
         };
     }
     // 10. Transport: one implicit diffusion step on the organ tree.
-    rep.transported = transport(arena, p);
+    rep.transported = transport_recording(arena, p, flows);
     // 11. Thermal time, and the expansion clock: thermal time scaled by the expansion
     // temperature factor, so cold delays expansion instead of destroying it
     // (decision 0011).
@@ -413,7 +436,17 @@ pub fn hourly(
 /// no concentration leaves the range of its neighbors', so no reserve is driven
 /// negative and no step size limit applies. Carbon moves as edge fluxes
 /// `k (C_p' − C_c')`, so it is conserved to rounding. Returns the carbon moved.
+#[cfg(test)]
 pub(crate) fn transport(arena: &mut OrganArena, p: &CarbonParams) -> GramsC {
+    transport_recording(arena, p, None)
+}
+
+/// [`transport`], writing each edge's flux into `flows` at the child's index.
+fn transport_recording(
+    arena: &mut OrganArena,
+    p: &CarbonParams,
+    flows: Option<&mut Vec<GramsC>>,
+) -> GramsC {
     // Edges by child id; a parent is always created before its children, so its id is
     // smaller and descending child order eliminates every subtree before its root.
     let edges: Vec<(usize, usize, f64)> = arena
@@ -455,11 +488,19 @@ pub(crate) fn transport(arena: &mut OrganArena, p: &CarbonParams) -> GramsC {
         conc[ch] = (rhs[ch] + k * conc[pa]) / diag[ch];
     }
     let mut moved = 0.0;
+    let mut flows = flows;
+    if let Some(v) = flows.as_deref_mut() {
+        v.clear();
+        v.resize(n, GramsC(0.0));
+    }
     for &(pa, ch, k) in &edges {
         let f = k * (conc[pa] - conc[ch]);
         arena.reserve[pa].0 -= f;
         arena.reserve[ch].0 += f;
         moved += f.abs();
+        if let Some(v) = flows.as_deref_mut() {
+            v[ch] = GramsC(f);
+        }
     }
     GramsC(moved)
 }

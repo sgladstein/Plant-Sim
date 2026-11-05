@@ -441,3 +441,33 @@ fn soil_patches_stay_put_when_a_bed_grows() {
         }
     }
 }
+
+/// WP28 done-when 1: two seeds of one species differ measurably. Each `Sample` seed is
+/// a pure line drawn from the bush bean population and is stored with its plant; with
+/// the same plant ids (so the same non-heritable draws, decision 0027) the genotype
+/// alone moves the grown plant away from its `Default` twin.
+#[test]
+fn sampled_seeds_differ_measurably() {
+    let (mut s, c) = short("two_pot_sun_shade.ron", 30);
+    s.radiation_fraction.insert(1, 1.0);
+    let default = run(&s, &c);
+    for sow in &mut s.sowings {
+        sow.seed = SeedChoice::Sample;
+    }
+    let sampled = run(&s, &c);
+    let (d, p) = (&default.state().plants, &sampled.state().plants);
+    assert_ne!(p[0].genotype, p[1].genotype);
+    assert_ne!(p[0].genotype, d[0].genotype);
+    // Every sampled locus is homozygous (pure-line founders).
+    assert!(p.iter().all(|e| {
+        e.genotype
+            .alleles
+            .iter()
+            .all(|(a, b)| a.to_bits() == b.to_bits())
+    }));
+    let shift = |i: usize| {
+        let (a, b) = (d[i].plant.leaf_area(), p[i].plant.leaf_area());
+        (a - b).abs() / a.max(1e-12)
+    };
+    assert!(shift(0).max(shift(1)) > 0.02, "{} {}", shift(0), shift(1));
+}

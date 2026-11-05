@@ -23,7 +23,7 @@ use anyhow::{Context as _, Result, bail};
 use bevy::math::Vec3;
 use bevy::prelude::{ResMut, Resource};
 use ps_graph::OrganKind;
-use ps_mesh::{Coil, Skeleton};
+use ps_mesh::{Coil, Pose, Skeleton};
 use ps_session::{Session, SessionOptions, Snapshot, TimeCommand as SimCommand};
 use ps_ui::{Chart, Charts, Series, TimeCommand, TimeControl};
 use ps_units::{Hours, WPerM2};
@@ -125,11 +125,21 @@ fn obstacle_view(o: &ObstacleSpec) -> ObstacleView {
     }
 }
 
-/// One plant's skeletons: the hour before the current tick and the current tick.
+/// One plant at one tick: its skeleton and what poses it (WP20).
+#[derive(Clone)]
+struct Frame {
+    skeleton: Skeleton,
+    /// Water stress factor on conductance, 1 = unstressed.
+    stress: f32,
+    /// Lean toward the light, rad (see [`ps_mesh::lean_from_light`]).
+    lean: bevy::math::Vec2,
+}
+
+/// One plant's frames: the hour before the current tick and the current tick.
 struct PlantFrames {
     tick: u64,
-    previous: Skeleton,
-    current: Skeleton,
+    previous: Frame,
+    current: Frame,
 }
 
 /// The sim-driven source.
@@ -469,6 +479,43 @@ fn absorbed(p: &PlantEntry, i: usize, hour: usize, w: &HourWeather, fraction: f6
     .0
 }
 
+/// The plant's lean toward the light (WP20): each living leaf's daily-mean absorbed PAR
+/// against its offset from the stem, from today's weather.
+fn lean_of(
+    p: &PlantEntry,
+    skeleton: &Skeleton,
+    day_weather: &[Option<HourWeather>; 24],
+) -> bevy::math::Vec2 {
+    let a = &p.plant.arena;
+    let leaves: Vec<(bevy::math::Vec2, f32, f32)> = a
+        .ids()
+        .filter(|id| a.kind[id.index()] == OrganKind::Leaf && a.alive[id.index()])
+        .filter_map(|id| {
+            let i = id.index();
+            let placement = skeleton.organs.get(i)?;
+            let offset = (ps_mesh::pulvinus(placement) - skeleton.origin).truncate();
+            let par = day_weather
+                .iter()
+                .enumerate()
+                .filter_map(|(k, hw)| hw.map(|hw| absorbed(p, i, k, &hw, 1.0)))
+                .sum::<f64>()
+                / 24.0;
+            Some((offset, placement.area, par as f32))
+        })
+        .collect();
+    ps_mesh::lean_from_light(&leaves)
+}
+
+/// The sim hour the plant's first flower appeared (its birth tick), if it has flowered.
+fn first_flower(p: &PlantEntry) -> Option<f64> {
+    let a = &p.plant.arena;
+    a.ids()
+        .filter(|id| matches!(a.kind[id.index()], OrganKind::Flower | OrganKind::Pod))
+        .map(|id| a.birth[id.index()].0)
+        .min()
+        .map(|t| t as f64)
+}
+
 /// A chart line's quantity: label, color, and the value from a daily row.
 type Quantity = (&'static str, [f32; 3], fn(&DayRow) -> f64);
 
@@ -629,6 +676,9 @@ pub fn drive(
             src.session.time(SimCommand::SetSpeed(speed));
         }
         let tick = snap.tick;
+        let day0 = tick - tick % 24;
+        let day_weather: [Option<HourWeather>; 24] =
+            core::array::from_fn(|k| src.weather.at(Hours(day0 + k as u64)).copied());
         for p in &snap.plants {
             let Some(size) = snap
                 .soils
@@ -638,7 +688,12 @@ pub fn drive(
             else {
                 continue;
             };
-            let new = skeleton_of(p, size);
+            let skeleton = skeleton_of(p, size);
+            let new = Frame {
+                lean: lean_of(p, &skeleton, &day_weather),
+                stress: p.plant.stress.0 as f32,
+                skeleton,
+            };
             match src.plants.get_mut(&p.id) {
                 Some(f) if f.tick == tick => f.current = new,
                 Some(f) if f.tick + 1 == tick => {
@@ -700,7 +755,16 @@ pub fn drive(
         let (Some(info), Some(frames)) = (src.pots.get(&soil.id), src.plants.get(&p.id)) else {
             continue;
         };
-        let skeleton = Skeleton::lerp(&frames.previous, &frames.current, frac);
+        let (a, b) = (&frames.previous, &frames.current);
+        let mut skeleton = Skeleton::lerp(&a.skeleton, &b.skeleton, frac);
+        let stress = a.stress + (b.stress - a.stress) * frac;
+        ps_mesh::pose(
+            &mut skeleton,
+            Pose {
+                lean: a.lean.lerp(b.lean, frac),
+                wilt: ps_mesh::wilt_of_stress(stress),
+            },
+        );
         on_screen.push((p.id, soil.id));
         let container = drawn.insert(soil.id);
         pots.push(PotView {
@@ -712,7 +776,8 @@ pub fn drive(
             center: info.center,
             size: info.size,
             skeleton,
-            water_stress: p.plant.stress.0 as f32,
+            water_stress: stress,
+            first_flower: first_flower(p),
             organ_values: organ_values(
                 p,
                 tick,
@@ -755,6 +820,7 @@ pub fn drive(
         });
     }
     garden.pots = pots;
+    garden.hour = snap.hour;
     garden.stand_in_lenses.clear();
     src.on_screen = on_screen;
 

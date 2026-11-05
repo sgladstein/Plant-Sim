@@ -124,6 +124,9 @@ pub struct PotView {
     pub skeleton: Skeleton,
     /// Plant water stress factor, 1 = unstressed.
     pub water_stress: f32,
+    /// Sim hour the plant's first flower appeared, once it has flowered (WP20's
+    /// flowering cue).
+    pub first_flower: Option<f64>,
     /// Per-lens values by organ id; NaN where a lens has no value for an organ.
     pub organ_values: BTreeMap<Lens, Vec<f32>>,
     /// Soil water on the cut face.
@@ -158,6 +161,8 @@ impl PotView {
 pub struct Garden {
     /// Pots, left to right.
     pub pots: Vec<PotView>,
+    /// Sim time on screen, hours since the start (fractional between ticks).
+    pub hour: f64,
     /// Lenses whose values come from stand-in data rather than the sim (shown in the
     /// legend until ps-world supplies them).
     pub stand_in_lenses: Vec<Lens>,

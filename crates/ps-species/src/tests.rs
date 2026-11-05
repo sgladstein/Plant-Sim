@@ -1,6 +1,7 @@
 use super::*;
 
 const BEAN: &str = include_str!("../../../data/species/bush_bean.ron");
+const POLE: &str = include_str!("../../../data/species/pole_bean.ron");
 
 fn bean() -> Species {
     Species::from_ron(BEAN).expect("bush bean loads")
@@ -105,32 +106,53 @@ fn locus_must_name_a_heritable_trait() {
 
 #[test]
 fn schema_version_checked() {
-    let bad = BEAN.replacen("schema: 8,", "schema: 6,", 1);
+    let bad = BEAN.replacen("schema: 9,", "schema: 8,", 1);
     assert!(matches!(
         Species::from_ron(&bad),
         Err(SpeciesError::Schema {
-            found: 6,
-            expected: 8
+            found: 8,
+            expected: 9
         })
     ));
 }
 
-/// M0 identity mapping: every seed's phenotype equals the species defaults.
+/// A `Default` seed carries the file's pure line, whose phenotype is the species
+/// defaults (the pole bean's line carries Fin Fin, so its habit is 1).
 #[test]
-fn identity_mapping() {
+fn default_seed_is_the_pure_line() {
     let s = bean();
-    for entity in [0u64, 1, 77, 1 << 40] {
-        let g = s.sample_genotype(42, entity);
-        assert!(g.alleles.iter().all(|&(a, b)| a == 0.0 && b == 0.0));
-        let p = s.phenotype(&g);
-        for (k, h) in &s.heritable {
-            assert_eq!(p.get(k), Some(h.default), "{k}");
-        }
+    let p = s.phenotype(&s.default_genotype());
+    for (k, h) in &s.heritable {
+        assert_eq!(p.get(k), Some(h.default), "{k}");
     }
-    assert_eq!(
-        s.phenotype(&s.default_genotype()),
-        s.phenotype(&s.sample_genotype(1, 2))
-    );
+    let pole = Species::from_ron(POLE).unwrap();
+    let t = pole.phenotype(&pole.default_genotype()).traits().unwrap();
+    assert!((t.habit - 1.0).abs() < 1e-15);
+    assert!((t.internode_length_potential - 12.0).abs() < 1e-15);
+}
+
+/// WP28 done-when 1: two sampled seeds of one species differ measurably.
+#[test]
+fn sampled_seeds_differ() {
+    let s = bean();
+    let a = s.phenotype(&s.sample_genotype(42, 1)).traits().unwrap();
+    let b = s.phenotype(&s.sample_genotype(42, 2)).traits().unwrap();
+    // Several traits differ by more than 1% of the default.
+    let pairs = [
+        (a.vcmax25, b.vcmax25, 89.3),
+        (a.leaf_area_potential, b.leaf_area_potential, 133.0),
+        (a.seed_mass, b.seed_mass, 0.3),
+        (a.specific_leaf_area, b.specific_leaf_area, 305.0),
+        (a.leaf_lifespan, b.leaf_lifespan, 600.0),
+    ];
+    let differ = pairs
+        .iter()
+        .filter(|(x, y, d)| (x - y).abs() > 0.01 * d)
+        .count();
+    assert!(differ >= 3, "{pairs:?}");
+    // Habit is fixed in the bush bean population (fin fin).
+    assert!(a.habit.abs() < 1e-15 && b.habit.abs() < 1e-15);
+    assert_eq!(s.sample_genotype(42, 1), s.sample_genotype(42, 1));
 }
 
 #[test]
