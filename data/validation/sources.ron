@@ -131,6 +131,14 @@ Sources(
       cultivar: "bean",
       conditions: "Plants escaped serious injury while plant temperature stayed above -0.8 C",
     ),
+    "gurneys_kentucky_wonder": Source(
+      citation: "Gurney's Seed and Nursery: Kentucky Wonder pole bean product page (vine 1.5 to 2.1 m, 67 days to harvest).",
+      doi: None,
+      url: "https://gurneys.com/products/kentucky_wonder_pole_beans_",
+      licence: "commercial web page (facts only)",
+      cultivar: "Kentucky Wonder (pole snap bean)",
+      conditions: "Seed catalog description; garden culture on supports",
+    ),
     "hanyu1996": Source(
       citation: "Hanyu H., Shoji K., Ji S.-B. (1996) Evaluation of light quality variation through supplement of far-red light and the difference in the effects on growth of a pole-type and a bush-type kidney bean, Phaseolus vulgaris L. Environment Control in Biology 34(4): 267-275.",
       doi: Some("10.2525/ecb1963.34.267"),
@@ -138,6 +146,14 @@ Sources(
       licence: "J-STAGE free access; copyright JSABEES",
       cultivar: "bush Celina vs pole Kentucky Wonder",
       conditions: "Supplementary far-red; abstract: the bush type lengthens through internode length only, the pole type also adds nodes",
+    ),
+    "iita_propas_staking": Source(
+      citation: "IITA PROPAS: low-cost staking of beans (solution sheet).",
+      doi: None,
+      url: "https://propas.iita.org/en/solutions/low-cost-staking-of-beans/95/details/",
+      licence: "web page (facts only)",
+      cultivar: "climbing beans, East and Central Africa",
+      conditions: "Staked against unstaked climbing beans; the -30 to -70% band is the research notes' reading [I]",
     ),
     "kazai2019": Source(
       citation: "Kazai P., Noulas C., Khah E., Vlachostergios D. (2019) Yield and seed quality parameters of common bean cultivars grown under water and heat stress field conditions. AIMS Agriculture and Food 4(2): 285-302.",
@@ -226,6 +242,22 @@ Sources(
       licence: "Project document",
       cultivar: "Any nodulating bean and a non-inoculated control",
       conditions: "Acceptance criterion inferred from legume physiology, not a measurement",
+    ),
+    "reckling2011": Source(
+      citation: "Reckling M. et al. (2011) Tropentag 2011 poster on staking climbing beans.",
+      doi: None,
+      url: "https://www.tropentag.de/2011/abstracts/posters/925.pdf",
+      licence: "conference poster (facts only)",
+      cultivar: "climbing beans",
+      conditions: "Staking trial; the -30 to -70% band is the research notes' reading [I]",
+    ),
+    "research_wp22_height": Source(
+      citation: "Project research notes m2-m3-bean-science.md, decision 2: at a 20 C mean the stem makes about 13.5 nodes by day 60, so 2 m needs 15 cm internodes; recommends at least 1.5 m by day 60 and 2 m by day 75.",
+      doi: None,
+      url: "research/m2-m3-bean-science.md (project files)",
+      licence: "project document",
+      cultivar: "pole bean archetype",
+      conditions: "Arithmetic from CROPGRO TRIFL and the Rutjens 2025 internode range [I]",
     ),
     "rezene2013": Source(
       citation: "Rezene Y., Gebeyehu S., Zelleke H. (2013) Morpho-physiological response to post-flowering drought stress in small red seeded common bean (Phaseolus vulgaris L.) genotypes. Journal of Plant Studies 2(1): 42.",

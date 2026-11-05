@@ -47,6 +47,8 @@ pub enum Purpose {
     Mutation,
     /// Light model jitter (ray offsets), if ever used.
     Light,
+    /// A vine tip catching a support (WP22).
+    Twining,
     /// Test-only purpose; never used by the model.
     Test,
 }
@@ -68,6 +70,7 @@ impl Purpose {
             Purpose::Recombination => 10,
             Purpose::Mutation => 11,
             Purpose::Light => 12,
+            Purpose::Twining => 13,
             Purpose::Test => 0xFFFF,
         }
     }

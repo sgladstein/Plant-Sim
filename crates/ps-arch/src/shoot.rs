@@ -11,7 +11,8 @@ use ps_units::{DegreeDays, GramsC, GramsDM, Hours, M2PerG, MPerG};
 
 use crate::geometry::{add, from_azimuth, unit};
 use crate::{
-    ArchError, Bud, BudFate, Flower, Plant, Pod, Raceme, Role, ShadeSignal, ShootAxis, Spawn, curve,
+    ArchError, Bud, BudFate, Climb, Flower, Plant, Pod, Raceme, Role, ShadeSignal, ShootAxis,
+    Spawn, curve,
 };
 
 /// Elevation of a new petiole above the horizontal (~; decision 0013).
@@ -44,7 +45,11 @@ impl Plant {
     pub(crate) fn emerge(&mut self, now: Hours) -> Result<(), ArchError> {
         self.emerged_day = Some(self.day);
         let az0 = FRAC_PI_2;
-        let n = self.params.main_nodes;
+        let n = if self.is_vine() {
+            self.params.climbing.max_main_nodes
+        } else {
+            self.params.main_nodes
+        };
         let epicotyl = self.internode(self.hypocotyl, [0.0, 0.0, 1.0], az0, 1, n, 0, now)?;
         let mut first_leaf = None;
         for k in 0..2u32 {
@@ -64,6 +69,8 @@ impl Plant {
             raceme: None,
             azimuth: az0 + FRAC_PI_2,
             last_leaf: first_leaf,
+            climb: Climb::Free,
+            free_length: 0.0,
         });
         Ok(())
     }
@@ -82,7 +89,7 @@ impl Plant {
     ) -> Result<OrganId, ArchError> {
         let hp = &self.params;
         let factor = if order == 0 {
-            hp.internode_factor(k, n)
+            hp.main_internode_factor(k, n)
         } else {
             hp.internode_profile[2]
         };
@@ -211,7 +218,9 @@ impl Plant {
             return Ok(());
         };
         let hp = &self.params;
-        let eligible = main.max_nodes.saturating_sub(2);
+        // Buds above the first `main_nodes - 2` ranks are kept for racemes (for a vine,
+        // `main_nodes` is the node of the first raceme).
+        let eligible = hp.main_nodes.saturating_sub(2);
         let mut grow = Vec::new();
         for (b, bud) in self.buds.iter().enumerate() {
             if bud.fate != BudFate::Dormant
@@ -248,7 +257,12 @@ impl Plant {
                 from_azimuth(bud.azimuth, FRAC_PI_2 - self.params.branch_angle.0),
                 1.0,
             );
-            let dir = unit(add(dir, up, 0.0));
+            let mut dir = unit(add(dir, up, 0.0));
+            // A branch of a fallen vine grows along the ground (decision 0021).
+            let lodged = self.is_vine() && self.axes[0].climb == Climb::Lodged;
+            if lodged {
+                dir = from_azimuth(bud.azimuth, 0.0);
+            }
             let n = self.params.branch_nodes;
             let first = self.internode(bud.id, dir, bud.azimuth, 1, n, 1, now)?;
             let leaf = self.leaf(
@@ -270,6 +284,8 @@ impl Plant {
                 raceme: None,
                 azimuth: bud.azimuth + self.params.phyllotaxis.0,
                 last_leaf: Some(leaf),
+                climb: if lodged { Climb::Lodged } else { Climb::Free },
+                free_length: 0.0,
             });
         }
         Ok(())
@@ -279,6 +295,16 @@ impl Plant {
     /// air thermal time and ends in a terminal raceme after its last node.
     pub(crate) fn grow_axes(&mut self, now: Hours) -> Result<(), ArchError> {
         let thermal = DegreeDays(self.today.thermal);
+        if self.flowering_started {
+            self.since_flowering += thermal;
+        }
+        self.find_supports(now);
+        let vine = self.is_vine();
+        // A vine's main stem has a vegetative apex: it makes nodes until a set thermal
+        // time after first flower (CROPGRO FL-VS) or its node cap, with no terminal
+        // raceme (decision 0021).
+        let vegetative_done =
+            self.since_flowering.0 >= self.params.climbing.vegetative_after_flowering.0;
         for x in 0..self.axes.len() {
             let ax = self.axes[x].clone();
             if ax.terminated {
@@ -292,7 +318,13 @@ impl Plant {
             ax.since_node += thermal;
             while ax.since_node.0 >= self.params.phyllochron.0 && !ax.terminated {
                 ax.since_node.0 -= self.params.phyllochron.0;
-                if ax.nodes < ax.max_nodes {
+                if vine && ax.order == 0 {
+                    if ax.nodes < ax.max_nodes && !(self.flowering_started && vegetative_done) {
+                        self.add_node(&mut ax, now)?;
+                    } else {
+                        ax.terminated = true;
+                    }
+                } else if ax.nodes < ax.max_nodes {
                     self.add_node(&mut ax, now)?;
                 } else {
                     let r = self.raceme(ax.apex, ax.azimuth, now)?;
@@ -308,17 +340,37 @@ impl Plant {
     fn add_node(&mut self, ax: &mut ShootAxis, now: Hours) -> Result<(), ArchError> {
         let hp = &self.params;
         let prev = self.arena.orientation[ax.apex.index()].direction;
-        let dir = unit(add(prev, [0.0, 0.0, 1.0], hp.shoot_gravitropism));
+        let mut dir = unit(add(prev, [0.0, 0.0, 1.0], hp.shoot_gravitropism));
         let k = ax.nodes + 1;
         let (factor, rank) = if ax.order == 0 {
             (hp.leaf_factor(k - 1, ax.max_nodes - 1), Some(k))
         } else {
             (hp.leaf_profile[2], None)
         };
+        let mut twine = None;
+        if self.is_vine() {
+            let length = if ax.order == 0 {
+                hp.internode_length.0 * hp.main_internode_factor(k, ax.max_nodes)
+            } else {
+                hp.internode_length.0 * hp.internode_profile[2]
+            };
+            (dir, twine) = self.vine_internode(ax, dir, length, now);
+        }
         let node = self.internode(ax.apex, dir, ax.azimuth, k, ax.max_nodes, ax.order, now)?;
+        self.meta[node.index()].twine = twine;
         let leaf = self.leaf(node, ax.azimuth, Role::Trifoliate, factor, ax.order, now)?;
         if let Some(r) = rank {
             self.bud(node, leaf, ax.azimuth, r, now)?;
+            // An indeterminate stem flowers from the axils of the nodes it makes after
+            // first flower.
+            if self.is_vine()
+                && self.flowering_started
+                && let Some(b) = self.buds.last_mut()
+            {
+                b.fate = BudFate::Raceme;
+                let (id, az) = (b.id, b.azimuth);
+                self.raceme(id, az, now)?;
+            }
         }
         ax.apex = node;
         ax.nodes = k;
@@ -355,10 +407,7 @@ impl Plant {
             return Ok(());
         }
         self.flowering_started = true;
-        let eligible = self
-            .axes
-            .first()
-            .map_or(0, |m| m.max_nodes.saturating_sub(2));
+        let eligible = self.params.main_nodes.saturating_sub(2);
         for b in 0..self.buds.len() {
             let bud = self.buds[b].clone();
             if bud.fate == BudFate::Dormant

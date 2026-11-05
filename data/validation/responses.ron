@@ -292,5 +292,17 @@ ValidationResponses(
       tag: Emergent,
       note: "WP24 done-when: in nitrogen-free sand the nodulated shoot is more than 3 times the unnodulated one 45 days after emergence (day 12). The cargo test nitrogen_free_sand_needs_nodules enforces it, with unnodulated plant N at or below seed N (decision 0020).",
     ),
+    Response(
+      id: "pole_unstaked_seed_yield",
+      scenario: "m2/pole_no_trellis",
+      baseline: "m2/pole_trellis",
+      variable: "seed_mass_g",
+      at: Final,
+      expect: RelChange(min: -0.7, max: -0.3),
+      sources: ["iita_propas_staking", "reckling2011"],
+      gate: Info,
+      tag: Emergent,
+      note: "WP22 done-when: without a support the vine falls over and yields less; staked against unstaked climbing beans, -30 to -70% (a direction-plus-band check). In the sim most of the loss is pods on the soil rotting (pod_rot_rate, encoded), the rest the fallen canopy. The cargo test staked_pole_beans_climb_and_unstaked_ones_lodge enforces it (decision 0021).",
+    ),
   ],
 )

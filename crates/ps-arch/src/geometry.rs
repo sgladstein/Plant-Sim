@@ -98,8 +98,10 @@ pub fn layout(arena: &OrganArena, meta: &[Meta], collar: V3) -> Vec<(V3, V3)> {
         };
         let dir = arena.orientation[i].direction;
         let size = arena.size[i];
-        let tip = match arena.kind[i] {
-            OrganKind::Internode | OrganKind::Root | OrganKind::Tendril => {
+        let tip = match (arena.kind[i], m.twine) {
+            // A coiled internode ends on its helix (WP22, decision 0021).
+            (OrganKind::Internode, Some(t)) => t.point(base, size.length.0),
+            (OrganKind::Internode | OrganKind::Root | OrganKind::Tendril, _) => {
                 add(base, dir, size.length.0 / m.multiplicity.max(1.0))
             }
             _ => base,

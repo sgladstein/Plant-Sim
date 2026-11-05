@@ -19,6 +19,7 @@ pub mod nitrogen;
 pub mod params;
 mod roots;
 mod shoot;
+pub mod vine;
 
 use ps_graph::{
     ExpansionCurve, GraphError, LightCoeffs, NewOrgan, OrganArena, OrganId, OrganKind, Orientation,
@@ -40,6 +41,7 @@ use serde::{Deserialize, Serialize};
 pub use geometry::V3;
 pub use nitrogen::{NitrogenDay, NitrogenParams, PlantNitrogen};
 pub use params::{HerbParams, RootParams, ShadeSignal};
+pub use vine::{Climb, ClimbingParams, Support, Twine};
 
 /// kg of water per mol.
 const KG_PER_MOL_WATER: f64 = 0.018_015;
@@ -131,6 +133,9 @@ pub struct Meta {
     /// Whether nitrogen has been mined from this leaf.
     #[serde(default)]
     pub mined: bool,
+    /// The coil of an internode wound around a support (WP22).
+    #[serde(default)]
+    pub twine: Option<Twine>,
 }
 
 impl Meta {
@@ -148,6 +153,7 @@ impl Meta {
             dli: None,
             fixation: 0.0,
             mined: false,
+            twine: None,
         }
     }
 }
@@ -175,6 +181,12 @@ pub struct ShootAxis {
     pub azimuth: f64,
     /// The newest leaf, for the shade signal.
     pub last_leaf: Option<OrganId>,
+    /// How the axis climbs (vines, WP22).
+    #[serde(default)]
+    pub climb: Climb,
+    /// Stem length made while upright and unsupported, m (vines).
+    #[serde(default)]
+    pub free_length: f64,
 }
 
 /// Fate of an axillary bud.
@@ -457,6 +469,13 @@ pub struct Plant {
     pub flowering_started: bool,
     /// Leaves shed at maturity.
     pub leaves_dropped: bool,
+    /// Plant thermal time since first flower (vines: the main stem stops after
+    /// `vegetative_after_flowering`).
+    #[serde(default)]
+    pub since_flowering: DegreeDays,
+    /// Supports in the plant's soil frame (WP22).
+    #[serde(default)]
+    pub supports: Vec<Support>,
     /// Today's weather and soil.
     pub today: DayStats,
     /// Today's uptake shortfall.
@@ -637,6 +656,8 @@ impl Plant {
             flowers_opened: 0,
             flowering_started: false,
             leaves_dropped: false,
+            since_flowering: DegreeDays(0.0),
+            supports: Vec::new(),
             today: DayStats::default(),
             shortfall: KgWater(0.0),
             ftsw: 1.0,
@@ -978,6 +999,7 @@ impl Plant {
         }
         // 4. Senescence and shedding.
         self.senescence(now)?;
+        self.rot_pods(now)?;
         // 5. Root elongation and branching.
         if stage < Stage::Mature {
             self.root_elongation(now, soil)?;

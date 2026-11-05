@@ -11,6 +11,7 @@ use ps_units::{
 use serde::{Deserialize, Serialize};
 
 use crate::nitrogen::NitrogenParams;
+use crate::vine::ClimbingParams;
 
 /// Thermal time per day at the optimum temperature, °C·day, for converting rates given
 /// per day at the optimum into rates per °C·day.
@@ -195,6 +196,12 @@ pub struct HerbParams {
     pub seed_potential: GramsDM,
     /// Nitrogen (WP24, decision 0020).
     pub nitrogen: NitrogenParams,
+    /// Indeterminate vine (`habit` ≥ 0.5, WP22).
+    #[serde(default)]
+    pub indeterminate: bool,
+    /// Climbing (vines only).
+    #[serde(default)]
+    pub climbing: ClimbingParams,
     /// Root segment and lateral cohort length.
     pub root_segment: Meters,
     /// Root types, in file order.
@@ -335,6 +342,8 @@ impl HerbParams {
             seed_fill: DegreeDays(c.seed_fill.value),
             seed_potential: GramsDM(t.seed_mass),
             nitrogen: NitrogenParams::new(s, t),
+            indeterminate: t.habit >= 0.5,
+            climbing: ClimbingParams::new(s),
             root_segment: Meters(c.root_segment_length.value * CM),
             roots,
             feedback_onset: c.reserve_feedback_onset.value,
@@ -366,6 +375,19 @@ impl HerbParams {
         }
         let x = f64::from(k - 2) / f64::from(n - 2);
         first + (last - first) * x
+    }
+
+    /// Length factor of main-stem internode `k` of `n`: [`HerbParams::internode_factor`]
+    /// for a herb; for a vine, rising from the first to the last fraction over the
+    /// climbing ramp and level after it (decision 0021).
+    #[must_use]
+    pub fn main_internode_factor(&self, k: u32, n: u32) -> f64 {
+        if self.indeterminate {
+            let r = self.climbing.ramp_nodes + 2;
+            self.internode_factor(k.min(r), r)
+        } else {
+            self.internode_factor(k, n)
+        }
     }
 
     /// Shade multiplier for `max`. The response is the stronger of two signals

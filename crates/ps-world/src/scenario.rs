@@ -126,6 +126,24 @@ pub enum SeedChoice {
     Sample,
 }
 
+/// A vertical support for climbing plants: a stake, pole or trellis string (WP22).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SupportSpec {
+    /// Soil id it stands in.
+    pub soil: u32,
+    /// Position from the soil's center, cm (east, north).
+    pub offset_cm: (f64, f64),
+    /// Height above the soil surface, cm.
+    pub height_cm: f64,
+    /// Diameter, cm.
+    pub diameter_cm: f64,
+}
+
+/// Tallest support a scenario may stand, cm.
+pub const MAX_SUPPORT_HEIGHT_CM: f64 = 500.0;
+/// Thickest support a scenario may stand, cm.
+pub const MAX_SUPPORT_DIAMETER_CM: f64 = 100.0;
+
 /// A seed sown at the start.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sowing {
@@ -176,6 +194,9 @@ pub struct Scenario {
     pub co2_ppm: f64,
     /// Seeds sown at tick 0.
     pub sowings: Vec<Sowing>,
+    /// Vertical supports for climbing plants; none if absent (WP22).
+    #[serde(default)]
+    pub supports: Vec<SupportSpec>,
     /// Length of the run, days.
     pub duration_days: u32,
     /// A hot spell replacing the preset's own (preset weather only).
@@ -198,6 +219,25 @@ impl Scenario {
         let s: Self = ron::from_str(text).map_err(|e| WorldError::Scenario(e.to_string()))?;
         s.validate()?;
         Ok(s)
+    }
+
+    /// Checks the supports: a known soil, a finite position, height and diameter in range.
+    fn validate_supports(&self, ids: &[u32]) -> Result<(), WorldError> {
+        for p in &self.supports {
+            let fine = |v: f64, hi: f64| v.is_finite() && v > 0.0 && v <= hi;
+            let (x, y) = p.offset_cm;
+            let valid = ids.contains(&p.soil)
+                && fine(p.height_cm, MAX_SUPPORT_HEIGHT_CM)
+                && fine(p.diameter_cm, MAX_SUPPORT_DIAMETER_CM)
+                && x.is_finite()
+                && y.is_finite();
+            if !valid {
+                return Err(WorldError::Scenario(format!(
+                    "support {p:?}: height up to {MAX_SUPPORT_HEIGHT_CM} cm, diameter up to {MAX_SUPPORT_DIAMETER_CM} cm, on a known soil"
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Checks references and ranges.
@@ -257,6 +297,7 @@ impl Scenario {
                 return bad(format!("sowing depth {} cm must be positive", s.depth_cm));
             }
         }
+        self.validate_supports(&ids)?;
         for (id, f) in &self.radiation_fraction {
             if !known(id) || !(0.0..=1.0).contains(f) {
                 return bad(format!("radiation fraction {f} for soil {id}"));

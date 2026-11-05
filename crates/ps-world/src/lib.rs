@@ -21,12 +21,13 @@ use serde::{Deserialize, Serialize};
 
 pub use hash::hash_of;
 pub use scenario::{
-    Action, ActionKind, Irrigation, Scenario, SeedChoice, SoilSpec, Sowing, Start, WeatherSource,
+    Action, ActionKind, Irrigation, Scenario, SeedChoice, SoilSpec, Sowing, Start, SupportSpec,
+    WeatherSource,
 };
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.5.0";
+pub const MODEL_VERSION: &str = "0.6.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -697,7 +698,7 @@ impl World {
                 s.soil
             )));
         }
-        let plant = Plant::sow(
+        let mut plant = Plant::sow(
             species,
             &traits,
             self.state.scenario.world_seed,
@@ -705,6 +706,24 @@ impl World {
             at,
             Hours(tick),
         )?;
+        #[allow(clippy::cast_precision_loss)]
+        let centre = [nx as f64 * c * 0.5, ny as f64 * c * 0.5];
+        plant.supports = self
+            .state
+            .scenario
+            .supports
+            .iter()
+            .filter(|p| p.soil == s.soil)
+            .map(|p| ps_arch::Support {
+                base: [
+                    centre[0] + p.offset_cm.0 * 0.01,
+                    centre[1] + p.offset_cm.1 * 0.01,
+                    0.0,
+                ],
+                height: p.height_cm * 0.01,
+                diameter: p.diameter_cm * 0.01,
+            })
+            .collect();
         self.state.plants.push(PlantEntry {
             id,
             soil,
