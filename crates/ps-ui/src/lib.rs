@@ -18,12 +18,14 @@ mod charts;
 mod experiment;
 mod inspector;
 mod model_cards;
+mod saves;
 mod tools;
 
 pub use charts::{Chart, Charts, Series, nearest, nice_max};
 pub use experiment::{CardRow, Experiment, ExperimentSetup, Running, Variable, held_same};
 pub use inspector::{Field, Inspector};
 pub use model_cards::{Block, CARDS, ModelCards, card, parse, title};
+pub use saves::{Marker, SaveLoad, SaveRow};
 pub use tools::{NewRun, ObstacleDraft, PlayerAction, SeedRow, Side, Tools, days_in};
 
 use bevy::prelude::*;
@@ -87,6 +89,8 @@ pub struct TimeControl {
     pub season: String,
     /// One line of weather.
     pub weather: String,
+    /// Actions on the replay scrubber (§5.5).
+    pub markers: Vec<saves::Marker>,
     /// Commands queued this frame.
     pub commands: Vec<TimeCommand>,
 }
@@ -125,6 +129,7 @@ impl Plugin for PlantUiPlugin {
             .init_resource::<Tools>()
             .init_resource::<ModelCards>()
             .init_resource::<Experiment>()
+            .init_resource::<SaveLoad>()
             .add_systems(EguiPrimaryContextPass, panels)
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -173,6 +178,7 @@ fn panels(
     mut tools: ResMut<Tools>,
     mut cards: ResMut<ModelCards>,
     mut experiment: ResMut<Experiment>,
+    mut saves: ResMut<SaveLoad>,
     moments: Res<ps_view::Moments>,
     mut themed: Local<bool>,
 ) -> Result {
@@ -205,6 +211,7 @@ fn panels(
                 &mut capture,
                 &mut tools,
                 &mut experiment,
+                &mut saves,
             );
         })
         .response
@@ -269,6 +276,9 @@ fn panels(
     }
     if experiment.open {
         experiment::window(ctx, &mut experiment);
+    }
+    if saves.open {
+        saves::load_window(ctx, &mut saves);
     }
     moment_toast(ctx, moments.banner.as_deref(), top + 10.0);
     let insets = [left, top, right, bottom.response.rect.height()];
@@ -355,6 +365,7 @@ fn caption(ctx: &egui::Context, time: &TimeControl, garden: &Garden, moment: Opt
         });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn top_bar(
     ui: &mut egui::Ui,
     time: &mut TimeControl,
@@ -363,6 +374,7 @@ fn top_bar(
     capture: &mut CaptureControl,
     tools: &mut Tools,
     experiment: &mut Experiment,
+    saves: &mut SaveLoad,
 ) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
@@ -414,25 +426,8 @@ fn top_bar(
         {
             capture.export_csv = true;
         }
-        if tools.enabled
-            && ui
-                .button("New run…")
-                .on_hover_text(
-                    "Start again with another scenario, weather, latitude or sowing date",
-                )
-                .clicked()
-        {
-            tools.new_run.open = true;
-        }
-        if tools.enabled
-            && ui
-                .button("Experiment…")
-                .on_hover_text(
-                    "Two to four pots with one thing different, and a question to answer",
-                )
-                .clicked()
-        {
-            experiment.open = true;
+        if tools.enabled {
+            run_buttons(ui, tools, experiment, saves);
         }
         ui.separator();
         if time.busy {
@@ -455,11 +450,53 @@ fn top_bar(
                 .show_value(false)
                 .clamping(egui::SliderClamping::Always),
         );
+        let hover = saves::markers(ui, r.rect, time.latest_hour, &time.markers);
         if r.changed() {
             time.commands.push(TimeCommand::Seek(day * 24.0));
         }
+        if let Some(text) = hover {
+            r.on_hover_text(text);
+        }
     });
     ui.add_space(2.0);
+}
+
+/// New run, Experiment, Save and Load: the buttons that start or keep a run.
+fn run_buttons(
+    ui: &mut egui::Ui,
+    tools: &mut Tools,
+    experiment: &mut Experiment,
+    saves: &mut SaveLoad,
+) {
+    if ui
+        .button("New run…")
+        .on_hover_text("Start again with another scenario, weather, latitude or sowing date")
+        .clicked()
+    {
+        tools.new_run.open = true;
+    }
+    if ui
+        .button("Experiment…")
+        .on_hover_text("Two to four pots with one thing different, and a question to answer")
+        .clicked()
+    {
+        experiment.open = true;
+    }
+    if ui
+        .button("Save")
+        .on_hover_text("Save the run as it stands; it keeps running")
+        .clicked()
+    {
+        saves.save = true;
+    }
+    if ui
+        .button("Load…")
+        .on_hover_text("Continue from a save")
+        .clicked()
+    {
+        saves.open = true;
+        saves.refresh = true;
+    }
 }
 
 /// Linear RGB to an egui color.
