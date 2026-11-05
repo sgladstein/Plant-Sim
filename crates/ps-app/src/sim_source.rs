@@ -549,7 +549,7 @@ type Quantity = (&'static str, [f32; 3], fn(&DayRow) -> f64);
 #[must_use]
 pub fn charts_from(history: &[DayRow], pot_of: &BTreeMap<u32, usize>) -> Vec<Chart> {
     let leaf = [0.3, 0.6, 0.15];
-    let charts: [(&str, &str, Vec<Quantity>); 6] = [
+    let charts: [(&str, &str, Vec<Quantity>); 7] = [
         (
             "Dry mass by organ",
             "g",
@@ -576,11 +576,22 @@ pub fn charts_from(history: &[DayRow], pot_of: &BTreeMap<u32, usize>) -> Vec<Cha
             vec![("FTSW", [0.3, 0.55, 0.85], |r| r.env.ftsw)],
         ),
         (
-            "Water shortfall",
+            "Net assimilation",
+            "g C/day",
+            vec![("Assimilation", [0.45, 0.7, 0.25], |r| r.report.assimilation)],
+        ),
+        // Uptake plus shortfall is the leaves' demand.
+        (
+            "Water use",
             "g/day",
-            vec![("Shortfall", [0.85, 0.5, 0.3], |r| {
-                r.report.shortfall * 1000.0
-            })],
+            vec![
+                ("Taken up", [0.3, 0.55, 0.85], |r| {
+                    r.report.transpiration * 1000.0
+                }),
+                ("Shortfall", [0.85, 0.5, 0.3], |r| {
+                    r.report.shortfall * 1000.0
+                }),
+            ],
         ),
         (
             "Pods",
@@ -1119,7 +1130,7 @@ mod tests {
             .map(|(i, p)| (p.id, i))
             .collect();
         let charts = charts_from(&w.state().history, &pot_of);
-        assert_eq!(charts.len(), 6);
+        assert_eq!(charts.len(), 7);
         let days = w.state().history.len() / pot_of.len();
         assert!(days >= 5);
         for c in &charts {

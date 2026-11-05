@@ -5,5 +5,5 @@ ExperimentCard(
   species: "bush_bean",
   variable: WaterInterval,
   levels: [1.0, 3.0, 7.0],
-  watch: ["Root-zone soil water", "Water shortfall", "Dry mass by organ"],
+  watch: ["Root-zone soil water", "Water use", "Dry mass by organ"],
 )
