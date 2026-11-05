@@ -23,7 +23,11 @@
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
 //! soil-water, plant-water, roots, carbon, phenology, shade. `--charts` opens the
 //! charts panel. `--inspect POT[:ORGAN]` selects a plant or an organ for the inspector.
-//! `--screenshot` waits until
+//! `--captures DIR` is where the Screenshot and Export CSV buttons write (default
+//! `captures`). `--timelapse DIR` renders time-lapse frames offline from `--day` to
+//! `--to-day` (default the scenario's end), one per sim hour within `--timelapse-hours`
+//! (default 6-19), then exits; see `capture.rs`. `--clean` hides the panels and shows
+//! only a caption, for clips. `--screenshot` waits until
 //! the GPU pipelines have compiled and the scene has settled, saves the window and exits
 //! (for headless checks and bug reports). `--present` and `--frame-latency` set the
 //! swap chain's present mode (default auto vsync) and maximum queued frames (default
@@ -39,6 +43,7 @@
 )]
 
 mod bench;
+mod capture;
 mod demo_source;
 mod display;
 mod inspect;
@@ -62,6 +67,11 @@ struct Options {
     lens: Lens,
     charts: bool,
     inspect: Option<ps_view::Picked>,
+    captures: PathBuf,
+    timelapse: Option<PathBuf>,
+    to_day: Option<f64>,
+    timelapse_hours: (u32, u32),
+    clean: bool,
     screenshot: Option<PathBuf>,
     present: PresentMode,
     frame_latency: Option<std::num::NonZero<u32>>,
@@ -85,6 +95,17 @@ fn parse_present(name: &str) -> Result<PresentMode> {
         "novsync" => PresentMode::AutoNoVsync,
         other => bail!("unknown present mode {other:?}"),
     })
+}
+
+/// `H0-H1`, hours of the day, for example `6-19`.
+fn parse_hours(s: &str) -> Result<(u32, u32)> {
+    let parsed = s
+        .split_once('-')
+        .and_then(|(a, b)| Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?)));
+    match parsed {
+        Some((a, b)) if a <= b && b < 24 => Ok((a, b)),
+        _ => bail!("--timelapse-hours takes H0-H1 within 0-23, got {s}"),
+    }
 }
 
 /// `POT` or `POT:ORGAN`, for example `1` (the second pot's plant) or `0:12`.
@@ -120,6 +141,11 @@ fn parse_args() -> Result<Options> {
         lens: Lens::Off,
         charts: false,
         inspect: None,
+        captures: PathBuf::from("captures"),
+        timelapse: None,
+        to_day: None,
+        timelapse_hours: (6, 19),
+        clean: false,
         screenshot: None,
         present: PresentMode::Mailbox,
         frame_latency: None,
@@ -144,6 +170,16 @@ fn parse_args() -> Result<Options> {
             "--lens" => o.lens = parse_lens(&value()?)?,
             "--charts" => o.charts = true,
             "--inspect" => o.inspect = Some(parse_pick(&value()?)?),
+            "--clean" => o.clean = true,
+            "--captures" => o.captures = PathBuf::from(value()?),
+            "--timelapse" => o.timelapse = Some(PathBuf::from(value()?)),
+            "--to-day" => {
+                o.to_day = Some(anyhow::Context::context(
+                    value()?.parse::<f64>(),
+                    "--to-day",
+                )?);
+            }
+            "--timelapse-hours" => o.timelapse_hours = parse_hours(&value()?)?,
             "--screenshot" => o.screenshot = Some(PathBuf::from(value()?)),
             "--present" => {
                 o.present_name = value()?;
@@ -194,7 +230,7 @@ fn parse_args() -> Result<Options> {
 
 fn main() -> Result<()> {
     let options = parse_args()?;
-    let paused = options.paused || options.screenshot.is_some();
+    let paused = options.paused || options.screenshot.is_some() || options.timelapse.is_some();
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -210,6 +246,10 @@ fn main() -> Result<()> {
     .insert_resource(options.lens)
     .insert_resource(ps_view::Selection {
         picked: options.inspect,
+    })
+    .insert_resource(ps_ui::CaptureControl {
+        clean: options.clean,
+        ..default()
     })
     .insert_resource(ps_ui::Charts {
         open: options.charts,
@@ -227,7 +267,30 @@ fn main() -> Result<()> {
             }
         }
     };
+    let stem = options.scenario.file_stem().map_or_else(
+        || "plant-sim".to_owned(),
+        |s| s.to_string_lossy().into_owned(),
+    );
+    app.insert_resource(capture::CaptureConfig {
+        dir: options.captures.clone(),
+        stem,
+    })
+    .add_systems(Update, capture::capture_requests.after(ViewSet::Source));
     if let Some(sim) = sim {
+        if let Some(dir) = &options.timelapse {
+            std::fs::create_dir_all(dir)?;
+            let to = options.to_day.unwrap_or(f64::MAX / 48.0);
+            let ticks = capture::timelapse_ticks(
+                options.day,
+                to,
+                options.timelapse_hours,
+                sim.day_start_hour(),
+                sim.end_tick(),
+            );
+            info!("time-lapse: {} frames to {}", ticks.len(), dir.display());
+            app.insert_resource(capture::Timelapse::new(dir.clone(), ticks))
+                .add_systems(Update, capture::timelapse.before(ViewSet::Source));
+        }
         app.insert_resource(sim).add_systems(
             Update,
             (sim_source::drive, inspect::inspect)

@@ -4941,6 +4941,7 @@ dependencies = [
  "anyhow",
  "bevy",
  "ps-arch",
+ "ps-export",
  "ps-graph",
  "ps-light",
  "ps-mesh",
