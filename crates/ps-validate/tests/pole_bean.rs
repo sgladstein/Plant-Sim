@@ -29,7 +29,10 @@ fn mean(w: &World, variable: &str, at: &At) -> f64 {
 
 /// In a row of 8, every vine on a string catches it, coils its main stem around it,
 /// and climbs past 1.5 m; in the same row without strings they fall over and stay
-/// under 30 cm. Unstaked seed yield is 30 to 70% lower (IITA, Reckling; decision 0021).
+/// under 30 cm, and yield much less. The -30 to -70% band of the field trials (IITA,
+/// Reckling; decision 0021) is checked on the four-seed mean by the validation report
+/// (`pole_unstaked_seed_yield`, decision 0026); one world seed spans about -50 to -80%,
+/// so this single-seed test holds the direction with a wider band (decision 0029).
 #[test]
 fn staked_pole_beans_climb_and_unstaked_ones_lodge() {
     let staked = run("m2/pole_row_trellis.ron", None);
@@ -62,7 +65,7 @@ fn staked_pole_beans_climb_and_unstaked_ones_lodge() {
     let b = mean(&unstaked, "seed_mass_g", &At::Final);
     let change = b / a - 1.0;
     assert!(
-        (-0.7..=-0.3).contains(&change),
+        (-0.9..=-0.2).contains(&change),
         "unstaked seed {b:.2} g vs staked {a:.2} g ({:+.0}%)",
         change * 100.0
     );

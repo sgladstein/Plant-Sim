@@ -142,6 +142,7 @@ pub fn leaf_points(
             center: add(end, h, r),
             area: M2(area),
             normal,
+            strip: None,
         }];
     }
     let a3 = area / 3.0;
@@ -153,16 +154,19 @@ pub fn leaf_points(
             center: terminal,
             area: M2(a3),
             normal,
+            strip: None,
         },
         LeafPoint {
             center: add(add(end, side, 1.1 * r), h, 0.3 * r),
             area: M2(a3),
             normal,
+            strip: None,
         },
         LeafPoint {
             center: add(add(end, side, -1.1 * r), h, 0.3 * r),
             area: M2(a3),
             normal,
+            strip: None,
         },
     ]
 }

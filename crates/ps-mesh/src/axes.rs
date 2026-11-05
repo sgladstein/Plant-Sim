@@ -174,6 +174,10 @@ pub fn nodes_after_base(p: &Placement) -> usize {
     if p.kind == OrganKind::Leaf {
         return PETIOLE_POINTS;
     }
+    if p.kind == OrganKind::Internode && p.hook.is_some() && p.coil.is_none() {
+        // A shoulder above the base, the hook's start, then its arc.
+        return 2 + crate::Hook::POINTS;
+    }
     match p.coil.filter(|_| p.length > 0.0) {
         Some(coil) => coil.sample_count(p.length, COIL_POINTS_PER_TURN),
         // A straight internode swells at the node it ends in: a ring before the node,
@@ -260,6 +264,33 @@ pub fn axis_nodes(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> Vec<Tub
                     nodes.push(TubeNode {
                         position,
                         radius: r0 + (r - r0) * f,
+                    });
+                }
+            }
+            None if p.kind == OrganKind::Internode && p.hook.is_some() && p.coil.is_none() => {
+                // The emerging hook: straight up to where it bends, then the arc,
+                // tapering to the tip.
+                let hook = p.hook.unwrap_or(crate::Hook {
+                    amount: 0.0,
+                    toward: 0.0,
+                });
+                let own = visible(p.radius, p.length > 0.0);
+                let r0 = nodes.last().map_or(own, |n: &TubeNode| n.radius);
+                let (start, arc) = hook.points(p);
+                nodes.push(TubeNode {
+                    position: p.base.lerp(start, NODE_SHOULDER),
+                    radius: r0.max(own),
+                });
+                nodes.push(TubeNode {
+                    position: start,
+                    radius: own,
+                });
+                let n = arc.len() as f32;
+                for (j, position) in arc.into_iter().enumerate() {
+                    let f = (j + 1) as f32 / n;
+                    nodes.push(TubeNode {
+                        position,
+                        radius: own + (r - own) * f,
                     });
                 }
             }

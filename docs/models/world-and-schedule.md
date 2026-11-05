@@ -60,6 +60,32 @@ replayed exactly.
 | out | daily rows per plant, with the day's weather and soil water | - | `ps-export` CSV (decision 0015) |
 | out | full-state hash per day | u64 | golden tests |
 | out | snapshot | RON | saves, the viewer (WP16) |
+| out | lens data per hour (not state; WP26) | see below | `World::lens`, `ps_session::Snapshot::lens` |
+
+### Lens data (WP26)
+With `World::set_lens_recording(true)` (the session turns it on), each hourly step
+also records, beside the state and never in it:
+- per plant: living leaf area; the leaf-area-weighted mean absorbed PAR, read from the
+  same light coefficients the gas exchange reads; the PAR an unshaded horizontal leaf
+  would absorb under the hour's sky after the soil's shade cloth, `(I_b + I_d) x 0.5 x
+  4.57 x absorptance`; their ratio (relative light, 0 at night, above 1 for leaves
+  facing a low sun); and the plant's share of the PAR its soil's plants absorb
+  (area x mean, summed in plant order);
+- per organ: the hour's phloem flux from its parent into it (negative for an export),
+  copied out of the transport solve; the temperature it grew at (air for the shoot,
+  the soil layer for roots and the seed; leaf temperature replaces air with WP27); and
+  its nitrogen per structural dry mass after the hour;
+- per soil: each layer's temperature.
+
+Recording only copies values out of the step or reads the state after it, so the hash
+and the goldens are the same with it on or off (`ps-session/tests/save.rs`). It is never
+saved: a loaded or restored world has none until it steps an hour.
+
+A save (`ps_session::Session::save_ron`) is the world's state as RON, taken between two
+hours without stopping the session. It holds the timeline's whole log, so a save made
+while scrubbed back resumes the recorded future. Loaded and finished, it reaches the
+session's hashes, as does a replay of the session's log from the scenario (the WP26
+done-when, on the 30-bean plot with every WP25 action).
 
 ## Encoded or emergent
 Encoded: the step order, the watering rule, shade as a radiation multiplier, and

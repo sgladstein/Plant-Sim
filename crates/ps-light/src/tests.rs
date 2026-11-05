@@ -27,6 +27,7 @@ fn uniform_canopy(
                         ],
                         area: M2(leaf_area),
                         normal: normal(leaves.len()),
+                        strip: None,
                     });
                 }
             }
@@ -112,6 +113,7 @@ fn isolated_leaf_is_fully_lit() {
         center: [0.0, 0.0, 0.1],
         area: M2(0.0075),
         normal: [0.0, 0.0, 1.0],
+        strip: None,
     }];
     let mut sun = [None; 24];
     sun[12] = Some([0.0, 0.0, 1.0]);
@@ -142,11 +144,13 @@ fn leaf_under_another_is_shaded() {
             center: [0.0, 0.0, 0.15],
             area: M2(0.0075),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
         LeafPoint {
             center: [0.0, 0.0, 0.10],
             area: M2(0.0075),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
     ];
     let mut sun = [None; 24];
@@ -173,11 +177,13 @@ fn grid_respects_limits() {
             center: [0.0, 0.0, 0.02],
             area: M2(1e-4),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
         LeafPoint {
             center: [0.004, 0.0, 0.025],
             area: M2(1e-4),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
     ];
     let g = LightGrid::fit(&tiny, &[], &[]).unwrap();
@@ -188,11 +194,13 @@ fn grid_respects_limits() {
             center: [0.0, 0.0, 0.0],
             area: M2(0.01),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
         LeafPoint {
             center: [0.3, -0.2, 1.0],
             area: M2(0.01),
             normal: [0.0, 0.0, 1.0],
+            strip: None,
         },
     ];
     let g = LightGrid::fit(&tall, &[], &[]).unwrap();
@@ -272,6 +280,7 @@ fn bounded_traversal_is_bit_identical() {
                 center: [0.03 + 0.004 * f, 0.05 + 0.003 * (f % 5.0), 0.04 + 0.002 * f],
                 area: M2(4e-4),
                 normal: [0.1, 0.0, 1.0],
+                strip: None,
             }
         })
         .collect();
@@ -280,7 +289,7 @@ fn bounded_traversal_is_bit_identical() {
     assert!(bounds.1[0] < 11 && bounds.1[2] < 7, "{bounds:?}");
     for l in &leaves {
         let own = g.footprint_of(l);
-        for p in sample_points(l) {
+        for &p in sample_points(l).points() {
             for j in 0..dirs.len() {
                 let a = g.path_depth(p, j, &own);
                 let b = g.path_depth_bounded(p, j, &own, &bounds);
@@ -306,11 +315,13 @@ fn a_tilted_leaf_shades_by_its_projection() {
                 center: [0.0, 0.0, 0.15],
                 area: M2(0.0075),
                 normal,
+                strip: None,
             },
             LeafPoint {
                 center: [0.0, 0.0, 0.10],
                 area: M2(0.0075),
                 normal: [0.0, 0.0, 1.0],
+                strip: None,
             },
         ];
         let (_, c) = rebuild_daily(&leaves, &[], &sun, &sky_sectors());
@@ -331,4 +342,29 @@ fn projection_is_the_cosine_to_the_ray() {
     // Both faces count; a degenerate normal is horizontal.
     assert!((projection([0.0, 0.0, -1.0], unit(30.0, 0.0)) - 0.5).abs() < 1e-12);
     assert!((projection([0.0; 3], unit(30.0, 0.0)) - 0.5).abs() < 1e-12);
+}
+
+/// Decision 0030: a narrow strip casts rays from its center and one point toward each
+/// end; a broad leaf keeps the seven-point disc.
+#[test]
+fn strips_sample_three_points_along_them() {
+    let disc = LeafPoint {
+        center: [0.1, 0.2, 0.3],
+        area: M2(0.002),
+        normal: [0.0, 0.0, 1.0],
+        strip: None,
+    };
+    assert_eq!(sample_points(&disc).points().len(), SAMPLE_POINTS);
+    let strip = LeafPoint {
+        strip: Some([0.01, 0.0, 0.02]),
+        ..disc
+    };
+    let s = sample_points(&strip);
+    let want = [[0.1, 0.2, 0.3], [0.11, 0.2, 0.32], [0.09, 0.2, 0.28]];
+    assert_eq!(s.points().len(), STRIP_SAMPLE_POINTS);
+    for (p, q) in s.points().iter().zip(&want) {
+        for i in 0..3 {
+            assert!((p[i] - q[i]).abs() < 1e-12, "{p:?} vs {q:?}");
+        }
+    }
 }
