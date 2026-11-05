@@ -19,7 +19,9 @@ fill, maturity) when enough have added up. A warm spring makes beans flower soon
   (thermal time × multiplier), so cold delays expansion more than development but
   does not destroy it (decision 0011).
 - Stages (daily step 1), one transition per day at most, never backward:
-  Sown → Germinated (the seed module reports germination, §3.10) → Emerged (thermal time
+  Sown → Germinated (the seed module reports germination, §3.10: 24 hours, not
+  necessarily in a row, with the seed's cell at or above `germination_ftsw` and warmer
+  than the base temperature; a dry or cold hour pauses the count, decision 0029) → Emerged (thermal time
   since germination ≥ the plant's own emergence threshold, which varies with seed and
   depth, decision 0027 and plant-variation.md) → FirstTrifoliate (architecture reports an unfolded
   trifoliate) → Flowering (thermal time since germination ≥ flowering) → PodSet (a pod

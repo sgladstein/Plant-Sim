@@ -51,8 +51,12 @@ pub struct ClimbingParams {
     pub vegetative_after_flowering: DegreeDays,
     /// Main-stem nodes over which internodes reach full length.
     pub ramp_nodes: u32,
-    /// Tip sweep radius.
+    /// Sweep radius of a young tip.
     pub sweep_radius: Meters,
+    /// Sweep radius gained per metre of stem grown upright without a support.
+    pub sweep_growth: f64,
+    /// Widest sweep radius.
+    pub sweep_max: Meters,
     /// Supports up to this diameter are always caught.
     pub sure_diameter: Meters,
     /// Supports this thick or more are never caught.
@@ -79,14 +83,16 @@ impl Default for ClimbingParams {
             vegetative_after_flowering: DegreeDays(260.0),
             ramp_nodes: 8,
             sweep_radius: Meters(0.06),
+            sweep_growth: 0.25,
+            sweep_max: Meters(0.15),
             sure_diameter: Meters(0.05),
             max_diameter: Meters(0.2),
-            pitch: Meters(0.10),
+            pitch: Meters(0.14),
             inclination: (Radians(35f64.to_radians()), Radians(75f64.to_radians())),
             self_support: Meters(0.4),
             heap_radius: Meters(0.15),
             lodge_height: Meters(0.02),
-            pod_rot_rate: 0.02,
+            pod_rot_rate: 0.017,
         }
     }
 }
@@ -103,6 +109,8 @@ impl ClimbingParams {
             vegetative_after_flowering: DegreeDays(c.vegetative_after_flowering.value),
             ramp_nodes: round(c.internode_ramp_nodes.value).max(1),
             sweep_radius: Meters(c.circumnutation_radius.value * CM),
+            sweep_growth: c.circumnutation_growth.value,
+            sweep_max: Meters(c.circumnutation_radius_max.value * CM),
             sure_diameter: Meters(c.support_diameter_sure.value * CM),
             max_diameter: Meters(c.support_diameter_max.value * CM),
             pitch: Meters(c.helix_pitch.value * CM),
@@ -124,6 +132,15 @@ impl ClimbingParams {
     pub fn inclination_for(&self, r: f64) -> f64 {
         let eta = libm::atan(self.pitch.0 / (2.0 * PI * r.max(1e-6)));
         eta.clamp(self.inclination.0.0, self.inclination.1.0)
+    }
+
+    /// Radius a searching tip sweeps with `free` metres of unsupported stem below it
+    /// (decision 0029): a young tip's radius, widening with the free length up to the
+    /// cap. The free stem is what swings, so a longer one reaches farther.
+    #[must_use]
+    pub fn sweep(&self, free: f64) -> f64 {
+        let r0 = self.sweep_radius.0;
+        (r0 + self.sweep_growth * free.max(0.0)).min(self.sweep_max.0.max(r0))
     }
 
     /// Probability that a tip touching a support of diameter `d` (m) wraps it: 1 up to
@@ -204,7 +221,8 @@ impl Plant {
     }
 
     /// Daily step 3, before new nodes: each searching vine axis catches the nearest
-    /// support within its tip's sweep, and a twining axis that has passed its support's
+    /// support within its tip's sweep, which widens with the axis' free length
+    /// (decision 0029), and a twining axis that has passed its support's
     /// top lets go.
     pub(crate) fn find_supports(&mut self, now: Hours) {
         if !self.is_vine() || self.supports.is_empty() {
@@ -226,6 +244,7 @@ impl Plant {
                     }
                 }
                 Climb::Free | Climb::Lodged => {
+                    let reach = cp.sweep(ax.free_length);
                     let mut best: Option<(f64, usize)> = None;
                     for (k, s) in self.supports.iter().enumerate() {
                         if tip[2] < s.base[2] || tip[2] > s.base[2] + s.height {
@@ -233,7 +252,7 @@ impl Plant {
                         }
                         let (dx, dy) = (tip[0] - s.base[0], tip[1] - s.base[1]);
                         let gap = libm::sqrt(dx * dx + dy * dy) - 0.5 * s.diameter;
-                        if gap <= cp.sweep_radius.0 && best.is_none_or(|(g, _)| gap < g) {
+                        if gap <= reach && best.is_none_or(|(g, _)| gap < g) {
                             best = Some((gap, k));
                         }
                     }
@@ -415,6 +434,17 @@ mod tests {
         assert!(cp.capture_probability(0.25).abs() < 1e-12);
         let mid = cp.capture_probability(0.10);
         assert!(mid > 0.0 && mid < 1.0, "{mid}");
+    }
+
+    /// Decision 0029: a young tip sweeps its base radius, a longer free stem swings
+    /// wider, and the sweep stops at its cap.
+    #[test]
+    fn sweep_widens_with_free_length() {
+        let cp = ClimbingParams::default();
+        assert!((cp.sweep(0.0) - 0.06).abs() < 1e-12);
+        assert!((cp.sweep(0.2) - 0.11).abs() < 1e-12);
+        assert!((cp.sweep(1.0) - 0.15).abs() < 1e-12);
+        assert!((cp.sweep(-1.0) - 0.06).abs() < 1e-12);
     }
 
     /// The coil turns anticlockwise seen from above (a right-handed helix), rises at

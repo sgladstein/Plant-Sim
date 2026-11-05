@@ -233,7 +233,7 @@ Emergent consequences this is designed to give: shaded lower leaves and branches
 ### 3.10 Seed reserves and germination
 
 - The plant starts as a seed of four organs (decision 0013): the collar where roots attach, a hypocotyl that starts expanding at germination, and two cotyledons holding the reserve. A bean seed is \~0.3 to 0.5 g dry mass, \~0.45 carbon, \~70% of it mobilizable. The two cotyledons hold that reserve and are the only carbon source until leaves export.
-- Germination requires the seed's soil cell above 30% FTSW and soil temperature above base temperature for 24 consecutive hours. Emergence follows at \~60 to 80 °C·day (about a week at 20 °C); the hypocotyl grows on cotyledon carbon until it reaches the surface.
+- Germination requires the seed's soil cell above 30% FTSW and soil temperature above base temperature for 24 hours; a dry or cold hour pauses the count rather than resetting it (decision 0029; the plan had 24 consecutive hours). Emergence follows at \~60 to 80 °C·day (about a week at 20 °C); the hypocotyl grows on cotyledon carbon until it reaches the surface.
 - Cotyledons export carbon down the concentration gradient like any organ, senesce when their reserve falls below 10% of the start, and drop about two weeks after emergence. Unifoliate leaves open at emergence.
 
 ### 3.11 Phenology, temperature and reproduction

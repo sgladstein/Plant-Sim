@@ -3,7 +3,7 @@
 // later pole-type phenology, and longer internodes; everything else is the bush bean's.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 7,
+  schema: 8,
   id: "pole_bean",
   name: "Pole bean archetype",
   growth_form: Vine,
@@ -180,17 +180,19 @@ Species(
     vegetative_after_flowering: (value: 260.0, unit: "Cd", source: "CROPGRO BNGRO048.ECO FL-VS 13 photothermal days (default and EMBRAPA ecotypes; 11 for others) x 20 Cd per day at optimum (t_opt - t_base)"),
     internode_ramp_nodes: (value: 8.0, unit: "-", source: "~ CROPGRO YVSHT reaches full length by about node 10 (research m2-m3 notes)"),
     circumnutation_radius: (value: 6.0, unit: "cm", source: "~ 3 to 10 cm (Sothern 1998 for Glycine soja, 2.9 to 8.7 cm; research m2-m3 notes)"),
+    circumnutation_growth: (value: 0.25, unit: "-", source: "~ the circumnutating tip is the free stem above the last hold, and its swing widens as that free length grows (Darwin 1875 describes revolving shoots sweeping wider circles as they lengthen); 0.25 is a lean of about 15 degrees from the vertical, to validate (decision 0029)"),
+    circumnutation_radius_max: (value: 15.0, unit: "cm", source: "~ a cap so a long free tip (it lodges at self_support_length) does not reach a stake across a row; to validate against measured bean circumnutation amplitudes (decision 0029)"),
     support_diameter_sure: (value: 5.0, unit: "cm", source: "Darwin 1875; research m2-m3 notes: certain capture up to 5 cm"),
     support_diameter_max: (value: 20.0, unit: "cm", source: "Darwin 1875 (fails on 23 cm); research m2-m3 notes: capture falls to 0 at 10 to 20 cm"),
-    helix_pitch: (value: 10.0, unit: "cm", source: "~ review of WP22: about 10 cm per turn; Rutjens 2025 pitch p = 2 pi R tan(eta)"),
+    helix_pitch: (value: 14.0, unit: "cm", source: "~ tuned on seed means to the staked height target (decision 0029): 14 cm per turn gives about 68 deg on the 1.5 cm stake, inside Rutjens 2025's 35 to 75 deg; thin strings stay at the 75 deg clamp. Was 10 (review of WP22), which gave about 60 deg on the stake and 10% less height per metre of stem than on a string; Rutjens 2025 pitch p = 2 pi R tan(eta)"),
     helix_inclination_min: (value: 35.0, unit: "deg", source: "Rutjens 2025: 35 to 75 deg"),
     helix_inclination_max: (value: 75.0, unit: "deg", source: "Rutjens 2025: 35 to 75 deg"),
     self_support_length: (value: 40.0, unit: "cm", source: "~"),
     heap_radius: (value: 15.0, unit: "cm", source: "~ a fallen vine coils back on itself"),
     lodge_height: (value: 2.0, unit: "cm", source: "~ a fallen stem lies on the soil"),
-    pod_rot_rate: (value: 0.02, unit: "1/day", source: "~ staking keeps pods off wet soil and cuts pod rot (IITA PROPAS; Reckling 2011); set so unstaked yield falls inside the -30 to -70% band (decision 0021)"),
+    pod_rot_rate: (value: 0.017, unit: "1/day", source: "~ staking keeps pods off wet soil and cuts pod rot (IITA PROPAS; Reckling 2011); set so unstaked yield falls inside the -30 to -70% band (decision 0021), re-set on seed means at model 0.12.0 when every staked row plant found its string (decision 0029)"),
   ),
-  variation: (            // schema 7, decision 0027: non-heritable plant-to-plant variation within a pure line
+  variation: (            // schema 7 (decision 0027), 8 (decision 0029): non-heritable plant-to-plant variation within a pure line
     seed_mass_cv: (value: 0.12, unit: "-", source: "~ single seeds of one bean seed lot: about 10 to 15% CV (individual seed mass is set by pod position and maternal resources; 100-seed weight PCV 15% across landraces, Mesera 2022, is between lots)"),
     seed_leaf_exponent: (value: 0.5, unit: "-", source: "~ the unifoliate leaves are preformed in the embryo, and larger bean seeds give larger primary leaves and early seedlings (seed-size vigour); square root as a partial effect"),
     emergence_cv: (value: 0.15, unit: "-", source: "~ hydrothermal time: each seed of a lot has its own threshold, normally distributed (Gummerson 1986; Bradford 2002), so a sowing comes up over several days; 15% of 80 Cd is about a day either side at 12 Cd per day"),
@@ -198,6 +200,7 @@ Species(
     emergence_reference_depth: (value: 3.0, unit: "cm", source: "the emergence sum was set for the 3 cm the scenarios sow at (decision 0018)"),
     leaf_size_cv: (value: 0.1, unit: "-", source: "~ leaf-to-leaf scatter of final leaflet area about the node profile, about 10% in field leaf-area surveys"),
     divergence_sd: (value: 10.0, unit: "deg", source: "~ measured divergence angles scatter by about 5 to 15 degrees about the ideal angle"),
+    internode_length_cv: (value: 0.1, unit: "-", source: "~ internode-to-internode scatter of final length about the node profile, about 10%, matching leaf_size_cv; with emergence spread it brings stand height CV toward the 10% field stands show (variation review item 6, decision 0029)"),
   ),
   roots: [
     RootType(name: "tap", origin: Radicle, order: 0,
