@@ -62,6 +62,20 @@ param_group!(
         maintenance_q10: "-",
         /// Residual stomatal conductance.
         medlyn_g0: "mol/m2/s",
+        /// Q10 of leaf day respiration.
+        rd_q10: "-",
+        /// Activation energy of Vcmax (peaked Arrhenius).
+        vcmax_activation: "J/mol",
+        /// Deactivation energy of Vcmax.
+        vcmax_deactivation: "J/mol",
+        /// Entropy term of Vcmax.
+        vcmax_entropy: "J/mol/K",
+        /// Activation energy of Jmax (peaked Arrhenius).
+        jmax_activation: "J/mol",
+        /// Deactivation energy of Jmax.
+        jmax_deactivation: "J/mol",
+        /// Entropy term of Jmax.
+        jmax_entropy: "J/mol/K",
         /// Curvature of the J light response.
         electron_transport_curvature: "-",
         /// Electrons per absorbed photon.
@@ -86,6 +100,8 @@ param_group!(
         ftsw_threshold: "-",
         /// Days of negative reserve before an organ dies.
         starvation_window: "day",
+        /// Phloem conductance per unit segment cross-section over length (§3.9 step 3).
+        phloem_conductance: "g/m/h",
         /// Leaves below this share of full-sun PAR for 5 days senesce.
         shade_light_threshold: "-",
         /// Red:far-red below which shade avoidance acts.

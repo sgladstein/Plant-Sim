@@ -338,6 +338,21 @@ quantity!(
     "kg"
 );
 quantity!(
+    /// Square root of pressure, kPa^0.5 (the Medlyn slope g1).
+    SqrtKPa,
+    "kPa^0.5"
+);
+quantity!(
+    /// Molar energy, J mol⁻¹ (activation and deactivation energies).
+    JPerMol,
+    "J/mol"
+);
+quantity!(
+    /// Molar entropy, J mol⁻¹ K⁻¹.
+    JPerMolK,
+    "J/mol/K"
+);
+quantity!(
     /// Angle in degrees.
     Degrees,
     "deg"

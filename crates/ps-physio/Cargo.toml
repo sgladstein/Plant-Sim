@@ -1,0 +1,22 @@
+[package]
+name = "ps-physio"
+description = "Plant physiology: coupled Farquhar and Medlyn gas exchange, light classes, respiration, thermal time, phenology, carbon allocation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-units.workspace = true
+ps-graph.workspace = true
+ps-species.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+libm.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
