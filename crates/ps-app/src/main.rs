@@ -26,7 +26,7 @@
 //!
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
 //! soil-water, plant-water, roots, carbon, phenology, shade, competition, temperature, nitrogen, carbon-flow. `--charts` opens the
-//! charts panel. `--inspect POT[:ORGAN]` selects a plant or an organ for the inspector.
+//! charts panel. `--breeding` opens the breeding bench. `--inspect POT[:ORGAN]` selects a plant or an organ for the inspector.
 //! `--load DIR` continues from a save folder (one under `<captures>/saves`); the Save
 //! button writes them. `--experiment CARD` starts the experiment card `CARD` (an id under
 //! `data/experiments`) instead of `--scenario`; its notebook goes under `--captures`.
@@ -57,6 +57,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod bench;
+mod breeding;
 mod capture;
 mod demo_source;
 mod display;
@@ -83,6 +84,7 @@ struct Options {
     paused: bool,
     lens: Lens,
     charts: bool,
+    breeding: bool,
     inspect: Option<ps_view::Picked>,
     card: Option<String>,
     experiment: Option<String>,
@@ -168,6 +170,7 @@ fn parse_args() -> Result<Options> {
         paused: false,
         lens: Lens::Off,
         charts: false,
+        breeding: false,
         inspect: None,
         card: None,
         experiment: None,
@@ -203,6 +206,7 @@ fn parse_args() -> Result<Options> {
             "--paused" => o.paused = true,
             "--lens" => o.lens = parse_lens(&value()?)?,
             "--charts" => o.charts = true,
+            "--breeding" => o.breeding = true,
             "--inspect" => o.inspect = Some(parse_pick(&value()?)?),
             "--experiment" => o.experiment = Some(value()?),
             "--load" => o.load = Some(PathBuf::from(value()?)),
@@ -355,7 +359,10 @@ fn main() -> Result<()> {
     })
     .add_systems(Update, capture::capture_requests.after(ViewSet::Source));
     if let Some((sim, data, scenario, ex)) = sim {
-        let mut ui_tools = ps_ui::Tools::default();
+        let mut ui_tools = ps_ui::Tools {
+            breeding: options.breeding,
+            ..ps_ui::Tools::default()
+        };
         tools::init_new_run(&mut ui_tools.new_run, &data, &scenario, &options.scenario);
         let mut ui_ex = ps_ui::Experiment::default();
         experiment::init(&mut ui_ex, &data);
@@ -365,6 +372,14 @@ fn main() -> Result<()> {
             app.insert_resource(notebook);
         }
         app.insert_resource(ui_ex);
+        match breeding::Bench::load(&data, &options.captures) {
+            Ok((bench, ui)) => {
+                app.insert_resource(bench)
+                    .insert_resource(ui)
+                    .add_systems(Update, breeding::breeding.in_set(ViewSet::Source));
+            }
+            Err(e) => warn!("breeding bench off: {e:#}"),
+        }
         app.insert_resource(ui_tools)
             .insert_resource(tools::RunSettings {
                 data,

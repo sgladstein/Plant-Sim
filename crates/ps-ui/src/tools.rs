@@ -231,6 +231,8 @@ pub struct Tools {
     pub new_run: NewRun,
     /// Whether the selected plant can take actions (the sim, not the demo plants).
     pub enabled: bool,
+    /// Whether the breeding bench window is open (WP30).
+    pub breeding: bool,
 }
 
 impl Default for Tools {
@@ -251,6 +253,7 @@ impl Default for Tools {
                 ..NewRun::default()
             },
             enabled: false,
+            breeding: false,
         }
     }
 }
@@ -410,7 +413,7 @@ fn pollen_line(ui: &mut egui::Ui, tools: &mut Tools) {
 
 /// The seed library section of the right panel.
 pub(crate) fn seed_library(ui: &mut egui::Ui, tools: &Tools) {
-    egui::CollapsingHeader::new(format!("Seed library ({})", tools.seed_library.len()))
+    egui::CollapsingHeader::new(format!("Harvested seeds ({})", tools.seed_library.len()))
         .default_open(!tools.seed_library.is_empty())
         .show(ui, |ui| {
             if tools.seed_library.is_empty() {
