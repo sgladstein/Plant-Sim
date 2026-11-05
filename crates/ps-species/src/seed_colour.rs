@@ -27,6 +27,10 @@ use crate::{Genotype, LocusTier, Species, SpeciesError};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SeedColourTable {
+    /// Species ids the table applies to (WP30); the loader matches tables to species by
+    /// this list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub species: Vec<String>,
     /// Where the table comes from; "~" marks a guess to validate.
     pub source: String,
     /// The look before any rule applies.

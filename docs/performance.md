@@ -221,6 +221,15 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+## Breeding bench (WP30)
+
+One ten-seed generation (WP30 done-when: under 10 s of wall time), measured with
+`cargo run --release -p ps-bench --example breed_generation`. The run is ten bush bean
+lines (the species line and nine sampled founders) on the default bench, growing to
+maturity in 81 days and giving 388 seeds. On the 4-core container it took 4.6 to 5.2 s,
+and 6.2 s on one thread, with the same hash on 1, 2 and 4 threads. CI prints it in the
+bench summary as a report only.
+
 ## Known hot spots
 
 1. **Light ray count.** Each leaf marches 7 sample points × (daylight sun hours + 16 sky

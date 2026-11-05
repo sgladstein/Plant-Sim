@@ -17,6 +17,7 @@ macro_rules! cards {
 }
 
 cards!(
+    "breeding-bench.md",
     "carbon-allocation.md",
     "climbing.md",
     "gas-exchange.md",

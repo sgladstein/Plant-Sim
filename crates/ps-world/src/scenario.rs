@@ -118,12 +118,20 @@ pub enum Irrigation {
 }
 
 /// Which genotype a sown seed has.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SeedChoice {
     /// The species-default genotype.
     Default,
     /// A genotype drawn from the species population (world seed, plant id).
     Sample,
+    /// A seed saved in the seed library (WP30, decision 0038): its library id, kept on
+    /// the plant so its seeds can name it as a parent, and its genotype.
+    Saved {
+        /// Library id.
+        id: u64,
+        /// Its genotype, in the species' locus order.
+        genotype: ps_species::Genotype,
+    },
 }
 
 /// A vertical support for climbing plants: a stake, pole or trellis string (WP22).
@@ -551,7 +559,8 @@ pub enum ActionKind {
         g_per_m2: f64,
     },
     /// Hand-pollinate an open flower with another plant's pollen (§2, WP29): every
-    /// seed of the flower's pod has `pollen` as its father. Flowers left alone self.
+    /// seed of the flower's pod has `pollen` as its father. Flowers left alone self. A
+    /// hand-self (`pollen == plant`) is accepted and gives the same seeds as selfing.
     Pollinate {
         /// Seed parent: the plant that carries the flower.
         plant: u32,
