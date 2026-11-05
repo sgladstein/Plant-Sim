@@ -4,30 +4,36 @@
 use ps_units::{Celsius, DegreeDays};
 use serde::{Deserialize, Serialize};
 
-/// Cardinal temperatures of development.
+/// Cardinal temperatures of development: a trapezoid (decision 0032), or the old
+/// three-point response when `opt_high` equals `opt`.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Cardinal {
     /// Base: no development at or below.
     pub base: Celsius,
-    /// Optimum.
+    /// Start of the optimum plateau.
     pub opt: Celsius,
+    /// End of the optimum plateau.
+    pub opt_high: Celsius,
     /// Maximum: no development at or above.
     pub max: Celsius,
 }
 
 impl Cardinal {
-    /// Development rate in °C (degree-days per day) at temperature `t`: three-point
-    /// response normalized so the rate at the optimum is `opt − base` (§11.4).
+    /// Development rate in °C (degree-days per day) at temperature `t`: linear from
+    /// the base to the optimum, flat to `opt_high`, linear to zero at the maximum,
+    /// normalized so the rate on the plateau is `opt − base` (§11.4, decision 0032).
     #[must_use]
     pub fn rate(&self, t: Celsius) -> f64 {
-        let (b, o, m) = (self.base.0, self.opt.0, self.max.0);
+        let (b, o, o2, m) = (self.base.0, self.opt.0, self.opt_high.0, self.max.0);
         let t = t.0;
         if t <= b || t >= m {
             0.0
         } else if t <= o {
             t - b
+        } else if t <= o2 {
+            o - b
         } else {
-            (o - b) * (m - t) / (m - o)
+            (o - b) * (m - t) / (m - o2)
         }
     }
 

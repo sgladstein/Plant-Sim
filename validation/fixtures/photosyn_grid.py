@@ -12,7 +12,7 @@ CA = [280, 420, 800]                                      # ppm
 
 # Bush bean, data/species/bush_bean.ron (values copied; the Rust test reads the RON).
 PARAMS = dict(
-    Vcmax=89.3, Jmax=159.8, Rd0=0.88, Q10=1.92, TrefR=25.0, g1=4.0, g0=0.01,
+    Vcmax=89.3, Jmax=159.8, Rd0=0.88, Q10=1.92, TrefR=25.0, g1=5.79, g0=0.01,
     alpha=0.3, theta=0.7, Patm=100.0,
     EaV=58550.0, EdVC=200000.0, delsC=629.26,
     EaJ=29680.0, EdVJ=200000.0, delsJ=631.88,

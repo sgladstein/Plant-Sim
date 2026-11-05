@@ -482,6 +482,7 @@ impl Species {
         for (spec, p) in self.variation.entries() {
             check_param(&format!("variation.{}", spec.key), spec.unit, p)?;
         }
+        self.validate_development()?;
         self.validate_climbing()?;
         self.validate_variation()?;
         self.validate_grass()?;
@@ -489,6 +490,40 @@ impl Species {
         for r in &self.roots {
             for (spec, p) in r.entries() {
                 check_param(&format!("roots[{}].{}", r.name, spec.key), spec.unit, p)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The development trapezoid must rise, hold and fall (decision 0032), and every
+    /// construction cost must be at least 1 (building cannot make carbon).
+    fn validate_development(&self) -> Result<(), SpeciesError> {
+        let p = &self.phenology;
+        let (b, o, o2, m) = (
+            p.t_base.value,
+            p.t_opt.value,
+            p.t_opt_high.value,
+            p.t_max.value,
+        );
+        if !(b < o && o <= o2 && o2 < m) {
+            return Err(SpeciesError::Value {
+                at: "phenology.t_opt_high".into(),
+                why: "need t_base < t_opt <= t_opt_high < t_max".into(),
+            });
+        }
+        let c = &self.constants;
+        for (key, v) in [
+            ("construction_cost_leaf", c.construction_cost_leaf.value),
+            ("construction_cost_stem", c.construction_cost_stem.value),
+            ("construction_cost_root", c.construction_cost_root.value),
+            ("construction_cost_fruit", c.construction_cost_fruit.value),
+        ] {
+            // NaN fails too.
+            if v.is_nan() || v < 1.0 {
+                return Err(SpeciesError::Value {
+                    at: format!("constants.{key}"),
+                    why: "must be 1 or more".into(),
+                });
             }
         }
         Ok(())

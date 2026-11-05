@@ -809,7 +809,7 @@ impl Plant {
         let pi = s.parent.index();
         let available = self.arena.reserve[pi].0.max(0.0);
         // Built like any growth: construction cost includes growth respiration.
-        let cost = self.params.carbon.construction_cost;
+        let cost = self.params.carbon.construction_cost.of(s.kind);
         let mass = (PRIMORDIUM * s.curve.potential.0).min(0.5 * available / (cf * cost));
         self.arena.reserve[pi] -= GramsC(mass * cf * cost);
         self.ledger.growth_respiration += GramsC(mass * cf * (cost - 1.0));

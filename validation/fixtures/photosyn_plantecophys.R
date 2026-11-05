@@ -12,7 +12,7 @@ g <- expand.grid(par = c(50, 100, 200, 400, 800, 1200, 1600, 2000),
                  ca = c(280, 420, 800))
 g <- g[order(g$par, g$tleaf, g$vpd, g$ca), ]
 r <- Photosyn(PPFD = g$par, Tleaf = g$tleaf, VPD = g$vpd, Ca = g$ca, Patm = 100,
-              gsmodel = "BBOpti", g1 = 4.0, g0 = 0.01, alpha = 0.3, theta = 0.7,
+              gsmodel = "BBOpti", g1 = 5.79, g0 = 0.01, alpha = 0.3, theta = 0.7,
               Vcmax = 89.3, Jmax = 159.8, Rd0 = 0.88, Q10 = 1.92, TrefR = 25,
               EaV = 58550, EdVC = 200000, delsC = 629.26,
               EaJ = 29680, EdVJ = 200000, delsJ = 631.88)

@@ -65,7 +65,7 @@ one at a time, with options and a recommendation.
 | Design plan v3 (complete, kept current with decisions) | [docs/design-plan.md](design-plan.md). §3 model, §3.2 step order, §7 backlog of 36 WPs with done-when, §8 validation, §10 architecture, §11 implementation guide. |
 | Progress, per WP, plus every open follow-up | [docs/STATUS.md](STATUS.md) (read first every session) |
 | Agent rules (non-negotiable sim rules, code style, pre-push checks) | [CLAUDE.md](../CLAUDE.md) |
-| Decision records 0001 to 0030 | [docs/decisions/](decisions/) |
+| Decision records 0001 to 0032 | [docs/decisions/](decisions/) |
 | Model cards, one per process | [docs/models/](models/) |
 | Bevy pin and idioms | [docs/bevy-notes.md](bevy-notes.md) |
 | CLI | [docs/cli.md](cli.md) |
@@ -77,7 +77,7 @@ one at a time, with options and a recommendation.
 
 ## 4. State of the project (2026-11-05, main at the handoff merge)
 
-- **Model version 0.13.0** (`ps_world::MODEL_VERSION`; grass blades sample light at 3 points, decision 0030; before it, pole beans find their stake, decision 0029). Species schema 8.
+- **Model version 0.15.0** (`ps_world::MODEL_VERSION`; the research re-tune: development trapezoid, Medlyn g1 5.79, per-organ construction cost keys, decision 0032; before it, grass blades sample light at 3 points, decision 0030, and pole beans find their stake, decision 0029). Species schema 10.
 - **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
   a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.
@@ -94,8 +94,8 @@ one at a time, with options and a recommendation.
   Pole bean (twining), spring wheat, nitrogen with nodules, harvest/prune/obstacles,
   weather files, plant-to-plant variation all landed.
 - **M3 (breeding) and M4 (tree, fields): not started.**
-- **Validation (models 0.12.0 and 0.13.0, mean of four world seeds, decision 0026):** 87 checks,
-  67 pass, every M0 gate passes; the pole bean height targets pass since decision 0029.
+- **Validation (model 0.15.0, mean of four world seeds, decision 0026):** 87 checks,
+  68 pass, every M0 gate passes; the pole bean height targets pass since decision 0029.
   One bean spans 21 to 39 g by world seed alone, so every target reads the seed mean.
   Don't tune "~" parameters on one seed. Main misses: thermal-time phenology, wheat
   stand height and yield,

@@ -4,7 +4,7 @@
 // decision 0020). The stand's own shade stops tillering (red:far-red).
 Scenario(
   schema: 1,
-  model_version: "0.13.0",
+  model_version: "0.15.0",
   world_seed: 7,
   latitude_deg: 45.0,
   start: (year: 2026, month: 4, day: 10, hour: 0),

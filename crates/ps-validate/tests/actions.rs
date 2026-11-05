@@ -67,7 +67,10 @@ fn topping_a_bush_bean_releases_its_buds() {
 
 #[test]
 fn topping_a_pole_bean_releases_its_buds() {
-    topping_releases_buds("m2/pole_trellis.ron", 22);
+    // Day 18, not 22: under the development trapezoid (decision 0032) the untopped vine
+    // adds a node in the four days after day 22, which lifts its apical hold above the
+    // buds under test and releases them without a cut.
+    topping_releases_buds("m2/pole_trellis.ron", 18);
 }
 
 /// A harvest picks a pod with its seeds into the seed library; only pods and ears can
