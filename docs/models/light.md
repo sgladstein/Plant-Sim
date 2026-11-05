@@ -12,8 +12,8 @@ foliage is redder in far-red, which the plant reads as "a neighbor is shading me
 Daily (§3.2 daily step 6), in crate `ps-light`:
 
 - **Grid.** Bounding box of all leaf footprints (and any extra points), extent `E_a`
-  per axis, largest `E`. Cell edge `s = max(1.2 E / 48, 5 mm)`; cells per axis
-  `n_a = min(⌈1.2 E_a / s⌉, 48)`, centered on the box.
+  per axis, largest `E`. Cell edge `s = max(1.2 E / 32, 5 mm)`; cells per axis
+  `n_a = min(⌈1.2 E_a / s⌉, 32)`, centered on the box.
 - **Footprint.** Leaf `i` of area `A_i` (m²) is a horizontal disc of radius
   `r_i = √(A_i/π)` at its center height, sampled on a square lattice of spacing at most
   `s/2`; each lattice point carries `A_i / N_points`. Leaf area density in cell `c`:
@@ -59,7 +59,7 @@ elevation; `α`: leaf PAR absorptance; `f_PAR`, `q` below.
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
 | G-function, spherical leaf angles | 0.5 | 1 | Ross 1981; species parameter (`g_function` in schema) |
-| Max cells per axis | 48 | 1 | design plan §3.5 |
+| Max cells per axis | 32 | 1 | decision 0010 (plan §3.5 said 48) |
 | Min cell edge | 0.005 | m | design plan §3.5 |
 | Margin per side | 0.10 | fraction of extent | design plan §3.5 (20% total) |
 | Sky sectors | 16 (2 × 8) | 1 | design plan §3.5 |
@@ -104,8 +104,10 @@ interception as it grows, and shade between neighboring plants.
   little too dark. Fine for M0; revisit if gas exchange in deep shade looks low.
 - Coefficients are computed once a day; leaf movement within the day is ignored.
 - One plant's grid in M0. Merging grids for neighbors is part of the world (WP9).
-- Cost: leaves × 40 directions × 7 origins × about 50 cells. A 300-leaf plant is about
-  4 million cell visits per day, a few milliseconds.
+- Cost: leaves × 40 directions × 7 origins × about 30 cells. Rays stop when they leave
+  the box of occupied cells, and leaves run in parallel (ordered collect, so the result
+  does not depend on the thread count). A 300-leaf plant is about 19 ms of single-core
+  work per day, about 5 ms on 4 cores; a 60-leaflet bean about 1 ms (decision 0010).
 
 ## Validation
 - `ps_light::tests::uniform_canopy_matches_beers_law`: 40 × 40 × 12 cells, LAI 0.5–6,
@@ -114,13 +116,14 @@ interception as it grows, and shade between neighboring plants.
   tracer fixture (`validation/fixtures/light_raytrace.py`, seed 20261105, 4000 rays per
   leaflet, 57 leaflets with random spherical normals, 5 sun positions and the 16 sky
   directions). The per-leaf light index is the mean of the direct coefficients and the
-  diffuse coefficient. Measured: plant total +2.9% (target 3%, met); 55 of 57 leaflets
-  within 0.10 absolute (target all 57; owner accepted 95% for M0, worst 0.142); RMS
-  0.047; 48 of 57 within max(0.05, 10% relative), reported but not gated. The test also
+  diffuse coefficient. Measured at 32 cells per axis: plant total +1.7% (target 3%,
+  met); 56 of 57 leaflets within 0.10 absolute (target all 57; owner accepted 95% for
+  M0, worst 0.122); 50 of 57 within max(0.05, 10% relative), reported but not gated.
+  At 48 cells it was +2.9%, 55/57, worst 0.142 (decision 0010). The test also
   prints each leaf's worst single sun direction. See decision 0008.
 - `isolated_leaf_is_fully_lit`, `leaf_under_another_is_shaded`, `grid_respects_limits`,
   `sky_weights_sum_to_one` (also checks the absorption weights sum to 12/7),
-  `ray_from_below_the_grid_enters_it`, `rfr_proxy`, `absorbed_par_splits_sunlit_and_shaded`,
+  `ray_from_below_the_grid_enters_it`, `bounded_traversal_is_bit_identical`, `rfr_proxy`, `absorbed_par_splits_sunlit_and_shaded`,
   `fixture_sky_directions_match_sky_sectors`.
 
 ## References

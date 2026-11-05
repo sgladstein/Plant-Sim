@@ -23,6 +23,7 @@ thiserror = "2"
 libm = "0.2"
 proptest = "1"
 ron = "0.10"
+rayon = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
