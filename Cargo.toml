@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sgladstein/Plant-Sim"
+publish = false
+
+[workspace.dependencies]
+ps-units = { path = "crates/ps-units" }
+ps-rng = { path = "crates/ps-rng" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+libm = "0.2"
+proptest = "1"
+ron = "0.10"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+# The sim uses short physics names (a, gs, ci) on purpose; they match the model cards.
+similar_names = "allow"
+many_single_char_names = "allow"
+
+[profile.release]
+debug = 1
