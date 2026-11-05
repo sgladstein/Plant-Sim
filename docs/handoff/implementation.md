@@ -16,7 +16,7 @@ keep implementing the design plan from the repository alone.
 - Review follow-ups that are not a WP get their own small PR, such as the light fix (#75), the validation harness (#81) and the root fix. Record them in STATUS.
 
 **Every model change carries five things in the same PR:**
-1. A decision record, `docs/decisions/NNNN-title.md`, from `TEMPLATE.md`. Number it as the next free number; 0029 is the latest.
+1. A decision record, `docs/decisions/NNNN-title.md`, from `TEMPLATE.md`. Number it as the next free number; 0030 is the latest.
 2. A model card update in `docs/models/` for every equation or default that changes.
 3. A minor bump of `MODEL_VERSION` in `crates/ps-world/src/lib.rs`, plus `model_version` in every scenario under `data/scenarios/` (sed them all).
 4. A species schema bump in `crates/ps-species/src/schema.rs`, if a species file key changes. Schema is at 8.

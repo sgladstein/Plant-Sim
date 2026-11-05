@@ -116,7 +116,8 @@ impl GrassParams {
 }
 
 /// Light points of a grass blade (§3.5): three strips along an arching blade from
-/// `base`, each a third of its area, facing up and away from the blade's tilt.
+/// `base`, each a third of its area, facing up and away from the blade's tilt. Each
+/// strip is sampled at three points along it (decision 0030).
 #[must_use]
 pub fn blade_points(area: f64, base: V3, direction: V3, aspect: f64) -> Vec<ps_light::LeafPoint> {
     if area <= 0.0 {
@@ -144,6 +145,9 @@ pub fn blade_points(area: f64, base: V3, direction: V3, aspect: f64) -> Vec<ps_l
             } else {
                 normal
             },
+            // Sampled at the centers of the strip's thirds, along the blade
+            // (decision 0030).
+            strip: Some([d[0] * seg / 3.0, d[1] * seg / 3.0, d[2] * seg / 3.0]),
         });
         p = add(p, d, seg);
     }

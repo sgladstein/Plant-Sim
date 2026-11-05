@@ -165,6 +165,7 @@ fn leaf_points(skeleton: &Skeleton) -> (Vec<usize>, Vec<LeafPoint>) {
             center: [f64::from(c.x), f64::from(c.y), f64::from(c.z)],
             area: M2(f64::from(p.area)),
             normal: [f64::from(n.x), f64::from(n.y), f64::from(n.z)],
+            strip: None,
         });
     }
     (ids, points)
