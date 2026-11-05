@@ -22,7 +22,8 @@
 //!
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
 //! soil-water, plant-water, roots, carbon, phenology, shade. `--charts` opens the
-//! charts panel. `--screenshot` waits until
+//! charts panel. `--inspect POT[:ORGAN]` selects a plant or an organ for the inspector.
+//! `--screenshot` waits until
 //! the GPU pipelines have compiled and the scene has settled, saves the window and exits
 //! (for headless checks and bug reports). `--present` and `--frame-latency` set the
 //! swap chain's present mode (default auto vsync) and maximum queued frames (default
@@ -40,6 +41,7 @@
 mod bench;
 mod demo_source;
 mod display;
+mod inspect;
 mod sim_source;
 
 use std::path::PathBuf;
@@ -59,6 +61,7 @@ struct Options {
     paused: bool,
     lens: Lens,
     charts: bool,
+    inspect: Option<ps_view::Picked>,
     screenshot: Option<PathBuf>,
     present: PresentMode,
     frame_latency: Option<std::num::NonZero<u32>>,
@@ -84,6 +87,17 @@ fn parse_present(name: &str) -> Result<PresentMode> {
     })
 }
 
+/// `POT` or `POT:ORGAN`, for example `1` (the second pot's plant) or `0:12`.
+fn parse_pick(s: &str) -> Result<ps_view::Picked> {
+    let mut parts = s.splitn(2, ':');
+    let pot = parts.next().unwrap_or_default().parse::<usize>();
+    let organ = parts.next().map(str::parse::<usize>).transpose();
+    match (pot, organ) {
+        (Ok(pot), Ok(organ)) => Ok(ps_view::Picked { pot, organ }),
+        _ => bail!("--inspect takes POT or POT:ORGAN, got {s}"),
+    }
+}
+
 fn parse_lens(name: &str) -> Result<Lens> {
     Ok(match name {
         "off" => Lens::Off,
@@ -105,6 +119,7 @@ fn parse_args() -> Result<Options> {
         paused: false,
         lens: Lens::Off,
         charts: false,
+        inspect: None,
         screenshot: None,
         present: PresentMode::Mailbox,
         frame_latency: None,
@@ -128,6 +143,7 @@ fn parse_args() -> Result<Options> {
             "--paused" => o.paused = true,
             "--lens" => o.lens = parse_lens(&value()?)?,
             "--charts" => o.charts = true,
+            "--inspect" => o.inspect = Some(parse_pick(&value()?)?),
             "--screenshot" => o.screenshot = Some(PathBuf::from(value()?)),
             "--present" => {
                 o.present_name = value()?;
@@ -192,6 +208,9 @@ fn main() -> Result<()> {
     }))
     .add_plugins((PlantViewPlugin, ps_ui::PlantUiPlugin))
     .insert_resource(options.lens)
+    .insert_resource(ps_view::Selection {
+        picked: options.inspect,
+    })
     .insert_resource(ps_ui::Charts {
         open: options.charts,
         ..default()
@@ -209,8 +228,12 @@ fn main() -> Result<()> {
         }
     };
     if let Some(sim) = sim {
-        app.insert_resource(sim)
-            .add_systems(Update, sim_source::drive.in_set(ViewSet::Source));
+        app.insert_resource(sim).add_systems(
+            Update,
+            (sim_source::drive, inspect::inspect)
+                .chain()
+                .in_set(ViewSet::Source),
+        );
     } else {
         app.insert_resource(demo_source::DemoSource::new(
             options.day,
