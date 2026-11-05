@@ -90,7 +90,8 @@ for whatever you pick up.
   drought and heat seed size, shade height, nar_early, root_shoot_seed_fill.
 - **Speed (4 cores):** single pot ~2.2 ms per sim-day (budget 2), 30-bean plot ~24.5
   ms (budget 20), wheat stand ~110 ms (no budget). Viewer on the GTX 1070: Vulkan
-  ~4 ms per frame before #78 (budget 16.7).
+  ~4 ms per frame (Mailbox, measured on 58807c6, before the #72 lawn and #78 fuller
+  plants, neither timed on the 1070 yet; budget 16.7).
 
 ### Open PRs at handoff
 
