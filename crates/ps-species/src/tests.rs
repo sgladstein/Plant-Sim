@@ -106,12 +106,12 @@ fn locus_must_name_a_heritable_trait() {
 
 #[test]
 fn schema_version_checked() {
-    let bad = BEAN.replacen("schema: 9,", "schema: 8,", 1);
+    let bad = BEAN.replacen("schema: 10,", "schema: 6,", 1);
     assert!(matches!(
         Species::from_ron(&bad),
         Err(SpeciesError::Schema {
-            found: 8,
-            expected: 9
+            found: 6,
+            expected: 10
         })
     ));
 }

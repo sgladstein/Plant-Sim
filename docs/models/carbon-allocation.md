@@ -65,7 +65,7 @@ reserve `R` (g C), structure `W` (g DM) and concentration `C = R / max(W, 1e-6)`
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
 | carbon_fraction | 0.45 | g C g DM⁻¹ | design plan §6.1 |
-| construction_cost | 1.25 | g C g C⁻¹ | "~" design plan §3.8 |
+| construction_cost_leaf, _stem, _root, _fruit | 1.25 each | g C g C⁻¹ | "~" design plan §3.8. Per organ class from schema 10 (decision 0032); CROPGRO's composition costs (leaf 1.39, stem 1.29, root 1.25, seed 1.36) are held back until the transport and priority revisit, because they weaken the carbon-limited shade internode response below its M0 gate |
 | reserve_floor | 0.05 | g C g DM⁻¹ | "~" design plan §3.9 step 4 |
 | resorption_fraction | 0.3 | 1 | "~" design plan §3.9 step 6 |
 | starvation_window | 3 | day | "~" design plan §3.9, §3.16 |

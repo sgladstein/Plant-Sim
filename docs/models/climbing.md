@@ -112,15 +112,15 @@ vine, and its yield loss together with pod rot.
   caught, 25 cm not); the sweep widens with free length up to its cap; the coil is anticlockwise from above, keeps its radius and rises
   at its inclination; the lodge dip.
 - `ps-validate/tests/pole_bean.rs::staked_pole_beans_climb_and_unstaked_ones_lodge`
-  (WP22 done-when): in the row of 8, every staked main stem twines (10 or more coiled
-  internodes) and ends above 1.5 m; unstaked ones lodge, stay under 30 cm and yield 20 to
-  90% less on one seed (the 30 to 70% band is read on the seed mean in the validation
-  report, decision 0029).
+  (WP22 done-when): in the row of 8, on each of the validation report's four world
+  seeds, every staked main stem twines (10 or more coiled internodes) and every unstaked
+  one lodges; on the seed mean the staked row ends above 1.5 m, the unstaked one under
+  30 cm, and the unstaked row yields 30 to 70% less (decisions 0029, 0032).
 - `ps-validate/tests/pole_bean.rs::bush_beans_ignore_supports`.
-- Validation report, four-seed means at model 0.12.0: `pole_height_day60` (Info, 1.53 m
+- Validation report, four-seed means at model 0.15.0: `pole_height_day60` (Info, 1.61 m
   in 1.5 to 2.1), `pole_height_day75` (Info, 2.04 m in 2.0 to 2.3), `pole_height_final`
-  (Info, 2.08 m in 1.5 to 2.1), `pole_unstaked_seed_yield` (Info, the row pair, −63% in
-  −30 to −70%).
+  (Info, 2.05 m in 1.5 to 2.1), `pole_unstaked_seed_yield` (Info, the row pair, −54% in
+  −30 to −70%; −63% at 0.12.0).
 
 ## References
 - Darwin C. (1875) The Movements and Habits of Climbing Plants.

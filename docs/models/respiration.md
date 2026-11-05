@@ -23,7 +23,7 @@ cost a plant more carbon than cool ones.
 | --- | --- | --- | --- |
 | maintenance_rate_20c | 0.218 | g C g N⁻¹ day⁻¹ | Ryan 1991, as CLM's base rate 2.525e-6 g C g N⁻¹ s⁻¹ (decision 0011) |
 | maintenance_q10 | 2.0 | 1 | "~" design plan §3.8 |
-| construction_cost | 1.25 | g C g C⁻¹ | "~" design plan §3.8 |
+| construction_cost_leaf, _stem, _root, _fruit | 1.25 each | g C g C⁻¹ | "~" design plan §3.8; per organ class from decision 0032 (see carbon-allocation.md) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |

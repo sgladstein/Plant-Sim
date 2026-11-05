@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 9;
+pub const SCHEMA: u32 = 10;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -52,8 +52,15 @@ param_group!(
     Constants {
         /// Carbon per unit dry matter.
         carbon_fraction: "g C / g DM",
-        /// Carbon used per carbon built into structure (1.25 = 20% growth respiration).
-        construction_cost: "g C / g C",
+        /// Carbon used per carbon built in leaves (1.25 = 20% growth respiration;
+        /// per organ class from schema 10, decision 0032).
+        construction_cost_leaf: "g C / g C",
+        /// Carbon used per carbon built in stems, buds and tendrils.
+        construction_cost_stem: "g C / g C",
+        /// Carbon used per carbon built in roots and nodules.
+        construction_cost_root: "g C / g C",
+        /// Carbon used per carbon built in flowers, pods and seeds (and the sown seed).
+        construction_cost_fruit: "g C / g C",
         /// Maintenance respiration per nitrogen at 20 C.
         maintenance_rate_20c: "g C / g N / day",
         /// Q10 of maintenance respiration.
@@ -303,8 +310,11 @@ param_group!(
     Phenology {
         /// Base temperature of thermal time.
         t_base: "C",
-        /// Optimum temperature of thermal time.
+        /// Optimum temperature of thermal time: the start of the plateau.
         t_opt: "C",
+        /// End of the optimum plateau (schema 10, decision 0032); equal to `t_opt` for
+        /// a three-point response.
+        t_opt_high: "C",
         /// Maximum temperature of thermal time.
         t_max: "C",
         /// Thermal time from germination to emergence.
