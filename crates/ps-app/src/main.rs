@@ -27,7 +27,8 @@
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
 //! soil-water, plant-water, roots, carbon, phenology, shade, competition, temperature, nitrogen, carbon-flow. `--charts` opens the
 //! charts panel. `--inspect POT[:ORGAN]` selects a plant or an organ for the inspector.
-//! `--experiment CARD` starts the experiment card `CARD` (an id under
+//! `--load DIR` continues from a save folder (one under `<captures>/saves`); the Save
+//! button writes them. `--experiment CARD` starts the experiment card `CARD` (an id under
 //! `data/experiments`) instead of `--scenario`; its notebook goes under `--captures`.
 //! `--card NAME` opens a model card in the side panel (for example `light` for
 //! `docs/models/light.md`).
@@ -56,6 +57,7 @@ mod demo_source;
 mod display;
 mod experiment;
 mod inspect;
+mod saves;
 mod sim_source;
 mod tools;
 
@@ -79,6 +81,7 @@ struct Options {
     inspect: Option<ps_view::Picked>,
     card: Option<String>,
     experiment: Option<String>,
+    load: Option<PathBuf>,
     captures: PathBuf,
     timelapse: Option<PathBuf>,
     to_day: Option<f64>,
@@ -163,6 +166,7 @@ fn parse_args() -> Result<Options> {
         inspect: None,
         card: None,
         experiment: None,
+        load: None,
         captures: PathBuf::from("captures"),
         timelapse: None,
         to_day: None,
@@ -196,6 +200,7 @@ fn parse_args() -> Result<Options> {
             "--charts" => o.charts = true,
             "--inspect" => o.inspect = Some(parse_pick(&value()?)?),
             "--experiment" => o.experiment = Some(value()?),
+            "--load" => o.load = Some(PathBuf::from(value()?)),
             "--card" => {
                 let name = value()?;
                 let path = format!("docs/models/{}.md", name.trim_end_matches(".md"));
@@ -380,6 +385,7 @@ fn main() -> Result<()> {
                 experiment::end_on_new_run,
                 tools::new_run,
                 experiment::experiment,
+                saves::save_load,
                 tools::apply_tools,
                 sim_source::drive,
                 inspect::inspect,
@@ -450,6 +456,11 @@ fn start_sim(options: &Options, paused: bool) -> Result<Started> {
             paused,
         )?;
         return Ok((src, data, scenario, Some((setup, running, notebook))));
+    }
+    if let Some(dir) = &options.load {
+        let (src, scenario, note) = saves::start_from(dir, options.speed, paused)?;
+        info!("{note}");
+        return Ok((src, data, scenario, None));
     }
     let (world, scenario) = sim_source::load_world(&data, &options.scenario)?;
     let src = sim_source::SimSource::start(world, &scenario, options.day, options.speed, paused)?;

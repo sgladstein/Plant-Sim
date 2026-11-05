@@ -278,6 +278,14 @@ impl SimSource {
             })
     }
 
+    /// The running session's state at the hour on screen, without stopping it (WP26).
+    ///
+    /// # Errors
+    /// The sim thread is gone or the state could not be written.
+    pub fn save(&self) -> Result<ps_session::Saved> {
+        Ok(self.session.save_ron()?)
+    }
+
     /// Replaces the label of soil `soil` (an experiment names its pots by their level).
     pub fn relabel(&mut self, soil: u32, label: String) {
         if let Some(info) = self.pots.get_mut(&soil) {
