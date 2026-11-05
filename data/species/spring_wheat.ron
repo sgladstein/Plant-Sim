@@ -91,7 +91,7 @@ Species(
     bulk_density: (value: 300000.0, unit: "g/m3", source: "~"),
     pod_aspect: (value: 7.5, unit: "-", source: "~ an ear about 9 cm by 1.2 cm"),
     seed_aspect: (value: 2.0, unit: "-", source: "~ a wheat grain about 6 by 3 mm"),
-    phyllotaxis_angle: (value: 180.0, unit: "deg", source: "grasses are distichous; WALTer 185 deg between blades"),
+    phyllotaxis_angle: (value: 185.0, unit: "deg", source: "WALTer (Lecarpentier 2019): 185 deg between successive blades; grasses are distichous"),
   ),
   heritable: {            // phenotype parameters with bounds
     "vcmax25": (default: 110.0, min: 40.0, max: 200.0, unit: "umol/m2/s", source: "~ flag leaf 90 to 130 (research m2-m3 notes [K, to verify])"),
@@ -138,7 +138,7 @@ Species(
     t_max: (value: 34.0, unit: "C", source: "APSIM-Wheat [K, to verify] (research m2-m3 notes)"),
     emergence: (value: 81.0, unit: "Cd", source: "WALTer: sowing to emergence 81 Cd (s.d. 30)"),
     flowering: (value: 900.0, unit: "Cd", source: "~ heading near 850 Cd for 9 leaves at an 85 Cd phyllochron, at least 760 at 15 h days (FAO X8234E), plus about 50 Cd to anthesis"),
-    maturity: (value: 1500.0, unit: "Cd", source: "~ anthesis plus about 600 Cd of grain filling (APSIM-Wheat [K, to verify])"),
+    maturity: (value: 1700.0, unit: "Cd", source: "~ to verify against a named cultivar: anthesis plus about 800 Cd of grain filling; APSIM-Wheat spring types run about 1700 to 1900 Cd sowing to maturity (WP23 review)"),
   ),
   nitrogen: (             // WP24, decision 0020; protein fractions x 0.16 g N per g protein
     leaf_n_initial: (value: 0.045, unit: "g N / g DM", source: "~ green wheat leaves 4 to 5% N (CERES-Wheat [K, to verify])"),
@@ -199,8 +199,9 @@ Species(
     blade_elevation: (value: 40.0, unit: "deg", source: "WALTer (Lecarpentier 2019): blade inclination 40 deg"),
     tiller_delay: (value: 2.0, unit: "-", source: "Klepper 1982: tiller T_n appears with main-stem leaf n + 2 or n + 3 [K, to verify]; the earlier for a spring type"),
     site_filling: (value: 0.69, unit: "-", source: "Neuteboom 1989: maximum site filling 0.693 (ryegrass)"),
-    tiller_stop_rfr: (value: 0.6, unit: "-", source: "~ WALTer citing Evers 2006: tillering stops at a measured R:FR about 0.35 (GAI 0.5 to 0.6). The sim's proxy counts only the leaf area straight above a leaf and reads about 0.5 to 0.6 at the crown of a 200 per m2 stand at jointing, so the threshold is set on the proxy (decision 0022)"),
+    tiller_stop_rfr: (value: 1.1, unit: "-", source: "~ WALTer citing Evers 2006: tillering stops at a measured R:FR about 0.35, near GAI 0.5 to 0.6. The sim's proxy, 1.2 exp(-0.5 LAI above the tiller's subtending blade), counts only leaves straight above that blade and none of the far-red reflected sideways by neighbours, so it reads near 1 when a real crown is already shaded; the threshold is set on the proxy so a 200 per m2 stand ends with 2 to 3 ears per plant (decision 0022)"),
     tiller_angle: (value: 15.0, unit: "deg", source: "~ tillers lean out from the crown"),
+    tiller_azimuth: (value: 40.0, unit: "deg", source: "WALTer (Lecarpentier 2019): tillers at 40 deg from the parent axis"),
     tiller_max_order: (value: 2.0, unit: "-", source: "~ primary and secondary tillers"),
     tiller_survive_leaves: (value: 2.0, unit: "-", source: "~ WALTer: tillers regress from jointing, the youngest first"),
     peduncle_length: (value: 30.0, unit: "cm", source: "~ the peduncle is the longest internode, about a third of the culm"),

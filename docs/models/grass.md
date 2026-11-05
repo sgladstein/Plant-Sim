@@ -24,7 +24,9 @@ Code: `ps_arch::grass`. Decision 0022.
      - For `k < N`: `A = A_max (b₁ + (1 − b₁) min(1, (k − 1)/(N − 2)))`.
      - The flag leaf (`k = N`): `A = A_max b_flag`.
      - The blade sits at the sheath's top, at elevation `e₀`, azimuth advancing by the
-       phyllotaxis.
+       phyllotaxis (185°).
+     - A plant's first blade has a uniform random azimuth on its `Tropism` stream; a
+       tiller's first blade is `φ_t` (40°) round from its parent's.
 2. **Tiller site** at rank `r` of an axis of order `o < o_max`, on a crown node:
    - It is decided once, when the axis reaches `r + d` leaves.
    - It fills with probability `p = s_f · min(1, C_node / C_ref)`.
@@ -59,8 +61,10 @@ Code: `ps_arch::grass`. Decision 0022.
 | blade_aspect, blade_elevation | 18, 40 | -, deg | ~; WALTer |
 | tiller_delay | 2 | phyllochrons | Klepper 1982 (n + 2 or 3) |
 | site_filling | 0.69 | - | Neuteboom 1989 |
-| tiller_stop_rfr | 0.6 | - (proxy) | ~ WALTer/Evers 0.35 measured, mapped to the proxy |
+| tiller_stop_rfr | 1.1 | - (proxy) | ~ WALTer/Evers 0.35 measured; set on the proxy for 2 to 3 ears per plant at 200 per m² |
 | tiller_max_order, tiller_survive_leaves, tiller_angle | 2, 2, 15 | -, -, deg | ~ |
+| tiller_azimuth, phyllotaxis | 40, 185 | deg | WALTer |
+| maturity | 1700 | Cd | ~ APSIM spring types 1700 to 1900 |
 | florets per ear, floret set | 50, 0.85 | - | ~ |
 | ear chaff, ear growth, lag, grain fill | 0.45 g, 200, 180, 550 | g, Cd | ~; APSIM-Wheat |
 | phloem_conductance (wheat) | 1500 | g/m/h | ~ as the pole bean (decision 0021) |
@@ -87,12 +91,14 @@ Code: `ps_arch::grass`. Decision 0022.
 - grains per ear and grain mass.
 
 ## Known limits
-- A dense stand stays too short (0.40 m against 0.7 to 1.0) and yields too little. Its
+- A dense stand stays too short (0.56 m against 0.7 to 1.0) and yields too little. Its
   culms elongate while the plants are short of sugar, and the sim does not yet treat
   the growing stem as the main sink at jointing.
 - Ears set about a third of the grains a field ear does.
 - The red:far-red threshold is set on the sim's simple shade signal, not on a measured
-  ratio.
+  ratio. The signal is read at the blade over the bud rather than at the crown, so the
+  threshold sits high (1.1) and a lone plant's own blades cost it half a tiller.
+- The crown sits 1 cm above the soil; a real wheat crown is 1 to 2 cm below it.
 - All crown roots appear as one cohort, not one set per tiller.
 - No vernalization, no photoperiod response and no lodging. Leaves grow from their
   base only in the sense that a blade appears from the sheath; blade growth itself is
@@ -106,13 +112,19 @@ Code: `ps_arch::grass`. Decision 0022.
     0.7 to 1.0 m, one ear per living shoot, sheaths paired with blades, no nodules,
     more than 1 g of grain;
   - `a_dense_stand_tillers_less` (at day 50, the stand has fewer than 70% of the spaced
-    plants' tillers).
+    plants' tillers; more than 150 of the 200 plants have their own first-blade
+    azimuth).
 - Validation report (all Info):
-  - `wheat_tillers_spaced`: 4.25 in 3 to 10;
-  - `wheat_tillers_stand`: 2.0 in 1 to 5;
-  - `wheat_height_spaced`: 0.76 m in 0.7 to 1.0;
-  - `wheat_height_stand`: misses at 0.40 m;
-  - `wheat_density_tillers`: −52% in −30 to −90%.
+  - `wheat_tillers_spaced`: misses at 3.75 (4 to 12);
+  - `wheat_tillers_stand`: 1.9 in 1 to 5;
+  - `wheat_ears_stand`: 2.9 in 2 to 3;
+  - `wheat_height_spaced`: 0.78 m in 0.7 to 1.0;
+  - `wheat_height_stand`: misses at 0.56 m;
+  - `wheat_density_tillers`: −50% in −30 to −90%;
+  - `wheat_maturity_day`: 104 d in 100 to 130;
+  - `wheat_peak_leaf_area_stand`: 0.0215 m² per plant (GAI 4.3) in 0.02 to 0.03;
+  - `wheat_shoot_mass_stand`: misses at 3.7 g (5 to 9);
+  - `wheat_grain_stand`: misses at 1.16 g (1.5 to 3).
 
 ## References
 - Lecarpentier C. et al. (2019) WALTer. Annals of Botany 123: 961-975.

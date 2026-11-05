@@ -379,6 +379,8 @@ param_group!(
         tiller_stop_rfr: "-",
         /// Angle of a new tiller from the vertical.
         tiller_angle: "deg",
+        /// Azimuth of a tiller's first leaf from its parent's leaf.
+        tiller_azimuth: "deg",
         /// Highest tiller order (1 primary, 2 secondary).
         tiller_max_order: "-",
         /// At jointing, tillers with fewer visible leaves than this die.

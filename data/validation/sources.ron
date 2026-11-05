@@ -267,6 +267,14 @@ Sources(
       cultivar: "spring wheat",
       conditions: "Compiled from WALTer (Lecarpentier 2019), elong-Wheat and field phyllochron data",
     ),
+    "review_wp23_wheat": Source(
+      citation: "Project review of WP23 (reviews/wp23-review.md): spring wheat at 45 N matures in 110 to 130 d; 400 to 600 ears per m2; peak GAI 4 to 6; above-ground biomass 1000 to 1800 g per m2 and grain 300 to 600 g per m2 at maturity; 4 to 12 shoots on a spaced plant [K, to verify].",
+      doi: None,
+      url: "reviews/wp23-review.md (project files)",
+      licence: "project document",
+      cultivar: "spring wheat",
+      conditions: "Compiled from field agronomy, APSIM-Wheat and Darwinkel's density series",
+    ),
     "lecarpentier2019": Source(
       citation: "Lecarpentier C., Barillot R., Blanc E., Abichou M., Goldringer I., Barbillon P., Enjalbert J., Andrieu B. (2019) WALTer: a three-dimensional wheat model to study competition for light through the prediction of tillering dynamics. Annals of Botany 123(6): 961-975.",
       doi: Some("10.1093/aob/mcy226"),

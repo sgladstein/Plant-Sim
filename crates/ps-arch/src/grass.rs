@@ -3,7 +3,7 @@
 //! leaf interval after another, stem elongation from jointing, and a terminal ear on
 //! a peduncle. The same organ graph, carbon and light as the herb.
 
-use core::f64::consts::FRAC_PI_2;
+use core::f64::consts::{FRAC_PI_2, TAU};
 
 use ps_graph::{OrganId, OrganKind, SpecificSize};
 use ps_physio::Stage;
@@ -45,6 +45,8 @@ pub struct GrassParams {
     pub tiller_stop_rfr: f64,
     /// Angle of a new tiller from the vertical.
     pub tiller_angle: Radians,
+    /// Azimuth of a tiller's first leaf from its parent's leaf.
+    pub tiller_azimuth: Radians,
     /// Highest tiller order.
     pub max_order: u8,
     /// Tillers with fewer leaves die at jointing.
@@ -79,6 +81,7 @@ impl GrassParams {
             site_filling: g.site_filling.value,
             tiller_stop_rfr: g.tiller_stop_rfr.value,
             tiller_angle: Radians(g.tiller_angle.value.to_radians()),
+            tiller_azimuth: Radians(g.tiller_azimuth.value.to_radians()),
             max_order: u8::try_from(round(g.tiller_max_order.value)).unwrap_or(2),
             survive_leaves: round(g.tiller_survive_leaves.value),
             peduncle: Meters(g.peduncle_length.value * CM),
@@ -154,19 +157,17 @@ impl Plant {
         self.params.grass.is_some()
     }
 
-    fn gp(&self) -> GrassParams {
-        self.params
-            .grass
-            .clone()
-            .unwrap_or_else(|| GrassParams::new(&default_grass()))
-    }
-
     /// Emergence of a grass: the coleoptile has reached the surface and the first leaf
     /// unrolls from the crown, with a tiller site in its axil.
     pub(crate) fn grass_emerge(&mut self, now: Hours) -> Result<(), ArchError> {
+        let Some(g) = self.params.grass.clone() else {
+            return Ok(());
+        };
         self.emerged_day = Some(self.day);
         let n = self.params.main_nodes;
-        let az0 = FRAC_PI_2;
+        // Each plant's first blade faces its own way, so a row is not a fence of
+        // parallel leaves (WALTer: plant azimuth random).
+        let az0 = self.stream(self.hypocotyl, now, Purpose::Tropism).uniform() * TAU;
         let mut ax = ShootAxis {
             order: 0,
             base: self.hypocotyl,
@@ -181,7 +182,7 @@ impl Plant {
             climb: Climb::Free,
             free_length: 0.0,
         };
-        self.grass_node(&mut ax, 0, [0.0, 0.0, 1.0], now)?;
+        self.grass_node(&g, &mut ax, 0, [0.0, 0.0, 1.0], now)?;
         ax.base = ax.apex;
         self.axes.push(ax);
         Ok(())
@@ -191,12 +192,12 @@ impl Plant {
     /// and a tiller site if the node is a crown node and the axis may tiller.
     fn grass_node(
         &mut self,
+        g: &GrassParams,
         ax: &mut ShootAxis,
         x: usize,
         direction: V3,
         now: Hours,
     ) -> Result<(), ArchError> {
-        let g = self.gp();
         let hp = self.params.clone();
         let k = ax.nodes + 1;
         let n = ax.max_nodes;
@@ -316,7 +317,9 @@ impl Plant {
         if self.axes.is_empty() || self.phenology.stage >= Stage::Flowering {
             return Ok(());
         }
-        let g = self.gp();
+        let Some(g) = self.params.grass.clone() else {
+            return Ok(());
+        };
         let main = self.axes[0].clone();
         // Jointing: the first elongating internode starts to grow, a phyllochron after
         // its node.
@@ -361,7 +364,9 @@ impl Plant {
             self.buds[b].fate = BudFate::Branch;
             let bud = self.buds[b].clone();
             let parent = self.axes[bud.axis].clone();
-            let dir = from_azimuth(bud.azimuth, FRAC_PI_2 - g.tiller_angle.0);
+            // A tiller's leaves turn away from its parent's (WALTer: 40 deg).
+            let azimuth = bud.azimuth + g.tiller_azimuth.0;
+            let dir = from_azimuth(azimuth, FRAC_PI_2 - g.tiller_angle.0);
             let mut ax = ShootAxis {
                 order: parent.order + 1,
                 base: bud.id,
@@ -371,13 +376,13 @@ impl Plant {
                 since_node: DegreeDays(0.0),
                 terminated: false,
                 raceme: None,
-                azimuth: bud.azimuth,
+                azimuth,
                 last_leaf: None,
                 climb: Climb::Free,
                 free_length: 0.0,
             };
             let x = self.axes.len();
-            self.grass_node(&mut ax, x, dir, now)?;
+            self.grass_node(&g, &mut ax, x, dir, now)?;
             ax.base = self.arena.children[bud.id.index()]
                 .first()
                 .copied()
@@ -412,6 +417,9 @@ impl Plant {
     /// Daily step 3, shoot part, for a grass: each axis makes a leaf every phyllochron
     /// and, after its last, a peduncle with the ear.
     pub(crate) fn grow_tillers(&mut self, now: Hours) -> Result<(), ArchError> {
+        let Some(g) = self.params.grass.clone() else {
+            return Ok(());
+        };
         let thermal = DegreeDays(self.today.thermal);
         for x in 0..self.axes.len() {
             let mut ax = self.axes[x].clone();
@@ -428,9 +436,9 @@ impl Plant {
                 if ax.nodes < ax.max_nodes {
                     let prev = self.arena.orientation[ax.apex.index()].direction;
                     let dir = unit(add(prev, [0.0, 0.0, 1.0], self.params.shoot_gravitropism));
-                    self.grass_node(&mut ax, x, dir, now)?;
+                    self.grass_node(&g, &mut ax, x, dir, now)?;
                 } else {
-                    let ear = self.ear(&ax, now)?;
+                    let ear = self.ear(&g, &ax, now)?;
                     ax.raceme = Some(ear);
                     ax.terminated = true;
                 }
@@ -441,8 +449,7 @@ impl Plant {
     }
 
     /// Heading: the peduncle and the ear at the top of an axis.
-    fn ear(&mut self, ax: &ShootAxis, now: Hours) -> Result<OrganId, ArchError> {
-        let g = self.gp();
+    fn ear(&mut self, g: &GrassParams, ax: &ShootAxis, now: Hours) -> Result<OrganId, ArchError> {
         let hp = self.params.clone();
         let prev = self.arena.orientation[ax.apex.index()].direction;
         let dir = unit(add(prev, [0.0, 0.0, 1.0], 1.0));
@@ -528,36 +535,37 @@ impl Plant {
     }
 }
 
-/// Neutral values for a plant without the grass group (never used for growth).
-fn default_grass() -> Grass {
-    let p = |v: f64| ps_species::Param {
-        value: v,
-        unit: String::new(),
-        source: String::new(),
-    };
-    Grass {
-        crown_internode_length: p(0.3),
-        elongating_internodes: p(4.0),
-        sheath_length_first: p(3.0),
-        sheath_length_last: p(15.0),
-        sheath_specific_length: p(150.0),
-        blade_aspect: p(18.0),
-        blade_elevation: p(40.0),
-        tiller_delay: p(3.0),
-        site_filling: p(0.7),
-        tiller_stop_rfr: p(0.35),
-        tiller_angle: p(15.0),
-        tiller_max_order: p(2.0),
-        tiller_survive_leaves: p(3.0),
-        peduncle_length: p(30.0),
-        blade_first_fraction: p(0.15),
-        blade_flag_fraction: p(0.8),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A grass group for the unit tests.
+    fn default_grass() -> Grass {
+        let p = |v: f64| ps_species::Param {
+            value: v,
+            unit: String::new(),
+            source: String::new(),
+        };
+        Grass {
+            crown_internode_length: p(0.3),
+            elongating_internodes: p(4.0),
+            sheath_length_first: p(3.0),
+            sheath_length_last: p(15.0),
+            sheath_specific_length: p(150.0),
+            blade_aspect: p(18.0),
+            blade_elevation: p(40.0),
+            tiller_delay: p(3.0),
+            site_filling: p(0.7),
+            tiller_stop_rfr: p(0.35),
+            tiller_angle: p(15.0),
+            tiller_azimuth: p(40.0),
+            tiller_max_order: p(2.0),
+            tiller_survive_leaves: p(3.0),
+            peduncle_length: p(30.0),
+            blade_first_fraction: p(0.15),
+            blade_flag_fraction: p(0.8),
+        }
+    }
 
     #[test]
     fn blades_grow_with_rank_and_the_flag_is_smaller() {

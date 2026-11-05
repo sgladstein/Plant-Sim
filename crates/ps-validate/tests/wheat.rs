@@ -56,7 +56,8 @@ fn spaced_wheat_tillers_heads_and_fills_grain() {
 }
 
 /// At 200 plants per m², the stand's shade stops tillering early: by the end of
-/// tillering each plant has fewer tillers than a spaced plant.
+/// tillering each plant has fewer tillers than a spaced plant. Each plant's first blade
+/// faces its own way, so the rows are not fences of parallel leaves.
 #[test]
 fn a_dense_stand_tillers_less() {
     let spaced = run("m2/wheat_spaced.ron", Some(50));
@@ -65,4 +66,26 @@ fn a_dense_stand_tillers_less() {
     let b = mean(&stand, "branches", &At::Final);
     assert!(b < 0.7 * a, "stand {b:.2} vs spaced {a:.2} tillers");
     assert!(b >= 1.0, "stand {b:.2} tillers");
+    let mut first: Vec<f64> = stand
+        .state()
+        .plants
+        .iter()
+        .filter_map(|p| {
+            let plant = &p.plant;
+            let blade = plant.meta.iter().position(|m| m.role == Role::Blade)?;
+            Some(
+                plant.arena.orientation[blade]
+                    .azimuth
+                    .0
+                    .rem_euclid(std::f64::consts::TAU),
+            )
+        })
+        .collect();
+    first.sort_by(f64::total_cmp);
+    first.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+    assert!(
+        first.len() > 150,
+        "{} distinct first-blade azimuths",
+        first.len()
+    );
 }
