@@ -41,8 +41,10 @@ Daily (§3.2 daily step 6), in crate `ps-light`:
 - **Ray.** From point `p` in unit direction `d`, the optical depth is
   `τ = Σ_cells (D_c(d) − D_own,c(d)) · ℓ_c + Σ_boxes κ ℓ_box`, with `ℓ_c` the path
   length in each cell (Amanatides–Woo traversal) and `D_own` the leaf's own footprint.
-- **Ray origins.** Seven points: the leaf center, and six points at radius `r/√2` in the
-  blade plane (the leaf normal) at 60° spacing.
+- **Ray origins.** A broad leaf (a bean leaflet): seven points, the leaf center and six
+  points at radius `r/√2` in the blade plane (the leaf normal) at 60° spacing. A grass
+  blade is three strips, each sampled at three points along it, its center and `±ℓ/3`
+  (the centers of its thirds), with `ℓ` the strip's length (decision 0030).
 - **Direct coefficient.** For each hour `h` with the sun above the horizon,
   `T_dir,h = mean over origins of exp(−τ(p, d_sun,h))`; zero at night.
 - **Diffuse coefficient.** `T_dif = Σ_s w_s · mean over origins of exp(−τ(p, d_s))`
@@ -110,6 +112,8 @@ interception as it grows, and shade between neighboring plants.
 
 ## Known limits
 - Leaves are discs; real bean leaflets are ovate. Stems and pods do not cast shade yet.
+- A grass blade strip is sampled along its length only, not across its width
+  (decision 0030); the blade is a few mm to 2 cm wide, under one light cell.
 - Obstacles are grey: under a shade cloth, red:far-red stays as it is, as it does under
   a neutral cloth. They shade leaves only: the soil surface's radiation ignores them.
 - Within a cell, the model does not know which leaf is on top: two leaflets that overlap

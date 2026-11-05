@@ -7,6 +7,7 @@ fn leaf(x: f64, y: f64, z: f64, area: f64) -> LeafPoint {
         center: [x, y, z],
         area: M2(area),
         normal: [0.0, 0.0, 1.0],
+        strip: None,
     }
 }
 

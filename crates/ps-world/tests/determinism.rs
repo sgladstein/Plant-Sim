@@ -382,3 +382,62 @@ fn plot_soil_nitrogen_is_patchy() {
         v.abs() < 1e-300 || (v - first).abs() < 1e-15
     }));
 }
+
+/// Decision 0029: a pole bean sown beside its stake is never scattered away from it, over
+/// many world seeds.
+#[test]
+fn seeds_sown_at_a_support_stay_at_it() {
+    let (s, c) = short("m2/pole_trellis.ron", 1);
+    for seed in 0..64 {
+        let mut t = s.clone();
+        t.world_seed = seed;
+        let w = World::new(t.clone(), c.clone()).unwrap();
+        for p in &w.state().plants {
+            let k = &p.plant.supports[0];
+            let at = p.plant.collar_position;
+            let d = libm::hypot(at[0] - k.base[0], at[1] - k.base[1]);
+            assert!(
+                d <= 0.05 + 1e-12,
+                "seed {seed}, plant {}: {d} m from the stake",
+                p.id
+            );
+        }
+    }
+}
+
+/// Decision 0029: soil patch lattice nodes are keyed by where they are, so enlarging a
+/// bed keeps the patches of the part it already had.
+#[test]
+fn soil_patches_stay_put_when_a_bed_grows() {
+    let (s, c) = short("plot_30_beans.ron", 1);
+    let field = |width: f64| {
+        let mut t = s.clone();
+        if let ps_world::scenario::SoilSpec::Plot { width_cm, .. } = &mut t.soils[0] {
+            *width_cm = width;
+        }
+        t.sowings.clear();
+        let w = World::new(t, c.clone()).unwrap();
+        let g = &w.state().soils[0].grid;
+        let (nx, ny, _) = g.dims();
+        (
+            nx,
+            ny,
+            (0..nx * ny).map(|i| g.no3(i).0).collect::<Vec<f64>>(),
+        )
+    };
+    let (nx, ny, small) = field(150.0);
+    let (wx, wy, big) = field(240.0);
+    assert_eq!(ny, wy);
+    assert!(wx > nx);
+    // Columns away from the small bed's east edge (where its last lattice cell is
+    // clamped) see the same four nodes in both beds.
+    for y in 0..ny {
+        for x in 0..nx - 6 {
+            assert_eq!(
+                small[y * nx + x].to_bits(),
+                big[y * wx + x].to_bits(),
+                "column ({x}, {y})"
+            );
+        }
+    }
+}

@@ -548,7 +548,7 @@ pub struct Plant {
     pub roots: RootCells,
     /// Organ base and tip positions, rebuilt daily.
     pub positions: Vec<(V3, V3)>,
-    /// Consecutive germination hours.
+    /// Hours the seed has spent moist and warm enough to germinate.
     pub germination_hours: u32,
     /// Days since sowing.
     pub day: u32,
@@ -1020,14 +1020,19 @@ impl Plant {
             self.shortfall += u.shortfall;
         }
         let seed_t = Self::soil_temperature(soil, self.collar_position[2]);
-        // Germination (§3.10): seed cell above the FTSW threshold and warmer than the
-        // base temperature for consecutive hours.
+        // Germination (§3.10): hours with the seed cell above the FTSW threshold and
+        // warmer than the base temperature. A dry or cold hour pauses the count and
+        // does not reset it (decision 0029): an imbibed seed keeps its progress through
+        // a dry afternoon (seed hydration memory), so a shallow seed in a top cell that
+        // dries each afternoon still comes up.
         if self.phenology.stage == Stage::Sown {
             let ok = geometry::soil_cell(soil, self.collar_position).is_some_and(|c| {
                 soil.cell_ftsw(c) >= self.params.germination_ftsw
                     && seed_t.0 > self.params.temperature.cardinal.base.0
             });
-            self.germination_hours = if ok { self.germination_hours + 1 } else { 0 };
+            if ok {
+                self.germination_hours += 1;
+            }
         }
         let n = self.arena.len();
         self.income.resize(n, GramsC(0.0));

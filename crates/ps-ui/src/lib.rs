@@ -9,14 +9,17 @@
 //!   card.
 //! - Under the lenses: the inspector for the clicked organ or plant (§5.3).
 //! - Bottom panel: the charts (§5.4), toggled from the top bar.
+//! - Left panel: the model card (§5.7) opened from a lens legend or an inspector value.
 //! - A custom theme so the panels match the diorama rather than a debug tool (§4).
 
 mod charts;
 mod inspector;
+mod model_cards;
 mod tools;
 
 pub use charts::{Chart, Charts, Series, nearest, nice_max};
 pub use inspector::{Field, Inspector};
+pub use model_cards::{Block, CARDS, ModelCards, card, parse, title};
 pub use tools::{NewRun, ObstacleDraft, PlayerAction, SeedRow, Side, Tools, days_in};
 
 use bevy::prelude::*;
@@ -116,6 +119,7 @@ impl Plugin for PlantUiPlugin {
             .init_resource::<Inspector>()
             .init_resource::<CaptureControl>()
             .init_resource::<Tools>()
+            .init_resource::<ModelCards>()
             .add_systems(EguiPrimaryContextPass, panels)
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -158,6 +162,7 @@ fn panels(
     inspector: Res<Inspector>,
     mut capture: ResMut<CaptureControl>,
     mut tools: ResMut<Tools>,
+    mut cards: ResMut<ModelCards>,
     mut themed: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -198,9 +203,17 @@ fn panels(
         .exact_size(300.0)
         .show(&mut root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                lens_panel(ui, &mut lens, &garden);
+                lens_panel(ui, &mut lens, &garden, &mut cards);
                 ui.separator();
-                inspector::section(ui, &inspector, &mut selection, &garden, *lens, &mut tools);
+                inspector::section(
+                    ui,
+                    &inspector,
+                    &mut selection,
+                    &garden,
+                    *lens,
+                    &mut tools,
+                    &mut cards,
+                );
                 ui.separator();
                 tools::section(ui, &mut tools, &selection, &garden);
                 ui.separator();
@@ -210,6 +223,17 @@ fn panels(
         .response
         .rect
         .width();
+    let left = if cards.open.is_some() {
+        egui::Panel::left("model-card")
+            .resizable(true)
+            .default_size(420.0)
+            .show(&mut root, |ui| model_cards::panel(ui, &mut cards))
+            .response
+            .rect
+            .width()
+    } else {
+        0.0
+    };
     let bottom = egui::Panel::bottom("help").show(&mut root, |ui| {
         if charts.open {
             ui.add_space(4.0);
@@ -230,7 +254,7 @@ fn panels(
     if tools.new_run.open {
         tools::new_run_window(ctx, &mut tools.new_run);
     }
-    let insets = [0.0, top, right, bottom.response.rect.height()];
+    let insets = [left, top, right, bottom.response.rect.height()];
     if rig
         .insets
         .iter()
@@ -370,7 +394,7 @@ fn color32(rgb: [f32; 3]) -> egui::Color32 {
     egui::Color32::from(egui::Rgba::from_rgb(rgb[0], rgb[1], rgb[2]))
 }
 
-fn lens_panel(ui: &mut egui::Ui, lens: &mut Lens, garden: &Garden) {
+fn lens_panel(ui: &mut egui::Ui, lens: &mut Lens, garden: &Garden, cards: &mut ModelCards) {
     ui.add_space(6.0);
     ui.heading("Lenses");
     for l in Lens::ALL {
@@ -379,11 +403,11 @@ fn lens_panel(ui: &mut egui::Ui, lens: &mut Lens, garden: &Garden) {
     }
     if let Some(info) = lens.info() {
         ui.separator();
-        legend(ui, &info, garden.stand_in_lenses.contains(lens));
+        legend(ui, &info, garden.stand_in_lenses.contains(lens), cards);
     }
 }
 
-fn legend(ui: &mut egui::Ui, info: &LensInfo, stand_in: bool) {
+fn legend(ui: &mut egui::Ui, info: &LensInfo, stand_in: bool, cards: &mut ModelCards) {
     ui.strong(info.quantity);
     ui.label(format!("Colors: {}. Unit: {}", info.colors, info.unit));
     let width = ui.available_width().min(270.0);
@@ -417,7 +441,7 @@ fn legend(ui: &mut egui::Ui, info: &LensInfo, stand_in: bool) {
         Origin::Emergent => "Emergent: arises from interacting processes.",
     };
     ui.weak(tag);
-    ui.weak(format!("Model card: {}", info.model_card));
+    model_cards::link(ui, cards, info.model_card);
     if stand_in {
         ui.add_space(4.0);
         ui.colored_label(

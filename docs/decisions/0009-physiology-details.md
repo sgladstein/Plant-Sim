@@ -1,8 +1,8 @@
 # 0009: Physiology details the plan left open
 
 - **Date:** 2026-11-05
-- **Status:** accepted (implementer); items 4 and 8 read the plan's text in a way the
-  owner may want to confirm. Item 10 and the flowering and maturity part of item 12 are
+- **Status:** accepted (implementer); the owner confirmed the readings of items 4 and 8
+  as implemented on 2026-11-05. Item 10 and the flowering and maturity part of item 12 are
   superseded by decision 0011, which also changes how temperature enters item 9.
 
 ## Context

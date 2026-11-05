@@ -27,7 +27,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.11.0";
+pub const MODEL_VERSION: &str = "0.13.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -364,15 +364,23 @@ fn weather_for(s: &Scenario, c: &Catalog) -> Result<WeatherSeries, WorldError> {
 /// would not take up water); a scenario sowing shallower keeps its own depth.
 const MIN_SOWING_DEPTH_CM: f64 = 1.0;
 
+/// A seed whose mark is this close to a support's surface is sown at that support,
+/// m (decision 0029).
+const SOWN_AT_SUPPORT: f64 = 0.05;
+/// How far outside a support's surface sowing scatter may still move a seed whose
+/// mark is closer than this, m (decision 0029).
+const SUPPORT_SCATTER_FLOOR: f64 = 0.01;
+
 /// Random-key entity of a soil's own draws (the soil patch field).
 const SOIL_ENTITY: u64 = 0x5011_0000_0000_0000;
 
 /// A plot's nitrogen factor per soil column, indexed `y * nx + x` (decision 0027): a
 /// standard normal on a lattice `soil_patch_cm` apart, bilinearly interpolated and
 /// rescaled to unit variance at every cell, then made lognormal with mean 1 and the
-/// scenario's coefficient of variation. Lattice draws come from one keyed stream in
-/// lattice order, so the field depends only on the world seed, the soil id and the
-/// plot size.
+/// scenario's coefficient of variation. Each lattice node has its own key, (soil,
+/// ix, iy) with the node in the key's tick slot (decision 0029), so a node's draw
+/// depends only on the world seed, the soil id and where the node is: enlarging a
+/// bed keeps its patches where they were.
 fn soil_patches(grid: &SoilGrid, v: &FieldVariation, world_seed: u64, soil: u32) -> Vec<f64> {
     let (nx, ny, _) = grid.dims();
     if v.soil_n_cv <= 0.0 {
@@ -387,14 +395,20 @@ fn soil_patches(grid: &SoilGrid, v: &FieldVariation, world_seed: u64, soil: u32)
         m
     };
     let (mx, my) = (lattice(nx), lattice(ny));
-    let mut rng = ps_rng::RngKey::new(
-        world_seed,
-        SOIL_ENTITY | u64::from(soil),
-        0,
-        ps_rng::Purpose::SoilPatch,
-    )
-    .stream();
-    let z: Vec<f64> = (0..mx * my).map(|_| rng.standard_normal()).collect();
+    let node = |ix: usize, iy: usize| {
+        ps_rng::RngKey::new(
+            world_seed,
+            SOIL_ENTITY | u64::from(soil),
+            ((iy as u64) << 32) | ix as u64,
+            ps_rng::Purpose::SoilPatch,
+        )
+        .stream()
+        .standard_normal()
+    };
+    let z: Vec<f64> = (0..my)
+        .flat_map(|iy| (0..mx).map(move |ix| (ix, iy)))
+        .map(|(ix, iy)| node(ix, iy))
+        .collect();
     let sigma = libm::sqrt(libm::log(1.0 + v.soil_n_cv * v.soil_n_cv));
     let mut out = Vec::with_capacity(nx * ny);
     for y in 0..ny {
@@ -833,7 +847,10 @@ impl World {
 
     /// Where a seed sown at `mark` (`depth_cm` deep) lands: hand sowing scatters it
     /// about its mark (decision 0027), keyed by the plant id; a scattered point that
-    /// leaves the soil falls back to the mark.
+    /// leaves the soil falls back to the mark. A climber's seed sown beside a support (its mark
+    /// within [`SOWN_AT_SUPPORT`] of the support's surface) is not moved farther from
+    /// that support than its mark, or than [`SUPPORT_SCATTER_FLOOR`] outside it if
+    /// the mark is closer (decision 0029): a gardener sows a pole bean at its pole.
     fn scattered(
         &self,
         id: u32,
@@ -841,6 +858,7 @@ impl World {
         depth: f64,
         mark: [f64; 3],
         grid: &SoilGrid,
+        supports: &[ps_arch::Support],
     ) -> [f64; 3] {
         let v = &self.state.scenario.variation;
         let mut rng = ps_rng::RngKey::new(
@@ -853,11 +871,31 @@ impl World {
         let mut z = || rng.standard_normal().clamp(-2.5, 2.5);
         let (zx, zy, zd) = (z(), z(), z());
         let depth_cm = (depth + v.sowing_depth_sd_cm * zd).max(MIN_SOWING_DEPTH_CM.min(depth));
-        let scattered = [
+        let mut scattered = [
             mark[0] + v.sowing_position_sd_cm * zx * 0.01,
             mark[1] + v.sowing_position_sd_cm * zy * 0.01,
             -depth_cm * 0.01,
         ];
+        let from = |p: [f64; 3], s: &ps_arch::Support| {
+            let (dx, dy) = (p[0] - s.base[0], p[1] - s.base[1]);
+            (dx, dy, libm::sqrt(dx * dx + dy * dy))
+        };
+        let near = supports
+            .iter()
+            .map(|s| (from(mark, s).2 - 0.5 * s.diameter, s))
+            .filter(|(gap, _)| *gap <= SOWN_AT_SUPPORT)
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((_, s)) = near {
+            let limit = from(mark, s)
+                .2
+                .max(0.5 * s.diameter + SUPPORT_SCATTER_FLOOR);
+            let (dx, dy, d) = from(scattered, s);
+            if d > limit {
+                let k = limit / d;
+                scattered[0] = s.base[0] + dx * k;
+                scattered[1] = s.base[1] + dy * k;
+            }
+        }
         if ps_arch::geometry::soil_cell(grid, scattered).is_some() {
             scattered
         } else {
@@ -905,7 +943,20 @@ impl World {
                 s.soil
             )));
         }
-        let at = self.scattered(id, tick, s.depth_cm, mark, grid);
+        let centre = soil_centre(grid);
+        let st = &self.state;
+        let supports: Vec<ps_arch::Support> = st
+            .scenario
+            .supports
+            .iter()
+            .chain(&st.added_supports)
+            .filter(|p| p.soil == s.soil)
+            .map(|p| support_in_frame(p, centre))
+            .collect();
+        // Only a climber is sown at its support (habit as in ps-arch's vine rule).
+        let climber = traits.habit >= 0.5;
+        let near: &[ps_arch::Support] = if climber { &supports } else { &[] };
+        let at = self.scattered(id, tick, s.depth_cm, mark, grid, near);
         if ps_arch::geometry::soil_cell(grid, at).is_none() {
             return Err(err(format!(
                 "sowing point {at:?} is outside soil {}",
@@ -920,16 +971,8 @@ impl World {
             at,
             Hours(tick),
         )?;
-        let centre = soil_centre(grid);
         let st = &self.state;
-        plant.supports = st
-            .scenario
-            .supports
-            .iter()
-            .chain(&st.added_supports)
-            .filter(|p| p.soil == s.soil)
-            .map(|p| support_in_frame(p, centre))
-            .collect();
+        plant.supports = supports;
         plant.obstacles = st
             .scenario
             .obstacles

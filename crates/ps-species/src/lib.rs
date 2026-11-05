@@ -508,6 +508,7 @@ impl Species {
             ),
             ("leaf_size_cv", &v.leaf_size_cv, 0.5),
             ("divergence_sd", &v.divergence_sd, 90.0),
+            ("internode_length_cv", &v.internode_length_cv, 0.5),
         ] {
             if !(0.0..=hi).contains(&p.value) {
                 return Err(SpeciesError::Value {
@@ -528,6 +529,15 @@ impl Species {
             })
         };
         let v = |p: &Param| p.value;
+        if v(&c.circumnutation_growth) < 0.0 {
+            return bad("circumnutation_growth", "must be 0 or more");
+        }
+        if v(&c.circumnutation_radius_max) < v(&c.circumnutation_radius) {
+            return bad(
+                "circumnutation_radius_max",
+                "must be at least circumnutation_radius",
+            );
+        }
         if !(0.0..=1.0).contains(&v(&c.pod_rot_rate)) {
             return bad("pod_rot_rate", "a daily chance, 0 to 1");
         }
