@@ -226,3 +226,24 @@ With these, 71 checks: 57 pass, 14 Info misses, every M0 check passes.
 - The 30-bean plot with the perf speedup (#53) runs at 23.2 ms per sim-day over 90
   days on 4 cores.
 
+
+### Second review round (no model change)
+- **Why the capacity rose.** At 6e-3 the fed-pot shade gate (−30 to −50% total mass)
+  fails because the shaded plants are N-limited through their drawn root length. That
+  is an artifact of the root model, not of the shade treatment. The 25× is a guess
+  ("~"), set so that a fed pot is non-limiting for a small-rooted plant.
+- **Ndfa stays visible.** A derived variable `ndfa_season` (fixed over fixed plus soil
+  uptake, from day 0) and two Info targets read it. `ndfa_garden_plot` (the 30-bean
+  plot, 20 ppm) expects 30 to 60% and gets 18%, a miss. A 20 ppm bed holds about 0.7 g
+  mineral N per plant for 30 plants, close to the whole need, so 18% is not
+  unreasonable for it. `ndfa_low_n_bed` runs the same plot at 5 ppm nitrate
+  (`m2/plot_low_n`), the case the band describes, expects 50 to 80% and gets 56%.
+  73 checks: 58 pass, 15 Info misses, every M0 check passes.
+- **Follow-up: uptake capacity should follow the root system, not a constant.** Drawn
+  root length is about 6 m at day 40 and 146 m at maturity, so it is about a tenth of a
+  real bean's early and near all of it late. A constant 25× under-draws early and
+  over-draws late. Tie capacity to root mass (fine roots scale with it) or to a drawn
+  plus undrawn length estimate; the factor then returns to CROPGRO's RTNO3 and Ndfa
+  should rise on its own. Mineralization is also low: 56 mg a day on the plot, about
+  0.03 g N per m² a day against 0.05 to 0.15 in gardens. Raising it would feed the plot
+  without touching the pots.

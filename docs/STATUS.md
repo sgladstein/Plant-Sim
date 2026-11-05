@@ -44,7 +44,7 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.rs` fills them from `ps_session::Snapshot`. Lateral root cohorts are drawn as up to 8 copies at golden-angle turns about the parent root. Pots are drawn round (`PotShape::Round`): a terracotta back half lined with soil, a curved glass front half, and a saucer; the soil-water slice wraps onto the glass. The rhizobox shape remains for the demo scene.
 
 ## Last validation report
-`cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11). At WP24 after review (model 0.5.0, world seed 7): 71 checks: 57 pass, 14 Info misses, 0 known misses. The M0 misses are listed in decision 0018. Decision 0020 lists what changed: density now passes (-43% against -70%), as do heat pods and heat seeds per pod; drought shoot mass now misses (-64%); shade internodes +23% against a 20% gate.
+`cargo run --release -p ps-cli -- validate`; CI uploads it as the `validation-report` artifact of the linux workflow (WP11). At WP24 after review (model 0.5.0, world seed 7): 73 checks: 58 pass, 15 Info misses, 0 known misses (the two new ones are the Ndfa targets: garden plot 18% misses 30 to 60%, the 5 ppm bed passes at 56%). The M0 misses are listed in decision 0018. Decision 0020 lists what changed: density now passes (-43% against -70%), as do heat pods and heat seeds per pod; drought shoot mass now misses (-64%); shade internodes +23% against a 20% gate.
 
 ## Open questions for the owner
 - WP7 (decision 0009): two readings of the plan's text to confirm. Priority is the share of an organ's own available reserve it may spend per hour (taken literally, §3.9 would cap every organ below its potential), and the water stress factor multiplies the stomatal slope.
@@ -64,6 +64,7 @@ The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.r
   - Pod set should read nitrogen. N-short plants set as many pods as fed ones and fill smaller seeds.
   - Leaf aging still multiplies capacity next to leaf N.
   - The root reach and the 25x uptake capacity stand in for root length the sim does not draw.
+  - Uptake capacity should scale with root mass (or drawn plus undrawn length), not a constant 25x: drawn length is a tenth of a real bean's at day 40 and near all of it at maturity. The factor should then return to CROPGRO's RTNO3 and plot Ndfa rise from 18%. Mineralization (0.03 g N per m2 a day on the plot) is low against gardens (0.05 to 0.15). Issue to follow.
   - WP24 review (/mnt/project-files/reviews/wp24-review.md), folded in as model 0.5.0 (decision 0020 amendment). Still open: thin shade leaves carry the same N per mass as sun leaves (real ones carry somewhat more); the density pass comes mostly from topsoil N running out; fixation is 34% of the N-free plant's carbon; more N giving less mass at maturity (Rd scales with capacity while the sink feedback throttles A).
   - The soil water has no upward flow.
 - WP12 review (/mnt/project-files/reviews/wp12-review.md): an ignored test or weekly CI job that runs the M0 gates at world seeds 11, 23 and 31 (today only `seeds.sh`-style local runs check them).

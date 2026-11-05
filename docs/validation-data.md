@@ -169,6 +169,7 @@ weighed standing plants; each target's note says which and why.
 | `height_cm` | `height_m * 100` | cm |
 | `leaf_area_cm2` | `leaf_area_m2 * 1e4` | cm² |
 | `harvest_index` | `seed_mass_g / (total_dry_mass_g - root_mass_g)` | g/g |
+| `ndfa_season` | Share of the plant's nitrogen gain fixed from the air, from day 0: `Σ n_fixed_g / Σ (n_fixed_g + n_uptake_g)` (seed nitrogen and mining are not gains) | g/g |
 
 A curve may name `scenario` (default `single_pot`). Its comparison reports NRMSE (RMSE over
 the mean observed value) and shape NRMSE (each series divided by its own maximum first),

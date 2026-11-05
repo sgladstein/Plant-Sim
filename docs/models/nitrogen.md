@@ -122,11 +122,18 @@ Emergent:
 - A nodulated bean grows in N-free sand, and an unnodulated one stalls on its seed N.
 - Nitrate is washed below the roots of an over-watered pot.
 - Shaded leaves hold less N per area (thinner leaves, same N per mass), so they have
-  less capacity.
+  less capacity: a leaf at 1.2× the SLA gets about 0.78 of it, since Vcmax per area
+  tracks N per area (Hirose and Werger). This is now the main way shade costs a plant
+  mass (decision 0020 amendment).
 
 ## Known limits
 - The root reach and the 25× uptake capacity stand for root length the sim does not
-  draw. A fuller root system would replace them.
+  draw. A fuller root system would replace them. A constant factor is wrong in time:
+  drawn length is about a tenth of a real bean's at day 40 and near all of it at
+  maturity, so it under-draws early and over-draws late. Capacity tied to root mass is
+  the follow-up (decision 0020, second review round).
+- Mineralization is low for a garden: about 0.03 g N per m² a day on the plot against
+  0.05 to 0.15.
 - The soil water has no upward flow, so nitrate below the root zone reaches roots only
   through the reach.
 - Leaf aging still multiplies capacity next to leaf N (decision 0020).
@@ -149,9 +156,10 @@ Emergent:
   unnodulated plant took up and fixed nothing and holds at most its seed N.
 - `ps-arch/tests/ninety_days.rs::seed_fill_drops_leaves_from_the_bottom_up` (WP24
   done-when): leaves dropped during seed fill sit at nodes 2 to 5, survivors at 6 to 8.
-- Validation report: `nfree_nodulation_shoot_mass` (Info). Season Ndfa in garden soil
-  is 18% in the 30-bean plot, 45% at 35 plants per m² and 55% in a garden pot (research
-  band 30 to 60%, Palmero 2022).
+- Validation report: `nfree_nodulation_shoot_mass` (Info). `ndfa_garden_plot` (Info):
+  season Ndfa in the 30-bean plot is 18% against the 30 to 60% band (Palmero 2022), a
+  miss. `ndfa_low_n_bed` (Info): the same plot at 5 ppm nitrate gives 56% against 50 to
+  80%. Ndfa is 45% at 35 plants per m² and 55% in a garden pot.
 
 ## References
 - DSSAT CSM CROPGRO-Drybean, BNGRO048.SPE, and CROPGRO NUPTAK, NFIX, MOBIL routines
@@ -160,3 +168,4 @@ Emergent:
 - Palmero F. et al. (2022) Ndfa across legumes (meta-analysis); research notes
   m2-m3-bean-science.md.
 - Kattge J. et al. (2009); Walker A.P. et al. (2014): Vcmax and leaf N per area.
+- Hirose T., Werger M.J.A. (1987): leaf N per area and photosynthetic capacity in a canopy.
