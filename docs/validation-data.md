@@ -176,10 +176,10 @@ run's own daily temperatures, regardless of the base the species file uses.
 
 ## What is in the set (2026-11-05)
 
-- **Range targets (31):** 7 gated for M0 (flowering day, maturity day, maturity thermal time,
-  total dry mass, pod count, height, peak leaf area), the rest Info: stage thermal sums on each
-  paper's own base (8.3, 10, 7 and 4.4 °C), main-stem nodes, seeds per pod, seed size, harvest
-  index, SLA, NAR, leaves and branches.
+- **Range targets (32):** 6 gated for M0 (flowering day, maturity day, total dry mass, pod
+  count, height, peak leaf area), the rest Info: stage thermal sums on each paper's own base
+  (8.3, 10, 7 and 4.4 °C), root:shoot ratio at seed fill, main-stem nodes, seeds per pod, seed
+  size, harvest index, SLA, NAR, leaves and branches.
 - **Responses (23):** drought from flowering, heat at flowering and 50% shade against the
   control, with the plan §7 M0 exit checks gated; one M2 density check marked `Later`.
 - **Parameter checks (14):** Vcmax, Jmax, Rd, SLA, leaf size, seed mass, seeds per pod,
@@ -194,12 +194,16 @@ run's own daily temperatures, regardless of the base the species file uses.
 ## Findings for WP12
 
 - **Flowering is early in the species file.** Converted to the file's base of 8 °C, the
-  published sowing-to-flowering sums run from about 350 (Dapaah 1999) through about 470
-  (CROPTIME, temperate snap beans) and 515 (Cavalcante 2020) to about 600 (Pinzón 2024). The
-  default 320 from germination (about 350 from sowing) sits at the bottom of that spread.
+  published flowering sums run from about 310 (Dapaah 1999) through about 475 (CROPTIME,
+  temperate snap beans) and 485 (Cavalcante 2020) to about 565 (Pinzón 2024), counted from
+  germination. Each conversion adds (base - 8) x days to the stage and takes off about 30 °C·d
+  for sowing to germination; the day counts are in `parameters.ron`. The default 320 sits at
+  the bottom of that spread, and the review run confirms the sim fails the Cavalcante, Pinzón
+  and CROPTIME flowering sums.
 - **Pinzón 2024's base temperature is 8.3 °C**, so its ~800 °C·d is close to the species file's
-  base. Cavalcante 2020 gives a cleaner Type I total: 826.8 °C·d above 10 °C in 75 days, now the
-  gated maturity thermal-time target.
+  base. Cavalcante 2020 gives a Type I total of 826.8 °C·d above 10 °C in 75 days. It is Info,
+  not a gate: converted to base 10 the other maturity sums sit below it (Pinzón about 680,
+  Dapaah about 500-530), so the maturity gate is the day count.
 - **Kumar 2025 could not be found** by title in SciSpace, PubMed or web search, so its height,
   leaf area, dry mass and yield numbers stay as unverified plan quotes. Each gated target that
   uses them has at least one verified second source.
