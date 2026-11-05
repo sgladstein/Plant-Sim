@@ -264,6 +264,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-species"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "ps-rng",
+ "ps-units",
+ "ron",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "ps-units"
 version = "0.1.0"
 dependencies = [

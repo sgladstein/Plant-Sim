@@ -15,6 +15,7 @@ ps-units = { path = "crates/ps-units" }
 ps-rng = { path = "crates/ps-rng" }
 ps-weather = { path = "crates/ps-weather" }
 ps-graph = { path = "crates/ps-graph" }
+ps-species = { path = "crates/ps-species" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 libm = "0.2"

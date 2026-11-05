@@ -1,0 +1,21 @@
+[package]
+name = "ps-species"
+description = "Species and genome schema (RON, unit- and source-checked) and genotype-to-phenotype mapping"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-units.workspace = true
+ps-rng.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+ron.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
