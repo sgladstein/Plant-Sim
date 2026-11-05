@@ -86,6 +86,8 @@ robust pass.
   `shade_sla_factor` were set from the same papers that gate them, so those checks show
   consistency, not prediction. The other gates are emergent: shade total mass, drought
   pods and root:shoot, heat seeds, the logistic shape, and the §8.2 size ranges.
+  Since WP24 (decision 0020) the M0 scenarios run at non-limiting nitrogen (300 ppm
+  NO₃), so these gates say nothing about nitrogen-limited growth.
 - Pods per plant fell from 16 (WP9, seed 7) to 10. The ps-arch 90-day bound was
   loosened from 10..=20 to 6..=20 to match §8.2.
 

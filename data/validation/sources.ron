@@ -195,6 +195,14 @@ Sources(
       cultivar: "Ibado, Omo-95, Red Wolayita",
       conditions: "Field, Hawassa, Ethiopia, 1708 m, 27/13 C, 40 x 10 cm; samples 29 and 43 days after emergence",
     ),
+    "palmero2022": Source(
+      citation: "Palmero F. et al. (2022) Meta-analysis of legume Ndfa, 83 studies and 889 points; common bean has the lowest Ndfa slope (0.57 against 0.84). European Journal of Agronomy. Full title not recorded in the research notes.",
+      doi: None,
+      url: "https://consensus.app/papers/details/b29e560b555153669b9bb2c4a8db2898/",
+      licence: "subscription (abstract read)",
+      cultivar: "common bean among grain legumes",
+      conditions: "Field studies; the 30-60% season band for moderate-N soil is the research notes' reading of the abstract, not a table value",
+    ),
     "pimentel2011": Source(
       citation: "Pimentel C., Oliveira R.F. de, Ribeiro R.V., Santos M.G. dos, Machado E.C. (2011) Características fotossintéticas de Phaseolus vulgaris L. Hoehnea 38(2): 273-280.",
       doi: Some("10.1590/S2236-89062011000200007"),

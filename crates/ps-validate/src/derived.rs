@@ -19,6 +19,7 @@
 //! | `leaf_area_per_leaf_cm2` | leaf area / living leaves, cm² |
 //! | `height_cm` | height × 100 |
 //! | `leaf_area_cm2` | leaf area × 10⁴ |
+//! | `ndfa_season` | Σ N fixed / Σ (N fixed + N taken up) over the days so far |
 //! | `mean_internode_cm` | mean length of living stem internodes at the end, cm |
 //! | `day_of_<Stage>` or `day_of(<Stage>)` | first day at or past the stage, days after sowing |
 
@@ -92,6 +93,12 @@ pub fn row_value(
             .iter()
             .map(|x| ((x.env.t_min_c + x.env.t_max_c) * 0.5 - b).max(0.0))
             .sum());
+    }
+    if variable == "ndfa_season" {
+        let (fixed, uptake) = rows[..=i].iter().fold((0.0, 0.0), |(f, u), x| {
+            (f + x.report.n_fixed, u + x.report.n_uptake)
+        });
+        return ratio(fixed, fixed + uptake, "nitrogen gained");
     }
     let shoot = |r: &ps_arch::DayReport| r.leaf_mass + r.stem_mass + r.fruit_mass;
     match variable {

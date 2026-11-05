@@ -26,7 +26,11 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.4.0";
+pub const MODEL_VERSION: &str = "0.5.0";
+
+/// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
+/// times a heavy season's dose; WP24 review).
+pub const MAX_FERTILIZER_G_PER_M2: f64 = 100.0;
 
 /// Air pressure used for gas exchange, kPa (sea level; no site elevation in M0).
 const PATM_KPA: f64 = 101.325;
@@ -571,8 +575,10 @@ impl World {
                 if !soil_known(*soil) {
                     return err(format!("unknown soil {soil}"));
                 }
-                if !(g_per_m2.is_finite() && *g_per_m2 >= 0.0) {
-                    return err(format!("fertilizer {g_per_m2} g N per m2"));
+                if !(0.0..=MAX_FERTILIZER_G_PER_M2).contains(g_per_m2) {
+                    return err(format!(
+                        "fertilizer {g_per_m2} g N per m2, outside 0 to {MAX_FERTILIZER_G_PER_M2}"
+                    ));
                 }
             }
             ActionKind::Prune { plant, organ } => {
@@ -763,8 +769,10 @@ impl World {
                 let i = self
                     .soil_index(soil)
                     .ok_or_else(|| err(format!("unknown soil {soil}")))?;
-                if !(g_per_m2.is_finite() && g_per_m2 >= 0.0) {
-                    return Err(err(format!("fertilizer {g_per_m2} g N per m2")));
+                if !(0.0..=MAX_FERTILIZER_G_PER_M2).contains(&g_per_m2) {
+                    return Err(err(format!(
+                        "fertilizer {g_per_m2} g N per m2, outside 0 to {MAX_FERTILIZER_G_PER_M2}"
+                    )));
                 }
                 self.state.soils[i].grid.fertilize(form, g_per_m2);
             }

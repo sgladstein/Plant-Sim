@@ -152,7 +152,7 @@ Species(
     seed_n_final: (value: 0.02, unit: "g N / g DM", source: "~ seeds keep filling down to about half their normal protein"),
     nodule_n: (value: 0.048, unit: "g N / g DM", source: "CROPGRO-Drybean BNGRO048.SPE PRONOD 0.30 x 0.16"),
     leaf_n_area_base: (value: 0.3, unit: "g N / m2", source: "~ Kattge 2009 and Walker 2014 intercept, Vcmax25 = b (Na - 0.3) (research m2-m3 notes row 21, to verify)"),
-    uptake_capacity: (value: 6e-3, unit: "g N / m / day", source: "~ 10 x CROPGRO-Drybean BNGRO048.SPE RTNO3 = RTNH4 (0.006 mg N per cm root per day, each form): the sim draws about a tenth of a bean's root length (no second-order laterals or root hairs; decision 0013), so each modelled meter stands for about ten (decision 0020)"),
+    uptake_capacity: (value: 1.5e-2, unit: "g N / m / day", source: "~ 25 x CROPGRO-Drybean BNGRO048.SPE RTNO3 = RTNH4 (0.006 mg N per cm root per day, each form): the sim draws a twentieth to a thirtieth of a bean's root length at 30 to 45 days (5.7 m at day 40; no second-order laterals or root hairs, decision 0013), so each modelled meter stands for many (decision 0020, WP24 review)"),
     root_reach: (value: 4.0, unit: "cm", source: "~ bean second-order laterals and root hairs reach a few cm past the drawn roots, and nitrate moves to roots by mass flow and diffusion; stands for the unresolved root length (decision 0020)"),
     mobilization_rate: (value: 0.12, unit: "1/day", source: "CROPGRO-Drybean BNGRO048.SPE NMOBMX"),
     vegetative_mobilization: (value: 0.36, unit: "-", source: "CROPGRO-Drybean BNGRO048.SPE NVSMOB"),
