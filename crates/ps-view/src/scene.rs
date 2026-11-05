@@ -1,9 +1,11 @@
 //! Scene sync: turns the read-only [`Garden`] into entities, every frame.
 //!
-//! - One entity per stem or root axis, keyed by its basal organ id. Its tube mesh is
-//!   rebuilt only when [`AxisSignature::needs_rebuild`] says it changed by more than 2%
-//!   (§4); lens and age colors are vertex colors, rewritten without touching geometry.
-//! - One entity per plant for all its leaves' petioles (see `PetioleGroup`).
+//! - One entity per stem axis, keyed by its basal organ id. Its tube mesh is rebuilt
+//!   only when [`AxisSignature::needs_rebuild`] says it changed by more than 2% (§4);
+//!   lens and age colors are vertex colors (8-bit), rewritten without touching geometry.
+//! - One entity per plant for all its leaves' petioles and one for all its roots (see
+//!   `MergedGroup`). Roots are checked once per sim hour, not every interpolated frame,
+//!   and a root under 10 cm is rebuilt only once it moved 2 mm (`ROOT_REBUILD_FLOOR`).
 //! - Nothing is rebuilt on a frame where the garden, the lens and the camera focus are
 //!   all unchanged (paused, or between sim frames at low speed).
 //! - One entity per templated organ (leaf, flower, pod...), keyed by organ id, drawing a
@@ -32,6 +34,10 @@ use crate::lens::Lens;
 
 /// Rebuild threshold for stem and root meshes (§4).
 pub const REBUILD_THRESHOLD: f32 = 0.02;
+/// Roots grow at their tips several percent an hour while short, so the 2% rule alone
+/// rebuilt nearly every root of a running plot every frame. Under the soil a step of
+/// this much (m) does not show.
+const ROOT_REBUILD_FLOOR: f32 = 0.002;
 
 /// Rotation from the sim frame (x east, y north, z up) to Bevy's (x east, y up, z south).
 #[must_use]
@@ -149,28 +155,113 @@ struct InstanceEntity {
     transform: Transform,
 }
 
-/// One leaf's petiole inside its plant's merged petiole mesh.
-struct PetiolePart {
+/// One axis inside its plant's merged mesh.
+struct MergedPart {
     signature: AxisSignature,
     organs: Vec<OrganId>,
     mesh: MeshData,
     colors: Vec<[f32; 4]>,
 }
 
-/// All of a plant's petioles in one mesh and one entity: a bean has a petiole per leaf,
-/// and one entity each multiplied the entity count of a 30-plant plot by about 1.3.
-/// Each part keeps its own tube, rebuilt by the 2% rule; the merged mesh is
-/// re-concatenated only when a part's geometry changed or a petiole came or went, and
+/// Many small axes of one plant in one mesh and one entity: a bean at day 50 has about
+/// 25 petioles and 65 root axes, and one entity each made a 30-plant plot draw about
+/// 2,700 tubes. Each part keeps its own tube, rebuilt by the 2% rule; the merged mesh
+/// is re-concatenated only when a part's geometry changed or a part came or went, and
 /// only its colors are rewritten when only colors changed.
-struct PetioleGroup {
+struct MergedGroup {
     entity: Entity,
     mesh: Handle<Mesh>,
-    parts: BTreeMap<OrganId, PetiolePart>,
+    parts: BTreeMap<OrganId, MergedPart>,
+    seen: Vec<OrganId>,
+    geometry_changed: bool,
+    colors_changed: bool,
 }
 
-impl PetioleGroup {
-    fn merged(&self) -> (MeshData, Vec<[f32; 4]>) {
-        concat(self.parts.values().map(|p| (&p.mesh, p.colors.as_slice())))
+impl MergedGroup {
+    fn spawn(
+        commands: &mut Commands,
+        meshes: &mut Assets<Mesh>,
+        parent: Entity,
+        material: Handle<StandardMaterial>,
+    ) -> Self {
+        let mesh = meshes.add(to_bevy_mesh(&MeshData::new(), Some(&[])));
+        let entity = commands
+            .spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material),
+                Transform::default(),
+                ChildOf(parent),
+            ))
+            .id();
+        Self {
+            entity,
+            mesh,
+            parts: BTreeMap::new(),
+            seen: Vec::new(),
+            geometry_changed: false,
+            colors_changed: false,
+        }
+    }
+
+    /// Keeps part `key` current: rebuilds its tube with `build` when the signature says
+    /// so, otherwise only notes a color change.
+    fn update(
+        &mut self,
+        key: OrganId,
+        signature: AxisSignature,
+        organs: &[OrganId],
+        colors: Vec<[f32; 4]>,
+        floor: f32,
+        build: impl FnOnce() -> MeshData,
+    ) {
+        self.seen.push(key);
+        match self.parts.get_mut(&key) {
+            Some(part)
+                if !signature.needs_rebuild_beyond(&part.signature, REBUILD_THRESHOLD, floor)
+                    && part.organs == organs =>
+            {
+                if part.colors != colors {
+                    part.colors = colors;
+                    self.colors_changed = true;
+                }
+            }
+            _ => {
+                self.parts.insert(
+                    key,
+                    MergedPart {
+                        signature,
+                        organs: organs.to_vec(),
+                        mesh: build(),
+                        colors,
+                    },
+                );
+                self.geometry_changed = true;
+            }
+        }
+    }
+
+    /// Drops the parts not updated since the last call and sends what changed.
+    fn finish(&mut self, meshes: &mut Assets<Mesh>) {
+        let seen = std::mem::take(&mut self.seen);
+        let before = self.parts.len();
+        self.parts.retain(|k, _| seen.binary_search(k).is_ok());
+        self.geometry_changed |= self.parts.len() != before;
+        if self.geometry_changed {
+            let (mesh, colors) =
+                concat(self.parts.values().map(|p| (&p.mesh, p.colors.as_slice())));
+            let _ = meshes.insert(&self.mesh, to_bevy_mesh(&mesh, Some(&colors)));
+        } else if self.colors_changed
+            && let Some(mut m) = meshes.get_mut(&self.mesh)
+        {
+            let colors: Vec<[f32; 4]> = self
+                .parts
+                .values()
+                .flat_map(|p| p.colors.iter().copied())
+                .collect();
+            m.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+        }
+        self.geometry_changed = false;
+        self.colors_changed = false;
     }
 }
 
@@ -201,7 +292,8 @@ struct PotScene {
     supports: Vec<SupportView>,
     obstacles: Vec<ObstacleView>,
     axes: BTreeMap<OrganId, AxisEntity>,
-    petioles: Option<PetioleGroup>,
+    petioles: Option<MergedGroup>,
+    roots: Option<MergedGroup>,
     instances: BTreeMap<OrganId, InstanceEntity>,
     overlay: Entity,
     overlay_mesh: Handle<Mesh>,
@@ -217,6 +309,8 @@ pub struct SceneIndex {
     /// Whether the scene has been synced once, and the camera focus it was synced for.
     synced: bool,
     synced_focus: Option<usize>,
+    /// The sim hour roots were last checked at.
+    roots_hour: Option<i64>,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -434,6 +528,7 @@ fn spawn_pot(
             obstacles: Vec::new(),
             axes: BTreeMap::new(),
             petioles: None,
+            roots: None,
             instances: BTreeMap::new(),
             overlay,
             // Never shown: only the container's view draws the soil overlay.
@@ -504,6 +599,7 @@ fn spawn_pot(
         obstacles: pot.obstacles.clone(),
         axes: BTreeMap::new(),
         petioles: None,
+        roots: None,
         instances: BTreeMap::new(),
         overlay,
         overlay_mesh,
@@ -549,7 +645,10 @@ fn axis_colors(
     for k in 0..=organs.len() {
         let id = organs[k.saturating_sub(1).min(organs.len() - 1)];
         let p = pot.skeleton.get(id);
+        // To 8 bits, as the GPU shows them: thermal age moves every interpolated frame,
+        // and unquantized colors re-sent every stem and root's colors every frame.
         let c = p.map_or([1.0; 3], |p| organ_color(pot, lens, id.index(), p).0);
+        let c = c.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() / 255.0);
         let rings = if k == 0 {
             1
         } else {
@@ -639,6 +738,10 @@ pub(crate) fn sync_scene(
     } else {
         assets.vertex_color.clone()
     };
+    let lens_changed = index.lens != Some(lens) || layout_changed;
+    let hour = garden.hour.floor() as i64;
+    let roots_hour_changed = index.roots_hour != Some(hour);
+    index.roots_hour = Some(hour);
     // Soil opacity follows the lens.
     if index.lens != Some(lens) {
         for scene in &index.pots {
@@ -653,7 +756,7 @@ pub(crate) fn sync_scene(
                 .axes
                 .values()
                 .map(|a| a.entity)
-                .chain(scene.petioles.as_ref().map(|g| g.entity))
+                .chain(scene.petioles.iter().chain(&scene.roots).map(|g| g.entity))
             {
                 commands
                     .entity(e)
@@ -716,63 +819,62 @@ pub(crate) fn sync_scene(
         let current = axes(&pot.skeleton, true);
         let mut seen = Vec::with_capacity(current.len());
         let mut petioles = scene.petioles.take().unwrap_or_else(|| {
-            let mesh = meshes.add(to_bevy_mesh(&MeshData::new(), Some(&[])));
-            let entity = commands
-                .spawn((
-                    Mesh3d(mesh.clone()),
-                    MeshMaterial3d(axis_material.clone()),
-                    Transform::default(),
-                    ChildOf(scene.entity),
-                ))
-                .id();
-            PetioleGroup {
-                entity,
-                mesh,
-                parts: BTreeMap::new(),
-            }
+            MergedGroup::spawn(
+                &mut commands,
+                &mut meshes,
+                scene.entity,
+                axis_material.clone(),
+            )
         });
-        let mut petioles_seen = Vec::new();
-        let mut petiole_geometry_changed = false;
-        let mut petiole_colors_changed = false;
+        // Roots move at most a millimeter or so an hour: check them when the sim hour or
+        // the lens changes, not on every interpolated frame.
+        let check_roots = scene.roots.is_none() || lens_changed || roots_hour_changed;
+        let mut roots = scene.roots.take().unwrap_or_else(|| {
+            MergedGroup::spawn(
+                &mut commands,
+                &mut meshes,
+                scene.entity,
+                axis_material.clone(),
+            )
+        });
         for axis in &current {
-            let style = match axis.kind {
-                // A little thicker than ps-mesh's default so fine roots read against soil.
-                AxisKind::Root => AxisStyle {
-                    min_radius: 0.000_5,
-                    ..AxisStyle::ROOT
-                },
-                kind => AxisStyle::for_kind(kind),
-            };
             let key = axis.key();
+            match axis.kind {
+                AxisKind::Root if check_roots => {
+                    // A little thicker than ps-mesh's default so fine roots read against
+                    // soil.
+                    let style = AxisStyle {
+                        min_radius: 0.000_5,
+                        ..AxisStyle::ROOT
+                    };
+                    roots.update(
+                        key,
+                        AxisSignature::of(&pot.skeleton, axis, style),
+                        &axis.organs,
+                        axis_colors(pot, lens, &axis.organs, style, axis.copies),
+                        ROOT_REBUILD_FLOOR,
+                        || axis_mesh(&pot.skeleton, axis, style),
+                    );
+                    continue;
+                }
+                AxisKind::Root => continue,
+                AxisKind::Petiole => {
+                    let style = AxisStyle::for_kind(axis.kind);
+                    petioles.update(
+                        key,
+                        AxisSignature::of(&pot.skeleton, axis, style),
+                        &axis.organs,
+                        axis_colors(pot, lens, &axis.organs, style, axis.copies),
+                        0.0,
+                        || axis_mesh(&pot.skeleton, axis, style),
+                    );
+                    continue;
+                }
+                AxisKind::Shoot => {}
+            }
+            let style = AxisStyle::for_kind(axis.kind);
             let signature = AxisSignature::of(&pot.skeleton, axis, style);
             let colors = axis_colors(pot, lens, &axis.organs, style, axis.copies);
-            if axis.kind == AxisKind::Petiole {
-                petioles_seen.push(key);
-                match petioles.parts.get_mut(&key) {
-                    Some(part)
-                        if !signature.needs_rebuild(&part.signature, REBUILD_THRESHOLD)
-                            && part.organs == axis.organs =>
-                    {
-                        if part.colors != colors {
-                            part.colors = colors;
-                            petiole_colors_changed = true;
-                        }
-                    }
-                    _ => {
-                        petioles.parts.insert(
-                            key,
-                            PetiolePart {
-                                signature,
-                                organs: axis.organs.clone(),
-                                mesh: axis_mesh(&pot.skeleton, axis, style),
-                                colors,
-                            },
-                        );
-                        petiole_geometry_changed = true;
-                    }
-                }
-                continue;
-            }
             seen.push(key);
             match scene.axes.get_mut(&key) {
                 Some(existing)
@@ -826,23 +928,12 @@ pub(crate) fn sync_scene(
             }
             keep
         });
-        let before = petioles.parts.len();
-        petioles
-            .parts
-            .retain(|k, _| petioles_seen.binary_search(k).is_ok());
-        petiole_geometry_changed |= petioles.parts.len() != before;
-        if petiole_geometry_changed {
-            let (mesh, colors) = petioles.merged();
-            let _ = meshes.insert(&petioles.mesh, to_bevy_mesh(&mesh, Some(&colors)));
-        } else if petiole_colors_changed && let Some(mut m) = meshes.get_mut(&petioles.mesh) {
-            let colors: Vec<[f32; 4]> = petioles
-                .parts
-                .values()
-                .flat_map(|p| p.colors.iter().copied())
-                .collect();
-            m.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-        }
+        petioles.finish(&mut meshes);
         scene.petioles = Some(petioles);
+        if check_roots {
+            roots.finish(&mut meshes);
+        }
+        scene.roots = Some(roots);
 
         // Templated organs.
         let options = InstanceOptions {
@@ -939,7 +1030,7 @@ mod tests {
     }
 
     #[test]
-    fn merged_petioles_keep_each_part_and_its_colors() {
+    fn merged_parts_keep_each_part_and_its_colors() {
         let (a, b) = (tri(0.0), tri(1.0));
         let (ca, cb) = ([[0.3, 0.3, 0.3, 1.0]; 3], [[0.7, 0.7, 0.7, 1.0]; 3]);
         let (mesh, colors) = concat([(&a, &ca[..]), (&b, &cb[..])].into_iter());
