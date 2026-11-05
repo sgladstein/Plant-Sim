@@ -20,7 +20,8 @@ one world's `SeedLot`s, and nothing could sow a seed of a given genotype.
    (Viewer UI panels thread).
 2. **The seed library outlives a world.** `SeedLibrary` is one RON file of
    `LibrarySeed`s with increasing ids. Each seed records:
-   - its species (the mother's) and its genotype;
+   - its species (the file it grows by: the mother's, or the one its habit matches, item 7)
+     and its genotype;
    - the library ids of the seeds its mother and father grew from;
    - whether it was crossed;
    - its generation: 0 for a founder, the mother's plus one otherwise;
@@ -73,7 +74,29 @@ one world's `SeedLot`s, and nothing could sow a seed of a given genotype.
    coat; the F2 colours show on the F3 seeds. Colour tables name the species they cover
    (`SeedColourTable::species`; the bean table lists bush and pole bean), and
    `Looks::load` matches them.
-7. **No model version bump.**
+7. **A seed takes the species file that matches its habit** (added after review, PR
+   #126).
+   - The bush and pole bean files share one genome layout, but they differ in more than
+     the habit locus: phenology, internode lengths, stem length per mass and phloem
+     conductance. Those differences stand in for the background genes that travel with
+     the climbing habit, and no locus carries them.
+   - With the mother's file for every seed, reciprocal F1s grew apart. Both were Fin fin.
+     On the bush mother the F1 reached 51 cm and matured on day 82. On the pole mother it
+     reached 199 cm and matured on day 104. Fin is dominant, so both should climb.
+   - So `add_lots` keeps the mother's file only while the seed's habit class matches that
+     file's own line. The class is climbing when `habit` is 0.5 or more, the rule ps-arch
+     and ps-world read. Otherwise the seed takes the first file, in id order, that shares
+     her genome layout and whose line has the seed's habit. `add_lots` and
+     `run_generation` take that set of files (`load_species` reads every file in
+     data/species). Without a matching file the seed keeps the mother's.
+   - With this rule the reciprocal F1s grow alike: 193 cm, first flower on day 52 and
+     maturity on day 102. The F2 on them splits into 53 pole and 19 bush seeds, close to
+     3 : 1.
+   - The rule changes only which file a library seed names. The world's seed lots and
+     every scenario are unchanged.
+   - `grow` now also refuses a cross between files that do not share a genome layout
+     before the bench starts, instead of failing mid-run.
+8. **No model version bump.**
    - Default, `Sample` and harvest-free runs are unchanged.
    - `SeedChoice::Saved` and `PlantEntry::seed_id` are new state that only bench and
      library sowings use.
@@ -88,20 +111,24 @@ one world's `SeedLot`s, and nothing could sow a seed of a given genotype.
   - `a_ten_seed_generation_fills_the_library`: every plant measured, every seed in the
     library with its mother, father, generation and coat, and mean seed mass varying
     across lines;
-  - `a_bench_cross_gives_an_f1_and_its_f2_segregates`: bush × pole on the bench gives
-    Fin fin F1 seeds naming both parents; the selfed F1 climbs taller than the bush line,
-    and its F2 seeds segregate at fin;
+  - `a_bench_cross_gives_an_f1_and_its_f2_segregates`. Crossing bush and pole both ways
+    on one bench gives Fin fin F1 seeds that name both parents and grow by the pole file.
+    The reciprocal F1s grow alike, as tall as the pole line. Their F2 seeds segregate at
+    fin, and each one names the file that matches its habit (item 7);
   - `generations_repeat_and_garden_seeds_join_the_library`;
   - `plans_and_libraries_are_checked`.
 
 ## Not adopted now
 - Several seeds per pot, or a bench grid larger than ten pots.
 - Seed size as a maternal effect on the seedling (item 3).
+- A per-pot sowing delay in the plan, so that a cross can line up two lines' flowering
+  (review of PR #126).
 - Automatic truncation selection over generations. The player picks parents in the UI.
   A five-generation selection test for the M3 exit can use `run_generation` in a loop.
 
 ## Consequences
-- New crate `ps-breed`.
+- New crate `ps-breed`. `load_species` reads every species file, which `add_lots` and
+  `run_generation` take so that a seed can name the file its habit matches.
 - New CLI commands: `ps-cli founders LIBRARY SPECIES [--count N] [--world-seed S]
   [--line]` and `ps-cli breed LIBRARY PLAN`, which writes `bench.csv`.
 - New in ps-world: `SeedChoice::Saved`, `PlantEntry::seed_id`, and the exported

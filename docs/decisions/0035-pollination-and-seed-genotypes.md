@@ -70,7 +70,8 @@ pollen from another plant's open flower.
    per seed, in organ order: the seed organ, `mother`, `father` (plant ids in this world)
    and the genotype. This meets the done-when: a cross records both parents in each
    seed. A seed's species is its mother's, the lot's `species`. Pedigrees across worlds
-   (the breeding bench) are WP30's.
+   (the breeding bench) are WP30's. A library seed takes the file its habit matches
+   (decision 0038 item 7).
 6. **Seed size stays maternal.** A seed fills to its mother's heritable `seed_mass`
    from her carbon. Its own genotype sets seed size only when it grows up and bears
    seeds itself. This settles decision 0031 item 11's open seed-set rule. In legumes,

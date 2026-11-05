@@ -17,6 +17,14 @@ What is new is how seeds move between worlds and what is measured (decision 0038
 - **Founders.** A founder is a pure line, homozygous at every locus. The species line is
   `Species::default_genotype`. A sampled founder is `Species::sample_genotype` keyed by
   (world seed, library id); see species-and-genome.md.
+- **Species file.** Each saved seed names the species file it grows by (decision 0038
+  item 7).
+  - The habit class is "climbing" when `habit` is 0.5 or more.
+  - The seed keeps its mother's file while its habit class matches that file's own line.
+  - Otherwise it takes the first file, in id order, that shares the mother's genome
+    layout (`Species::can_cross`) and whose line has the seed's class.
+  - So a Fin fin F1 on a bush mother grows as a pole bean, and a fin fin F2 seed on that
+    F1 grows as a bush bean.
 - **Sowing.** `SeedChoice::Saved { id, genotype }`. The plant's phenotype is computed
   from that genotype, and the plant keeps `id` as `PlantEntry::seed_id`.
 - **Seeds.** Each picked seed's genotype, mother and father come from the world's seed
@@ -30,6 +38,8 @@ What is new is how seeds move between worlds and what is measured (decision 0038
     maternal tissue.
 - **Crosses.** For a plan cross (m, f), every flower open on m on a day f has an open
   flower takes f's pollen (`ActionKind::Pollinate`). m's earlier and later flowers self.
+  A cross between files that do not share a genome layout is refused before the bench
+  starts.
 - **Stop.** The bench steps whole days until every plant has reached R9 or `max_days`
   is reached. It then picks every pod that has a living seed.
 - **Measures** (`BenchRow`), from the daily reports:
@@ -56,6 +66,7 @@ What is new is how seeds move between worlds and what is measured (decision 0038
 | in | seed library file | - | player's save folder |
 | in | bench plan: seeds, crosses, world seed, `max_days`, conditions | - | player, UI |
 | in | colour tables | - | data/genetics/*.ron |
+| in | species files a seed may take | - | data/species/*.ron |
 | out | one `BenchRow` per pot | days, cm, cm², g, mg | results card, `bench.csv` |
 | out | new library seeds with parents | - | seed library |
 
@@ -64,7 +75,7 @@ What is new is how seeds move between worlds and what is measured (decision 0038
 - **Emergent:** every difference between plants. It comes from their genotypes through
   the plant model, and from each plant's own non-heritable variation (decision 0027).
   Examples:
-  - a climbing F1 out-growing its bush mother;
+  - a climbing F1 out-growing its bush mother, whichever way it was crossed;
   - seed mass varying between founder lines;
   - F2 segregation.
 
@@ -73,7 +84,16 @@ What is new is how seeds move between worlds and what is measured (decision 0038
   is not modelled.
 - A sown seed's reserve comes from its genes' seed-mass value, not from the actual mass
   of the saved seed. Small saved seeds do not yet give weaker seedlings.
-- On a crossed mother, flowers that open while the father has none still self.
+- The bush and pole bean files differ in more than the habit gene: flowering and
+  maturity times, internode lengths and stem build. No genes carry those differences, so
+  they switch with habit as one block. A climbing seed gets the pole bean's
+  timing in full, and a bush seed gets the bush bean's.
+- On a crossed mother, flowers that open while the father has none still self. Both
+  pots are sown on the same day, and a bush bean flowers about ten days before a pole
+  bean, so a bush mother crossed with a pole father sets mostly selfed seed early on.
+- Founder k drawn with world seed S has the same genes as plant k sown with `Sample` in
+  a world with seed S, because both draws use the same key.
+- Sowing a saved seed does not use it up.
 - Plants that never mature (dead, or too slow) keep the bench running to `max_days`.
 - Seeds are picked when the bench stops. Pods that shattered or rotted earlier are not
   modelled.
@@ -82,9 +102,16 @@ What is new is how seeds move between worlds and what is measured (decision 0038
 - `ps_breed` `a_ten_seed_generation_fills_the_library`. Ten lines, all measured; every
   seed is in the library with its mother, generation and coat; mean seed mass differs by
   more than 10% across lines; the library survives a round trip through RON.
-- `ps_breed` `a_bench_cross_gives_an_f1_and_its_f2_segregates`. Bush × pole F1 seeds are
-  Fin fin and name both parents; the F1 grows taller than the bush line; F2 seeds
-  segregate at fin.
+- `ps_breed` `a_bench_cross_gives_an_f1_and_its_f2_segregates`:
+  - bush and pole are crossed both ways on one bench;
+  - the F1 seeds are Fin fin, name both parents and grow by the pole file;
+  - the reciprocal F1s differ in height by less than 15%;
+  - both F1s reach at least 80% of the pole line's height and more than twice the bush
+    line's;
+  - F2 seeds segregate at fin, and each takes the file that matches its habit.
+
+  By hand (release, world seed 11), the reciprocal F1s reach 192.9 and 193.6 cm, flower
+  on day 52 and mature on day 102. Their 72 F2 seeds are 53 pole and 19 bush.
 - `ps_breed` `generations_repeat_and_garden_seeds_join_the_library`: the same plan gives
   the same hash, and garden picks import with their mother's id.
 - `ps_breed` `plans_and_libraries_are_checked`.
