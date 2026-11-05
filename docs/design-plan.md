@@ -136,7 +136,7 @@ Daily step, in order (from M2, a step 0 runs first: each soil's joint nitrogen u
 
 ### 3.3 Plant structure and organ state
 
-An MTG-like organ graph stored as structs-of-arrays indexed by integer ids, with parent pointers and per-node children lists kept in creation order so iteration is deterministic. Organ types: seed, cotyledon, internode, bud, leaf (blade plus petiole), root segment, flower, pod, seed-in-pod, and in M2 nodule and tendril.
+An MTG-like organ graph stored as structs-of-arrays indexed by integer ids, with parent pointers and per-node children lists kept in creation order so iteration is deterministic. Organ types: seed, cotyledon, internode, bud, leaf (blade plus petiole), root segment, flower, pod, seed-in-pod, and in M2 nodule. (Decision 0023: common bean twines, so there is no tendril organ; a twining internode carries its support and coil instead. `OrganKind::Tendril` stays unused until the next model bump removes it.)
 
 | Field | Unit | Notes |
 | --- | --- | --- |
@@ -161,7 +161,7 @@ Each module implements one trait (§11) with daily bud-fate and organ-initiation
 
 - **Herb, determinate (M0): bush bean.** Epigeal germination with two cotyledons, a pair of unifoliate leaves, then alternate trifoliate leaves. The main stem produces a species-set number of nodes (\~6 to 8) and terminates in a raceme. Axillary buds on lower nodes make branches (\~3 to 6 per plant); upper nodes make racemes. Bud activation probability rises with the bud's light signal and its parent internode's reserve concentration and falls with apical dominance.
 - **Vine, indeterminate (M2): pole bean.** The same species file with the habit locus flipped: the main stem keeps producing nodes, internodes are longer, and a tendril module searches a cone around the tip for a support within reach, attaches, and wraps. Without a support the stem flops and shades itself (emergent penalty). (WP22, decision 0021: common bean twines rather than using tendrils, so the module is a circumnutation sweep, capture and helical coil; the flop penalty in the sim comes mostly from pods rotting on the soil.)
-- **Grass (M2).** Tillering from basal buds, intercalary growth (leaves elongate from the base), fibrous root system with many first-order roots and no tap root.
+- **Grass (M2): spring wheat** (decision 0023). Tillering from basal buds, intercalary growth (leaves elongate from the base), fibrous root system with many first-order roots and no tap root. Built so perennial ryegrass is a parameter swap plus perenniality (decision 0022).
 - **Tree (M4).** Self-organizing bud fate driven by the light signal and local carbon (Palubicki spirit, no space-colonization markers); pipe-model secondary growth as a carbon sink; perennial storage in wood and roots; dormancy and leaf fall by photoperiod and temperature; frost hardiness.
 - **Roots (all).** CRootBox-style parametric root types (§3.7).
 
@@ -248,10 +248,11 @@ Emergent consequences this is designed to give: shaded lower leaves and branches
 
 ### 3.12 Species, genotype and phenotype
 
-- **Genotype**: diploid, 20 to 40 loci by M3. Each heritable parameter is the sum of one to three loci; each locus has an additive effect and a dominance deviation. Loci are unlinked (independent assortment).
+- **Genotype**: diploid, 20 to 40 loci by M3. Each heritable parameter is the sum of one to three loci; each locus has an additive effect and a dominance deviation. Loci are lightly linked (decision 0023): each has a chromosome (1 to 11) and a position in cM, and meiosis draws Haldane crossovers, Poisson with mean length / 100 cM per chromosome, keyed by (world seed, plant id, tick, "meiosis", chromosome). Unlinked loci are the special case. *fin* and *Ppd* share Pv01, *St* and *I* Pv02, and *P*, phaseolin and seed size Pv07.
 - **Species as populations**: a species file defines allele distributions per locus, so two seeds of "bush bean" differ slightly. M0 ships the degenerate case: one locus per heritable parameter, zero variance, so the mapping is identity. Pole bean is the bush bean file with the habit locus set to indeterminate.
 - **Phenotype**: bounded heritable parameters (branching, leaf size, specific leaf area, Vcmax, root depth tendency, phenology thresholds, seed size and number, habit) computed from the genotype by mapping functions. Fixed physiological constants (Rubisco kinetics, carbon fraction, construction cost) are separate and not heritable.
-- **Mutation**: 1 in 1,000 per locus per gamete, small Gaussian changes in effect size.
+- **Mutation** (two tiers, decision 0023): anonymous QTL 1 in 1,000 per locus per gamete with small Gaussian changes (SD 0.1 to 0.2 of the allelic SD); named Mendelian loci 1 in 100,000. A game approximation, said so in the model card.
+- **Seed and flower colour** (decision 0023): a visual-trait rule table outside the additive map (P gate, then T, then C/J/V base colour, B/G/Rk intensity and pattern loci) drives only `appearance`.
 - **Trade-offs from physiology, never from a table**: higher Vcmax costs nitrogen and maintenance respiration; bigger leaves cost specific leaf area and shade the plant's own lower leaves; more seeds per pod means smaller seeds under a fixed pod supply; a deep tap root costs early shoot growth.
 - Species files are human-readable, unit-tagged and schema-versioned (§6.1).
 
@@ -522,8 +523,8 @@ M1 exit: the two-pot runs look right to the owner and the pot differences are th
 | WP | Work package | Size | Done when |
 | --- | --- | --- | --- |
 | 21 | Plot soil block (1 × 1 to 3 × 3 m, 5 cm cells), merged light grid, per-voxel light coefficients (measured and not used; decision 0019) | M | 30 plants under 20 ms per sim-day |
-| 22 | Vine module and pole bean: habit locus, indeterminate growth, tendril search and attachment, trellis objects (built as twining, decision 0021) | L | A pole bean fills a 2 m trellis by day 60; without a trellis it flops and yields less |
-| 23 | Grass module and a grass species file: tillering, intercalary growth, fibrous roots | L | Tiller count and height inside a literature range to be chosen in WP23 (spring wheat; ranges and results in decision 0022) |
+| 22 | Vine module and pole bean: habit locus, indeterminate growth, circumnutation, capture and twining, trellis objects (decisions 0021, 0023) | L | A pole bean reaches 1.5 m by day 60 and 2 m by day 75 at a 20 °C mean; without a trellis it flops and yields less |
+| 23 | Grass module and spring wheat: tillering, intercalary growth, fibrous roots (decisions 0022, 0023) | L | Tiller count and height inside a literature range chosen in WP23 (ranges and results in decision 0022) |
 | 24 | Nitrogen: soil mineral N, mineralization, leaching, uptake, leaf N drives Vcmax, remobilization, nodules for legumes, fertilize action | L | Nodulated beans grow in N-free soil and unnodulated ones do not; bottom-up senescence now emergent |
 | 25 | Prune and harvest actions, obstacles, weather file import UI, latitude and season controls | M | Pruning releases branching visibly |
 | 26 | Save and load UI, replay scrubber with action markers, competition, temperature and nitrogen lenses, carbon flow arrows | M | Replay of a saved plot matches its hash |
@@ -535,7 +536,7 @@ M2 exit: 30 plants at 60 fps and under 20 ms per sim-day; leaf area per unit gro
 
 | WP | Work package | Size | Done when |
 | --- | --- | --- | --- |
-| 28 | Genome: 20 to 40 loci, additive plus dominance, independent assortment, mutation; species files as allele distributions | M | Two seeds of one species differ measurably; F2 variance exceeds F1 variance |
+| 28 | Genome: 20 to 40 loci, additive plus dominance, light linkage (chromosome and cM per locus), two-tier mutation, a seed-colour rule table; species files as allele distributions (decision 0023) | M | Two seeds of one species differ measurably; F2 variance exceeds F1 variance |
 | 29 | Pollination: selfing by default; hand-pollination action; recombination at seed set | S | A cross records both parents in each seed |
 | 30 | Seed library and breeding bench: ten headless pots in parallel, results card with charts, parent selection | L | A ten-seed generation runs in under 10 s of wall time |
 | 31 | Trait discovery: traits appear in the UI only after measured in a grown plant | M | Genotype lens shows only measured traits |
@@ -614,7 +615,7 @@ Golden-run hashes per platform; the validation report as a CI artifact on every 
 - DSSAT CROPGRO-Drybean cultivar and species files as a second reference for phenology and partitioning; confirm availability and license (WP11).
 - A bean shade-avoidance number (internode length under reduced red:far-red); one study is enough (WP12).
 - Bean root parameters: check CRootBox example parameter sets for a Phaseolus entry (WP8).
-- Grass targets for WP23 and tree targets for WP33 are chosen when those packages start.
+- Grass targets for WP23 are in decision 0022; tree targets for WP33 are chosen when that package starts.
 
 ## 9. Risk register
 
@@ -918,6 +919,7 @@ Run WP13 (the Bevy smoke test on the owner's machine) during session 3 or 4 so t
 | 2026-11-05 | Tree moves to M4; M2 growth forms are pole bean (habit locus) and a grass | Owner, on v3 recommendation |
 | 2026-11-05 | Hand-pollination is the M3 breeding action; selfing is the default | Owner, on v3 recommendation |
 | 2026-11-05 | No real-plant experiment; all calibration data from published studies | Owner |
+| 2026-11-05 | Pole bean twines (no tendrils), 1.5 m by day 60 and 2 m by day 75; spring wheat is the grass; WP28 uses light linkage, two-tier mutation and a seed-colour rule table (decision 0023) | Owner, on the M2/M3 research recommendations |
 | 2026-11-05 | This v3 complete plan supersedes the v2 plan and the v3 review doc | Owner |
 | 2026-11-05 | Implementation is handed to a fresh session using §11 | Owner |
 
