@@ -117,6 +117,14 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
   `LNK1104: cannot open file 'atls.lib'`. Install ATL with the Visual Studio Installer
   (Modify > Individual components), then `cargo build -p ps-app --release --features
   static-dxc`. The CI release artifact (`plant-sim-windows`) is built with it.
+- Vulkan spikes traced on the 1070 (f4bec25, 2352×1325, 3000 frames each, no present
+  fallback logged): mailbox uncapped p99 9.6 ms with 0 spikes; immediate capped 25 spikes;
+  FIFO uncapped a spike every ~14 frames (a ~64 Hz virtual display); mailbox latency 1
+  capped 21 spikes. Each capped spike was followed by a short frame, so the limiter's
+  sleep woke late (a coarse Windows timer), not the present path. The limiter now learns
+  how late `sleep` wakes and spins that long before each deadline (`display::next_slack`).
+- `--window WxH` is in physical pixels and clamped to the monitor (it was logical, so
+  2353×1324 became 4118×2317 at 175%).
 - DX12 baseline without DXC (#40 build): cold start about 175 s on every launch (no
   cache across launches). Once running, DX12 paced better than Vulkan in one run: mean
   16.67, p99 17.16 ms, 4 frames ≥ 28 ms (Vulkan about 50), at an unexplained

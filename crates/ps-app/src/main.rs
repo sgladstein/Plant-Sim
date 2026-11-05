@@ -13,8 +13,8 @@
 //!
 //! The default present mode is mailbox with a frame cap at the monitor's refresh rate
 //! (`--fps-cap N` overrides it, 0 turns it off; FIFO and auto vsync are never capped).
-//! `--window` sets the logical window size and keeps it; without it the 1600x900 default
-//! shrinks to fit the monitor.
+//! `--window WxH` sets the window size in physical pixels (clamped to fit the monitor);
+//! without it the 1600x900 logical default shrinks to fit the monitor.
 //!
 //! `--day` starts the view that many days in (the sim steps there as fast as it can).
 //! `--scenario` is a path, or relative to the data directory (default
@@ -228,6 +228,7 @@ fn parse_args() -> Result<Options> {
     Ok(o)
 }
 
+#[allow(clippy::too_many_lines)] // Plain wiring of options into the app.
 fn main() -> Result<()> {
     let options = parse_args()?;
     let paused = options.paused || options.screenshot.is_some() || options.timelapse.is_some();
@@ -308,7 +309,10 @@ fn main() -> Result<()> {
     let vsync = matches!(options.present, PresentMode::Fifo | PresentMode::AutoVsync);
     let cap_off = vsync || options.fps_cap.is_some_and(|f| f <= 0.0);
     if options.window_explicit {
-        app.insert_resource(display::ExplicitWindowSize);
+        app.insert_resource(display::ExplicitWindowSize(UVec2::new(
+            options.window.0,
+            options.window.1,
+        )));
     }
     app.insert_resource(display::FrameCap::new(options.fps_cap, cap_off))
         .add_systems(Update, display::fit_to_monitor)
