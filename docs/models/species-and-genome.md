@@ -89,8 +89,8 @@ outside its bounds.
 | `named_mutation_rate` (optional) | 1e-5 if absent | per locus per gamete | decision 0023 |
 | `mutation_effect_sd` (optional) | 0.15 if absent | allele SD | decision 0023 (0.1 to 0.2) |
 | `chromosome_lengths_cm` (optional, 11 values) | 100 each if absent | cM | decision 0023; Blair 2018 |
-| Loci (beans) | 24 QTL over 15 traits, 16 named | - | decision 0031; WP28 research |
-| Allele SD (bean QTL) | `CV_G · default / √n`, CV_G 0.08 to 0.20 | trait unit | WP28 research, breeding-quantitative ("~") |
+| Loci (beans) | 24 QTL over 15 traits, 16 named | - | decision 0031; docs/research/m3-breeding-and-weeds |
+| Allele SD (bean QTL) | `CV_G · default / √n`, CV_G 0.08 to 0.20 | trait unit | docs/research/m3-breeding-and-weeds, breeding_quantitative ("~") |
 | Dominance (bean QTL) | +0.15 vigour traits, −0.05 seeds per pod, 0 otherwise | trait unit per allele difference | decision 0031 ("~") |
 | Chromosome lengths (beans) | Pv01 147, Pv09 46.5, others 100 | cM | Blair 2018; "~" for the 100s |
 | Loci (wheat) | one per heritable parameter, zero variance | - | M0 identity mapping |

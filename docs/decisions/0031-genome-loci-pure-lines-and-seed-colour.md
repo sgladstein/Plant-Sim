@@ -10,8 +10,8 @@ meiosis, two-tier mutation, crosses and a seed-colour rule evaluator, all in
 with real loci and fixes the choices decision 0023 left open.
 
 Inputs:
-- the WP28 research: `docs/research/wp28-genetics/bean-loci-and-seed-colour.md` (named
-  loci, distances, the colour pipeline) and `breeding-quantitative.md` (heritabilities,
+- the WP28 research: `docs/research/m3-breeding-and-weeds/notes/genetics_map_colour.md` (named
+  loci, distances, the colour pipeline) and `breeding_quantitative.md` in the same folder (heritabilities,
   genotypic CVs, crossing, mutation);
 - the step 1 review (`reviews/wp28-step1-review.md` in the project files).
 

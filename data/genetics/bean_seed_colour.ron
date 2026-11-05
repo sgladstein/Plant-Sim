@@ -4,7 +4,7 @@
 // pole_bean.ron: P 0 p, 1 p^gri, 2 P | T 0 t, 1 T | C 0 c, 1 C^mot, 2 C, 3 C^R |
 // J 0 j, 1 J | G 0 g, 1 G | B 0 b, 1 B | V 0 v, 1 v^lae, 2 V | Rk 0 rk, 1 Rk |
 // Z 0 z, 1 z^sel, 2 Z | Bip 0 bip, 1 bip^ana, 2 Bip | Asp 0 asp, 1 Asp.
-// Source: docs/research/wp28-genetics/bean-loci-and-seed-colour.md §3 (H = hue rows,
+// Source: docs/research/m3-breeding-and-weeds/notes/genetics_map_colour.md §3 (H = hue rows,
 // C = pattern rows). Colours are hints from the Munsell/ISCC-NBS names [I]; "~" marks a
 // rule or value to validate against photos.
 (
