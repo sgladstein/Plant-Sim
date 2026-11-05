@@ -13,7 +13,7 @@ use std::path::Path;
 
 use ps_arch::{ArchError, DayReport, HourCtx, Plant};
 use ps_soil::{SoilError, SoilGrid, SoilHour, WaterLedger};
-use ps_species::Species;
+use ps_species::{Genotype, Species};
 use ps_units::{Celsius, Degrees, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
 use ps_weather::{DateHour, HourWeather, Preset, WeatherSeries};
 use rayon::prelude::*;
@@ -27,7 +27,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.13.0";
+pub const MODEL_VERSION: &str = "0.14.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -165,6 +165,8 @@ pub struct PlantEntry {
     pub soil: usize,
     /// Species id.
     pub species: String,
+    /// The genotype it grew from (WP28): its alleles, in the species' locus order.
+    pub genotype: Genotype,
     /// The plant.
     pub plant: Plant,
 }
@@ -985,6 +987,7 @@ impl World {
             id,
             soil,
             species: s.species.clone(),
+            genotype,
             plant,
         });
         Ok(())
