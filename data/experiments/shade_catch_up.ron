@@ -1,0 +1,9 @@
+// Experiment card (design plan §6.5). Read by the app's Experiment dialog.
+ExperimentCard(
+  id: "shade_catch_up",
+  prompt: "How far behind is a bean in half shade by day 60? Compare dry mass, leaf area and pods.",
+  species: "bush_bean",
+  variable: Light,
+  levels: [100.0, 50.0],
+  watch: ["Dry mass by organ", "Leaf area", "Pods"],
+)

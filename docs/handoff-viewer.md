@@ -13,6 +13,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 - **ps-app** (binary `plant-sim`):
   - `sim_source.rs` runs a ps-world scenario on the ps-session sim thread and fills `Garden` from each `Snapshot`.
   - `tools.rs` turns `PlayerAction` into `ActionKind` and runs the new-run dialog.
+  - `experiment.rs` loads experiment cards, builds the experiment scenario and writes the lab notebook.
   - `inspect.rs` fills the inspector.
   - `capture.rs` handles screenshots, CSV export and offline time-lapse.
   - `demo_source.rs` has the stand-in plants (`--demo`).
@@ -69,7 +70,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 | 14 Mesh generation | Done (#23). Later additions: coils for twining stems (WP22), grass blades and wheat ears (WP23), finer leaflets, option C fuller beans (#78: petioles, level blades, nodes, flowers, pods, nodules). |
 | 15 Scene sync and look | Working. Round pots and glass-fronted plot beds with a soil cutaway, stakes and trellis strings, obstacles (walls reach the lawn, cloths on posts), a garden setting (bench, lawn, tree ring), camera-relative fog, a 2% rebuild rule, and high-speed daily-mean light. |
 | 16 Sim thread | Done (sim side #32, viewer side in ps-app). |
-| 17 UI | Working: top bar, lenses with legends, charts, inspector with a why line and units (and each plant's own seed), model-card side panel, garden tools, seed library, new-run dialog. Not done: the experiment panel, and assimilation and transpiration charts (they are not in the daily rows). |
+| 17 UI | Working: top bar, lenses with legends, charts, inspector with a why line and units (and each plant's own seed), model-card side panel, garden tools, seed library, new-run dialog. Experiment mode (dialog, cards in data/experiments, lab notebook, `--experiment CARD`). Not done: assimilation and transpiration charts (they are not in the daily rows). |
 | 18 Lenses | All seven M1 lenses read sim values. |
 | 19 Capture | Done: screenshot (P), CSV export, offline time-lapse (`--timelapse DIR --day --to-day --timelapse-hours 6-19`), and `--clean`. |
 | 20 The moments | Not started: cotyledon unfolding, phototropic lean, wilting and recovery, and the flowering cue. Done-when: the owner signs off on a 60-second sun-versus-shade clip. |
@@ -95,7 +96,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 1. Merge PR #84 if it is still open: the root-copy fix, which keeps drawn lateral copies below the surface and inside the pot. The sim-side lateral wall rule is in model 0.11.0, from the implementation thread.
 2. Done: `Plant::individual` in the whole-plant inspector.
 3. WP20, the moments, then render the sun-versus-shade clip with `--timelapse` and `--clean` for sign-off.
-4. The rest of WP17: the experiment panel (side-by-side variable sweeps), the model-card panel, and assimilation and transpiration charts once the sim adds them to the daily rows.
+4. The rest of WP17: assimilation and transpiration charts once the sim adds them to the daily rows. Experiment mode varies only what one world can (per-pot light, water, pot size); latitude, sowing date or weather sweeps would need one world per pot.
 5. Performance with many plants: wheat_stand (200 plants) is slow to step in debug. Profile the release build's per-frame skeleton rebuild and instance upload.
 6. If a look option is chosen, rebase that branch onto main and gate it behind `--look`.
 

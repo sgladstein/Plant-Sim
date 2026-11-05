@@ -9,15 +9,19 @@
 //!   card.
 //! - Under the lenses: the inspector for the clicked organ or plant (§5.3).
 //! - Bottom panel: the charts (§5.4), toggled from the top bar.
+//! - Experiment dialog and, while one runs, its question and pots above the lenses
+//!   (§2.5, §5.6).
 //! - Left panel: the model card (§5.7) opened from a lens legend or an inspector value.
 //! - A custom theme so the panels match the diorama rather than a debug tool (§4).
 
 mod charts;
+mod experiment;
 mod inspector;
 mod model_cards;
 mod tools;
 
 pub use charts::{Chart, Charts, Series, nearest, nice_max};
+pub use experiment::{CardRow, Experiment, ExperimentSetup, Running, Variable, held_same};
 pub use inspector::{Field, Inspector};
 pub use model_cards::{Block, CARDS, ModelCards, card, parse, title};
 pub use tools::{NewRun, ObstacleDraft, PlayerAction, SeedRow, Side, Tools, days_in};
@@ -120,6 +124,7 @@ impl Plugin for PlantUiPlugin {
             .init_resource::<CaptureControl>()
             .init_resource::<Tools>()
             .init_resource::<ModelCards>()
+            .init_resource::<Experiment>()
             .add_systems(EguiPrimaryContextPass, panels)
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -150,7 +155,11 @@ fn theme(ctx: &egui::Context) {
     ctx.set_visuals(v);
 }
 
-#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::too_many_arguments,
+    clippy::too_many_lines
+)]
 fn panels(
     mut contexts: EguiContexts,
     mut time: ResMut<TimeControl>,
@@ -163,6 +172,7 @@ fn panels(
     mut capture: ResMut<CaptureControl>,
     mut tools: ResMut<Tools>,
     mut cards: ResMut<ModelCards>,
+    mut experiment: ResMut<Experiment>,
     mut themed: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -193,6 +203,7 @@ fn panels(
                 &mut charts.open,
                 &mut capture,
                 &mut tools,
+                &mut experiment,
             );
         })
         .response
@@ -203,6 +214,7 @@ fn panels(
         .exact_size(300.0)
         .show(&mut root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
+                experiment::section(ui, &mut experiment);
                 lens_panel(ui, &mut lens, &garden, &mut cards);
                 ui.separator();
                 inspector::section(
@@ -254,6 +266,9 @@ fn panels(
     if tools.new_run.open {
         tools::new_run_window(ctx, &mut tools.new_run);
     }
+    if experiment.open {
+        experiment::window(ctx, &mut experiment);
+    }
     let insets = [left, top, right, bottom.response.rect.height()];
     if rig
         .insets
@@ -300,6 +315,7 @@ fn top_bar(
     charts_open: &mut bool,
     capture: &mut CaptureControl,
     tools: &mut Tools,
+    experiment: &mut Experiment,
 ) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
@@ -360,6 +376,16 @@ fn top_bar(
                 .clicked()
         {
             tools.new_run.open = true;
+        }
+        if tools.enabled
+            && ui
+                .button("Experiment…")
+                .on_hover_text(
+                    "Two to four pots with one thing different, and a question to answer",
+                )
+                .clicked()
+        {
+            experiment.open = true;
         }
         ui.separator();
         if time.busy {

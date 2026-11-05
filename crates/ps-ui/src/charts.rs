@@ -113,7 +113,7 @@ fn color32(rgb: [f32; 3]) -> egui::Color32 {
 /// Most lines a chart's hover tooltip lists (a plot has dozens of plants).
 const TOOLTIP_LINES: usize = 12;
 
-/// Pot line styles: solid, dashed, dotted.
+/// Pot line styles: solid, dashed, dotted, long-dashed (then dotted again).
 fn line(painter: &egui::Painter, points: &[egui::Pos2], stroke: egui::Stroke, pot: usize) {
     if points.len() < 2 {
         return;
@@ -124,6 +124,9 @@ fn line(painter: &egui::Painter, points: &[egui::Pos2], stroke: egui::Stroke, po
         }
         1 => {
             painter.extend(egui::Shape::dashed_line(points, stroke, 6.0, 4.0));
+        }
+        3 => {
+            painter.extend(egui::Shape::dashed_line(points, stroke, 14.0, 4.0));
         }
         _ => {
             painter.extend(egui::Shape::dotted_line(points, stroke.color, 4.0, 1.2));
@@ -138,7 +141,7 @@ pub(crate) fn panel(ui: &mut egui::Ui, charts: &Charts, time: &mut TimeControl) 
         ui.strong("Charts");
         ui.weak("per day; click a chart to jump the replay to that day");
         // Many plants (a plot): legend the two named line styles and the rest as one.
-        let shown = if charts.pots.len() > 3 {
+        let shown = if charts.pots.len() > 4 {
             2
         } else {
             charts.pots.len()
