@@ -67,6 +67,28 @@ impl SoilFace {
     }
 }
 
+/// A vertical support a climbing plant twines on: a stake or a trellis string.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SupportView {
+    /// Foot at the soil surface, relative to the pot center (sim x, y), m.
+    pub base: [f32; 2],
+    /// Height above the soil, m.
+    pub height: f32,
+    /// Diameter, m.
+    pub diameter: f32,
+}
+
+impl SupportView {
+    /// Thinner than this, a support is a string hung from a frame; thicker, a stake.
+    pub const STRING_MAX_DIAMETER: f32 = 0.01;
+
+    /// True for a trellis string.
+    #[must_use]
+    pub fn is_string(&self) -> bool {
+        self.diameter < Self::STRING_MAX_DIAMETER
+    }
+}
+
 /// One pot with its plant.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PotView {
@@ -88,6 +110,8 @@ pub struct PotView {
     /// plants in one soil; only its first plant's view draws the bed, the others share
     /// its center and size and draw just their plant.
     pub container: bool,
+    /// Stakes and strings standing in the container (drawn with it).
+    pub supports: Vec<SupportView>,
 }
 
 impl PotView {

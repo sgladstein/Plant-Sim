@@ -35,11 +35,12 @@ pub mod templates;
 pub mod tube;
 
 pub use axes::{
-    Axis, AxisKind, AxisSignature, AxisStyle, GOLDEN_ANGLE, axes, axis_mesh, copy_transforms,
+    Axis, AxisKind, AxisSignature, AxisStyle, GOLDEN_ANGLE, axes, axis_mesh, axis_nodes,
+    copy_transforms, nodes_after_base,
 };
 pub use instances::{Instance, InstanceOptions, droop_level, instances, leaf_form};
 pub use mesh::MeshData;
-pub use skeleton::{MAX_COPIES, Placement, Skeleton};
+pub use skeleton::{Coil, MAX_COPIES, Placement, Skeleton};
 pub use templates::{DROOP_LEVELS, Template, TemplateKey, build_template};
 pub use tube::{TubeNode, tube};
 

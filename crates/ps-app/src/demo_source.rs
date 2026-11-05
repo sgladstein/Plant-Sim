@@ -415,6 +415,7 @@ pub fn drive(
             organ_values,
             soil_water,
             container: true,
+            supports: Vec::new(),
         });
     }
     garden.pots = pots;
