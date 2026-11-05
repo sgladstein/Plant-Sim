@@ -119,10 +119,22 @@ pub struct Genome {
     /// (decision 0023). Absent: [`genetics::DEFAULT_MUTATION_EFFECT_SD`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mutation_effect_sd: Option<Param>,
-    /// Genetic length of every chromosome (decision 0023). Absent:
-    /// [`genetics::DEFAULT_CHROMOSOME_LENGTH_CM`].
+    /// Genetic length of each chromosome, Pv01 first (decision 0023). Absent: every
+    /// chromosome is [`genetics::DEFAULT_CHROMOSOME_LENGTH_CM`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chromosome_length_cm: Option<Param>,
+    pub chromosome_lengths_cm: Option<ChromosomeLengths>,
+}
+
+/// Genetic lengths of the chromosomes, one per chromosome in order, with provenance.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChromosomeLengths {
+    /// Lengths, one per chromosome, chromosome 1 first.
+    pub values: Vec<f64>,
+    /// Unit string; must be [`schema::CHROMOSOME_LENGTH_UNIT`].
+    pub unit: String,
+    /// Where the lengths come from.
+    pub source: String,
 }
 
 impl Genome {
@@ -140,11 +152,6 @@ impl Genome {
                 "mutation_effect_sd",
                 schema::MUTATION_EFFECT_SD_UNIT,
                 self.mutation_effect_sd.as_ref(),
-            ),
-            (
-                "chromosome_length_cm",
-                schema::CHROMOSOME_LENGTH_UNIT,
-                self.chromosome_length_cm.as_ref(),
             ),
         ]
         .into_iter()
@@ -168,12 +175,13 @@ impl Genome {
             .map_or(genetics::DEFAULT_MUTATION_EFFECT_SD, |p| p.value)
     }
 
-    /// Genetic length of each chromosome, cM.
+    /// Genetic length of chromosome `c` (1-based), cM.
     #[must_use]
-    pub fn chromosome_length_cm(&self) -> f64 {
-        self.chromosome_length_cm
+    pub fn chromosome_length_cm(&self, c: u8) -> f64 {
+        self.chromosome_lengths_cm
             .as_ref()
-            .map_or(genetics::DEFAULT_CHROMOSOME_LENGTH_CM, |p| p.value)
+            .and_then(|l| l.values.get(usize::from(c).wrapping_sub(1)).copied())
+            .unwrap_or(genetics::DEFAULT_CHROMOSOME_LENGTH_CM)
     }
 }
 
@@ -592,12 +600,23 @@ impl Species {
                 "must be finite and >= 0",
             );
         }
-        let length = g.chromosome_length_cm();
-        if !(length.is_finite() && length > 0.0) {
-            return bad(
-                "genome.chromosome_length_cm".into(),
-                "must be finite and > 0",
-            );
+        if let Some(l) = &g.chromosome_lengths_cm {
+            let at = "genome.chromosome_lengths_cm";
+            if l.unit != schema::CHROMOSOME_LENGTH_UNIT {
+                return Err(SpeciesError::Unit {
+                    at: at.into(),
+                    found: l.unit.clone(),
+                    expected: schema::CHROMOSOME_LENGTH_UNIT,
+                });
+            }
+            if l.source.trim().is_empty() {
+                return Err(SpeciesError::MissingSource { at: at.into() });
+            }
+            if l.values.len() != usize::from(genetics::CHROMOSOMES)
+                || l.values.iter().any(|v| !(v.is_finite() && *v > 0.0))
+            {
+                return bad(at.into(), "one finite length > 0 per chromosome (11)");
+            }
         }
         let mut names = std::collections::BTreeSet::new();
         for (index, l) in g.loci.iter().enumerate() {
@@ -608,8 +627,8 @@ impl Species {
                     if !(1..=genetics::CHROMOSOMES).contains(&c) {
                         return bad(at, "chromosome must be 1 to 11");
                     }
-                    if !(x.is_finite() && (0.0..=length).contains(&x)) {
-                        return bad(at, "position_cm must lie in [0, chromosome_length_cm]");
+                    if !(x.is_finite() && (0.0..=g.chromosome_length_cm(c)).contains(&x)) {
+                        return bad(at, "position_cm must lie within its chromosome's length");
                     }
                 }
                 _ => return bad(at, "chromosome and position_cm come together"),
@@ -791,6 +810,16 @@ impl Species {
                 p.unit.clone(),
                 p.source.clone(),
             ));
+        }
+        if let Some(l) = &self.genome.chromosome_lengths_cm {
+            for (i, v) in l.values.iter().enumerate() {
+                out.push((
+                    format!("genome.chromosome_lengths_cm[{}]", i + 1),
+                    *v,
+                    l.unit.clone(),
+                    l.source.clone(),
+                ));
+            }
         }
         for (key, unit, p) in self.genome.optional_params() {
             out.push((

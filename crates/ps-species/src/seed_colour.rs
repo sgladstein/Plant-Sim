@@ -9,7 +9,9 @@
 //!
 //! Conditions name named Mendelian loci by gene symbol and test allele state codes
 //! (see [`crate::LocusTier::Named`]): `Carries` holds when at least one allele has the
-//! state (dominant action), `Homozygous` when both do (recessive action).
+//! state, `Homozygous` when both do (recessive action), and `Expressed` when the higher
+//! of the two codes is the state. State codes rise with dominance (0 the most
+//! recessive), so `Expressed` reads an allelic series such as V > v^lae > v.
 //!
 //! The bean table itself waits on the research (Bassett 2007, Parker 2024); this module
 //! is the evaluator and its checks. Nothing in the sim calls it yet.
@@ -76,47 +78,98 @@ pub enum Condition {
         /// Allele state code.
         state: u8,
     },
+    /// The more dominant allele (the higher code) has this state.
+    Expressed {
+        /// Gene symbol.
+        locus: String,
+        /// Allele state code.
+        state: u8,
+    },
 }
 
 impl Condition {
     fn locus(&self) -> &str {
         match self {
-            Condition::Carries { locus, .. } | Condition::Homozygous { locus, .. } => locus,
+            Condition::Carries { locus, .. }
+            | Condition::Homozygous { locus, .. }
+            | Condition::Expressed { locus, .. } => locus,
         }
     }
 
     fn state(&self) -> u8 {
         match self {
-            Condition::Carries { state, .. } | Condition::Homozygous { state, .. } => *state,
+            Condition::Carries { state, .. }
+            | Condition::Homozygous { state, .. }
+            | Condition::Expressed { state, .. } => *state,
         }
     }
 }
 
 /// What a seed and its flower look like.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SeedLook {
-    /// Seed-coat ground colour, `#rrggbb`.
+    /// Seed-coat pigment colour, `#rrggbb`: the whole coat of a self-coloured seed, the
+    /// pattern colour of a patterned one.
     pub seed_coat: String,
-    /// Seed-coat pattern name ("solid", "mottled", "striped", "eye", ...).
+    /// Background the pattern sits on, `#rrggbb` (buff under a mottle, white under a
+    /// partly coloured pattern). Unseen when `coverage` is 1.
+    pub ground: String,
+    /// Pattern name ("self", "mottled", "virgarcus", "bipunctata", ...).
     pub pattern: String,
+    /// Share of the coat in the pigment colour, 0 to 1.
+    pub coverage: f64,
+    /// Glossy (true) or matte coat.
+    pub glossy: bool,
     /// Flower colour, `#rrggbb`.
     pub flower: String,
 }
 
-/// Outputs a rule sets.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Outputs a rule sets; absent fields keep their value.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LookPatch {
-    /// Seed-coat ground colour, `#rrggbb`.
+    /// Seed-coat pigment colour, `#rrggbb`.
     #[serde(default)]
     pub seed_coat: Option<String>,
-    /// Seed-coat pattern name.
+    /// Pattern background, `#rrggbb`.
+    #[serde(default)]
+    pub ground: Option<String>,
+    /// Pattern name.
     #[serde(default)]
     pub pattern: Option<String>,
+    /// Share of the coat in the pigment colour, 0 to 1.
+    #[serde(default)]
+    pub coverage: Option<f64>,
+    /// Glossy or matte.
+    #[serde(default)]
+    pub glossy: Option<bool>,
     /// Flower colour, `#rrggbb`.
     #[serde(default)]
     pub flower: Option<String>,
+}
+
+impl LookPatch {
+    fn apply(&self, look: &mut SeedLook) {
+        if let Some(c) = &self.seed_coat {
+            look.seed_coat.clone_from(c);
+        }
+        if let Some(c) = &self.ground {
+            look.ground.clone_from(c);
+        }
+        if let Some(p) = &self.pattern {
+            look.pattern.clone_from(p);
+        }
+        if let Some(f) = self.coverage {
+            look.coverage = f;
+        }
+        if let Some(g) = self.glossy {
+            look.glossy = g;
+        }
+        if let Some(f) = &self.flower {
+            look.flower.clone_from(f);
+        }
+    }
 }
 
 fn is_hex_colour(s: &str) -> bool {
@@ -147,19 +200,29 @@ impl SeedColourTable {
         }
         let states = named_states(species);
         let colours = |at: &str, look: &LookPatch| {
-            for c in [&look.seed_coat, &look.flower].into_iter().flatten() {
+            for c in [&look.seed_coat, &look.ground, &look.flower]
+                .into_iter()
+                .flatten()
+            {
                 if !is_hex_colour(c) {
                     return bad(at.to_owned(), format!("\"{c}\" is not #rrggbb"));
                 }
             }
+            if look.coverage.is_some_and(|f| !(0.0..=1.0).contains(&f)) {
+                return bad(at.to_owned(), "coverage must lie in [0, 1]".into());
+            }
             Ok(())
         };
+        let d = &self.default;
         colours(
             "seed_colour.default",
             &LookPatch {
-                seed_coat: Some(self.default.seed_coat.clone()),
+                seed_coat: Some(d.seed_coat.clone()),
+                ground: Some(d.ground.clone()),
                 pattern: None,
-                flower: Some(self.default.flower.clone()),
+                coverage: Some(d.coverage),
+                glossy: None,
+                flower: Some(d.flower.clone()),
             },
         )?;
         for layer in &self.layers {
@@ -204,20 +267,13 @@ impl SeedColourTable {
             match c {
                 Condition::Carries { state, .. } => a == *state || b == *state,
                 Condition::Homozygous { state, .. } => a == *state && b == *state,
+                Condition::Expressed { state, .. } => a.max(b) == *state,
             }
         };
         let mut look = self.default.clone();
         for layer in &self.layers {
             if let Some(rule) = layer.rules.iter().find(|r| r.when.iter().all(holds)) {
-                if let Some(c) = &rule.set.seed_coat {
-                    look.seed_coat.clone_from(c);
-                }
-                if let Some(p) = &rule.set.pattern {
-                    look.pattern.clone_from(p);
-                }
-                if let Some(f) = &rule.set.flower {
-                    look.flower.clone_from(f);
-                }
+                rule.set.apply(&mut look);
                 if rule.stop {
                     break;
                 }

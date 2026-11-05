@@ -28,8 +28,9 @@ in the step calls them yet, so model results are unchanged; pollination and seed
   it is unlinked to every other locus. In a gamete each unlinked locus takes the
   maternal or paternal allele on a fair coin. On each chromosome a fair coin picks the
   starting strand and crossovers follow a Poisson process with one per 100 cM and no
-  interference (Haldane), up to `chromosome_length_cm` (100 cM by default; BAT93 × Jalo
-  is 1,097.5 cM over 11 chromosomes, Blair 2018). A locus takes the strand after the
+  interference (Haldane), up to that chromosome's entry in `chromosome_lengths_cm`
+  (100 cM each by default; BAT93 × Jalo is 1,097.5 cM over 11 chromosomes, from Pv09
+  at 46.5 to Pv01 at 147, Blair 2018). A locus takes the strand after the
   number of crossovers before its position, so two loci `d` cM apart recombine with
   `r = (1 − e^(−2d/100)) / 2`.
 - **Mutation, two tiers.** After recombination, each anonymous QTL mutates with
@@ -52,8 +53,10 @@ in the step calls them yet, so model results are unchanged; pollination and seed
   draws.
 - **Seed colour.** A table of layers evaluated in order; in each, the first rule whose
   conditions hold (`Carries(locus, state)`: at least one allele; `Homozygous(locus,
-  state)`: both) sets some of seed-coat colour, pattern and flower colour, and may stop
-  the evaluation (the *P* gate). It drives only appearance. The bean table itself is
+  state)`: both; `Expressed(locus, state)`: the higher code, since codes rise with
+  dominance, so an allelic series such as V > v^lae > v reads directly) sets some of
+  pigment colour, pattern ground, pattern name, coverage (the pigmented share of the
+  coat), shine and flower colour, and may stop the evaluation (the *P* gate). It drives only appearance. The bean table itself is
   still to be written from Bassett 2007, Parker 2024, Plestenjak 2025 and McClean 2018.
 
 ## Parameters
@@ -72,7 +75,7 @@ outside its bounds.
 | Mutation rate (QTL) | 0.001 | per locus per gamete | design plan §3.12 (used from M3) |
 | `named_mutation_rate` (optional) | 1e-5 if absent | per locus per gamete | decision 0023 |
 | `mutation_effect_sd` (optional) | 0.15 if absent | allele SD | decision 0023 (0.1 to 0.2) |
-| `chromosome_length_cm` (optional) | 100 if absent | cM | decision 0023; Blair 2018 |
+| `chromosome_lengths_cm` (optional, 11 values) | 100 each if absent | cM | decision 0023; Blair 2018 |
 | Loci | one per heritable parameter | - | M0 identity mapping |
 | Allele SD | 0 | trait unit | M0 identity mapping |
 

@@ -292,13 +292,26 @@ fn linkage_map_is_validated() {
     s.genome.loci.push(named("fin", 2, Some((1, 40.0))));
     assert!(s.validate().is_err());
 
-    let mut s = bean();
-    s.genome.chromosome_length_cm = Some(Param {
-        value: 100.0,
-        unit: "M".into(),
+    let lengths = |values: Vec<f64>, unit: &str| ChromosomeLengths {
+        values,
+        unit: unit.into(),
         source: "test".into(),
-    });
+    };
+    let mut s = bean();
+    s.genome.chromosome_lengths_cm = Some(lengths(vec![100.0; 11], "M"));
     assert!(matches!(s.validate(), Err(SpeciesError::Unit { .. })));
+    s.genome.chromosome_lengths_cm = Some(lengths(vec![100.0; 10], "cM"));
+    assert!(s.validate().is_err());
+    let mut v = vec![100.0; 11];
+    v[0] = 147.0;
+    v[8] = 46.5;
+    s.genome.chromosome_lengths_cm = Some(lengths(v, "cM"));
+    assert!(s.validate().is_ok());
+    // Positions must lie within their own chromosome.
+    s.genome.loci.push(qtl("habit", 1.0, Some((1, 140.0))));
+    assert!(s.validate().is_ok());
+    s.genome.loci.push(qtl("habit", 1.0, Some((9, 50.0))));
+    assert!(s.validate().is_err());
 }
 
 /// Species files without the decision-0023 keys still load and serialize as before.
@@ -312,8 +325,8 @@ fn optional_genome_keys_round_trip() {
     );
     let mut t = s.clone();
     t.genome.loci.push(named("P", 2, Some((7, 25.0))));
-    t.genome.chromosome_length_cm = Some(Param {
-        value: 110.0,
+    t.genome.chromosome_lengths_cm = Some(ChromosomeLengths {
+        values: vec![110.0; 11],
         unit: schema::CHROMOSOME_LENGTH_UNIT.into(),
         source: "~".into(),
     });
@@ -322,14 +335,14 @@ fn optional_genome_keys_round_trip() {
     assert!(
         t.provenance()
             .iter()
-            .any(|(path, ..)| path == "genome.chromosome_length_cm")
+            .any(|(path, ..)| path == "genome.chromosome_lengths_cm[11]")
     );
 }
 
 /// An illustrative two-layer table (not the bean table, which waits on the research).
 const TABLE: &str = r##"(
   source: "test fixture",
-  default: (seed_coat: "#f2eee0", pattern: "solid", flower: "#ffffff"),
+  default: (seed_coat: "#f2eee0", ground: "#f2eee0", pattern: "solid", coverage: 1.0, glossy: true, flower: "#ffffff"),
   layers: [
     (name: "P gate", rules: [
       (when: [Homozygous(locus: "P", state: 0)],
@@ -367,7 +380,10 @@ fn seed_colour_table_evaluates_in_layers() {
     };
     let white = SeedLook {
         seed_coat: "#f6f3ea".into(),
+        ground: "#f2eee0".into(),
         pattern: "solid".into(),
+        coverage: 1.0,
+        glossy: true,
         flower: "#ffffff".into(),
     };
     // pp is white whatever lies below.
@@ -398,4 +414,36 @@ fn seed_colour_table_is_validated() {
     assert!(SeedColourTable::from_ron(&colour, &s).is_err());
     let source = TABLE.replacen("source: \"test fixture\"", "source: \"\"", 1);
     assert!(SeedColourTable::from_ron(&source, &s).is_err());
+}
+
+/// `Expressed` reads an allelic series by its most dominant allele (V > v^lae > v), and
+/// a patch can set pattern, coverage and shine.
+#[test]
+fn expressed_reads_an_allelic_series() {
+    let s = with_loci(vec![named("V", 3, Some((6, 10.0)))]);
+    let table = r##"(
+      source: "test",
+      default: (seed_coat: "#000000", ground: "#ffffff", pattern: "self", coverage: 1.0, glossy: true, flower: "#ffffff"),
+      layers: [(name: "flower", rules: [
+        (when: [Expressed(locus: "V", state: 2)], set: (flower: Some("#8a4fb5")), source: "test"),
+        (when: [Expressed(locus: "V", state: 1)], set: (flower: Some("#d99bb8"), pattern: Some("virgarcus"), coverage: Some(0.35), glossy: Some(false)), source: "test"),
+      ])],
+    )"##;
+    let t = SeedColourTable::from_ron(table, &s).unwrap();
+    let flower = |a: f64, b: f64| {
+        t.evaluate(
+            &s,
+            &Genotype {
+                alleles: vec![(a, b)],
+            },
+        )
+    };
+    assert_eq!(flower(2.0, 0.0).flower, "#8a4fb5");
+    assert_eq!(flower(1.0, 2.0).flower, "#8a4fb5");
+    let pink = flower(1.0, 0.0);
+    assert_eq!(pink.flower, "#d99bb8");
+    assert!((pink.coverage - 0.35).abs() < 1e-15 && !pink.glossy);
+    assert_eq!(flower(0.0, 0.0).flower, "#ffffff");
+    let bad = table.replacen("coverage: Some(0.35)", "coverage: Some(1.5)", 1);
+    assert!(SeedColourTable::from_ron(&bad, &s).is_err());
 }

@@ -180,7 +180,6 @@ impl Species {
         let mut paternal = vec![false; n];
         let rng = key.key(Purpose::Recombination);
         let base = key.side.index() * BLOCKS_PER_SIDE;
-        let length = self.genome.chromosome_length_cm();
 
         // Unlinked loci: one fair coin each, at a fixed index of block 0.
         for (i, l) in loci.iter().take(n).enumerate() {
@@ -197,6 +196,7 @@ impl Species {
             if !loci.iter().take(n).any(|l| on_c(&l)) {
                 continue;
             }
+            let length = self.genome.chromosome_length_cm(c);
             let mut s = rng.stream_at((base + u32::from(c)) * BLOCK);
             let start_paternal = s.uniform() < 0.5;
             crossovers.clear();
