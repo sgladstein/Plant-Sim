@@ -29,7 +29,7 @@ cargo run --release -p ps-app -- [--day N] [--speed H] [--paused] [--lens NAME] 
 frames. **The default is mailbox** (Bevy falls back to immediate, then FIFO) with a frame
 cap at the monitor's refresh rate (60 if unknown); `--fps-cap N` changes the cap, 0 turns
 it off, and FIFO/auto vsync are never capped. `--window WxH` sets the logical window size
-(default 1600x900); the window shrinks to fit 92% of the primary monitor. `--bench-frames N [--bench-out FILE.csv]`
+and keeps it; without it the 1600x900 default shrinks to fit 92% of the primary monitor. `--bench-frames N [--bench-out FILE.csv]`
 records N frame times (real time between frames, so vsync waits count) after the pipelines
 are ready and a 120-frame warm-up, writes one row per frame plus a `# summary` line
 (adapter, backend, size, present mode, frame latency, frame cap, mean, p50, p95, p99, max), prints the summary, and
@@ -104,6 +104,11 @@ xvfb-run -a -s "-screen 0 1600x900x24" env WGPU_BACKEND=vulkan target/debug/plan
   no spikes, uncapped (~250 fps). DX12 FIFO: p95 17.5, p99 32.7, 4.3% irregular spikes.
   Hence the mailbox + frame cap default. Snapshot reads clone an `Arc` under a lock held
   only for the clone, so the render thread never waits on sim work.
+- Real sim on 74132fc (Vulkan, capped mailbox at 60, day 45.5): mean 16.67, p95 17.2,
+  p99 29.8 ms; spikes ≥ 28 ms down to 2.3–2.8%, in bursts with quiet stretches of 500+
+  frames, each followed by a ~8 ms catch-up frame. The limiter now spins the last 2 ms
+  instead of 1 ms; if bursts remain, check whether they line up with sim ticks (mesh
+  rebuilds) before blaming pacing.
 - DX12 takes about 180 s to first render (Vulkan about 5 s), so DX12 is only a fallback.
 - DX12 cold start was slow enough that the old fixed-frame `--screenshot` saved nothing
   or a black frame; it now waits for readiness.

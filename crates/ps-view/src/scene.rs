@@ -377,9 +377,15 @@ fn organ_color(pot: &PotView, lens: Lens, i: usize, p: &Placement) -> ([f32; 3],
         )
 }
 
-fn axis_colors(pot: &PotView, lens: Lens, organs: &[OrganId], style: AxisStyle) -> Vec<[f32; 4]> {
+fn axis_colors(
+    pot: &PotView,
+    lens: Lens,
+    organs: &[OrganId],
+    style: AxisStyle,
+    copies: u16,
+) -> Vec<[f32; 4]> {
     let ring = style.sides as usize + 1;
-    let mut out = Vec::with_capacity((organs.len() + 1) * ring);
+    let mut out = Vec::with_capacity((organs.len() + 1) * ring * usize::from(copies));
     for k in 0..=organs.len() {
         let id = organs[k.saturating_sub(1).min(organs.len() - 1)];
         let c = pot
@@ -387,6 +393,11 @@ fn axis_colors(pot: &PotView, lens: Lens, organs: &[OrganId], style: AxisStyle) 
             .get(id)
             .map_or([1.0; 3], |p| organ_color(pot, lens, id.index(), p).0);
         out.extend(std::iter::repeat_n([c[0], c[1], c[2], 1.0], ring));
+    }
+    // Copies of a root cohort share their organs' colors.
+    let one = out.len();
+    for _ in 1..copies {
+        out.extend_from_within(..one);
     }
     out
 }
@@ -509,7 +520,7 @@ pub(crate) fn sync_scene(
             let key = axis.key();
             seen.push(key);
             let signature = AxisSignature::of(&pot.skeleton, axis, style);
-            let colors = axis_colors(pot, lens, &axis.organs, style);
+            let colors = axis_colors(pot, lens, &axis.organs, style, axis.copies);
             match scene.axes.get_mut(&key) {
                 Some(existing)
                     if !signature.needs_rebuild(&existing.signature, REBUILD_THRESHOLD)
