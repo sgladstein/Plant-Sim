@@ -308,6 +308,11 @@ quantity!(
     "W/m2"
 );
 quantity!(
+    /// Radiant energy per area, J m⁻² (daily or hourly radiation totals).
+    JPerM2,
+    "J/m2"
+);
+quantity!(
     /// Water depth in millimeters (rain, irrigation); 1 mm over 1 m² is 1 kg.
     Millimeters,
     "mm"

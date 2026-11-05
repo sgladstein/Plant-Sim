@@ -1,0 +1,3 @@
+# Python tools for fixture generation and the validation report (design plan §10.3).
+pvlib==0.16.1
+pandas>=2.2
