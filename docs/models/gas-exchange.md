@@ -35,13 +35,16 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
   `gs = g0`.
 - Water: `gs = 1.57 gc` (mol m⁻² s⁻¹ water vapor), `E = gs D / P`.
 - Leaf capacity: `c = 1` until the leaf is fully expanded, then linear to the floor (0.4)
-  at the end of its lifespan (§3.8 leaf aging).
-- Sink feedback (decision 0013): capacity is also multiplied by
-  `f(C) = clamp(1 − (C − C_on)/(C_full − C_on), 0, 1)`, where `C = R / W` is the leaf's
-  own reserve concentration (g C per g DM). A leaf whose carbon cannot be exported or
-  used slows its photosynthesis (end-product inhibition). Below the table's lowest
-  capacity node (0.4) every flux is scaled from that node in proportion to capacity
-  (Vcmax, Jmax and Rd all scale with it, and Medlyn conductance follows assimilation).
+  at the end of its lifespan, which counts from full expansion (§3.8 leaf aging).
+- Sink feedback (decision 0013, provisional; amended after the WP8 review): with
+  `f(C) = clamp(1 − (C − C_on)/(C_full − C_on), 0, 1)`, where `C = R / W` is the
+  leaf's own reserve concentration (g C per g DM), net assimilation becomes
+  `A' = f · max(0, A + Rd) − Rd`. Only gross assimilation is inhibited, so a leaf full
+  of sugar still pays its day respiration and can starve. Transpiration scales by the
+  same factor as gross assimilation (Medlyn conductance follows assimilation). The
+  daily report carries the share of potential gross assimilation lost to it
+  (`feedback_loss`); above about 0.2 the plant lacks sinks, and WP12 adds sinks
+  before changing the thresholds.
 - Light classes: each hour a table of 17 PAR nodes (0, then 16 log-spaced from 1 to
   2000 µmol m⁻² s⁻¹) × 4 capacity nodes (1.0, 0.8, 0.6, 0.4) is solved (68 solves per
   plant-hour). A leaf part reads it linearly in PAR between neighboring nodes and

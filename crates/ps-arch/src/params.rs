@@ -7,6 +7,7 @@ use ps_species::{RootOrigin, Species, Traits};
 use ps_units::{
     Celsius, DegreeDays, GPerM3, GramsDM, KgPerMH, M2, M2PerG, M2PerHour, MPerG, Meters, Radians,
 };
+use serde::{Deserialize, Serialize};
 
 /// Thermal time per day at the optimum temperature, °C·day, for converting rates given
 /// per day at the optimum into rates per °C·day.
@@ -16,7 +17,7 @@ pub fn optimum_rate(cardinal: &Cardinal) -> f64 {
 }
 
 /// One root type in model units.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RootParams {
     /// Name from the species file.
     pub name: String,
@@ -45,7 +46,7 @@ pub struct RootParams {
 }
 
 /// Everything the herb module reads, in model units.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::struct_field_names)]
 pub struct HerbParams {
     /// Carbon constants for allocation.

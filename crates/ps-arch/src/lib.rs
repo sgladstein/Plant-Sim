@@ -25,7 +25,6 @@ use ps_graph::{
 };
 use ps_light::SkySector;
 use ps_physio::allocation::{self, CarbonLedger, HourInputs, HourReport};
-use ps_physio::classes::CAPACITY_NODES;
 use ps_physio::{ClassTable, Events, LeafEnv, Phenology, PhysioError, Stage, leaf_capacity};
 use ps_rng::{Purpose, RngKey};
 use ps_soil::{RootCells, SoilError, SoilGrid, Uptake, stress_factor};
@@ -241,6 +240,10 @@ pub struct DayStats {
     pub ftsw_min: f64,
     /// Plant thermal time (air) gained, for axis phyllochrons.
     pub thermal: f64,
+    /// Gross assimilation the leaves could have made, µmol s⁻¹ summed over hours.
+    pub gross_potential: f64,
+    /// Gross assimilation lost to the sink feedback, same units.
+    pub gross_lost: f64,
 }
 
 impl Default for DayStats {
@@ -248,9 +251,11 @@ impl Default for DayStats {
         Self {
             hours: 0,
             t_sum: 0.0,
-            t_min: f64::INFINITY,
+            t_min: f64::MAX,
             ftsw_min: 1.0,
             thermal: 0.0,
+            gross_potential: 0.0,
+            gross_lost: 0.0,
         }
     }
 }
@@ -288,6 +293,12 @@ pub struct DayReport {
     pub root_mass: f64,
     /// Total living structural dry mass, g.
     pub dry_mass: f64,
+    /// Structural dry mass ever built, living or shed, g (the plant's total
+    /// production, for comparison with harvested totals).
+    pub total_dry_mass: f64,
+    /// Share of today's potential gross assimilation lost to the sink feedback
+    /// (decision 0013 diagnostic: above about 0.2 the plant lacks sinks).
+    pub feedback_loss: f64,
     /// Pod and seed dry mass, g.
     pub fruit_mass: f64,
     /// Height of the highest shoot point above the soil, m.
@@ -296,8 +307,9 @@ pub struct DayReport {
     pub shortfall: f64,
 }
 
-/// One plant: its organ graph and the growth-form state around it.
-#[derive(Clone, Debug)]
+/// One plant: its organ graph and the growth-form state around it. Serializes
+/// completely for snapshots (the hourly scratch and the constant sky are rebuilt).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Plant {
     /// Parameters.
     pub params: HerbParams,
@@ -361,8 +373,11 @@ pub struct Plant {
     pub ftsw: f64,
     /// Stress factors on conductance and expansion.
     pub stress: (f64, f64),
-    /// This hour's leaf income, indexed like the arena.
+    /// This hour's leaf income, indexed like the arena (scratch between the two
+    /// hourly calls; empty at the daily boundary).
+    #[serde(skip)]
     income: Vec<GramsC>,
+    #[serde(skip)]
     sky: Vec<SkySector>,
 }
 
@@ -540,15 +555,17 @@ impl Plant {
     }
 
     /// Creates an organ with a primordium: a small share of its potential mass built at
-    /// once from the parent's reserve (decision 0013), so that a new sink can hold
-    /// reserve and start growing. Moving carbon from reserve to structure leaves the
-    /// carbon stock unchanged.
+    /// once from the parent's reserve at the usual construction cost (decision 0013), so
+    /// that a new sink can hold reserve and start growing.
     pub(crate) fn spawn(&mut self, s: &Spawn, now: Hours) -> Result<OrganId, ArchError> {
         let cf = self.params.carbon.carbon_fraction;
         let pi = s.parent.index();
         let available = self.arena.reserve[pi].0.max(0.0);
-        let mass = (PRIMORDIUM * s.curve.potential.0).min(0.5 * available / cf);
-        self.arena.reserve[pi] -= GramsC(mass * cf);
+        // Built like any growth: construction cost includes growth respiration.
+        let cost = self.params.carbon.construction_cost;
+        let mass = (PRIMORDIUM * s.curve.potential.0).min(0.5 * available / (cf * cost));
+        self.arena.reserve[pi] -= GramsC(mass * cf * cost);
+        self.ledger.growth_respiration += GramsC(mass * cf * (cost - 1.0));
         let id = self.arena.add(
             &NewOrgan {
                 kind: s.kind,
@@ -657,23 +674,35 @@ impl Plant {
                 } else {
                     0.0
                 };
+                // Aging scales Vcmax, Jmax and Rd together (the table's capacity axis);
+                // leaf lifespan counts from full expansion.
+                let expanded = self.meta[i].expanded.unwrap_or(age);
                 let cap = leaf_capacity(
                     age,
-                    self.meta[i].expanded.unwrap_or(age),
-                    hp.leaf_lifespan,
+                    expanded,
+                    expanded + hp.leaf_lifespan,
                     hp.capacity_floor,
-                ) * hp.sink_feedback(conc);
-                // The table spans capacities down to its lowest node; below it every
-                // flux scales with capacity (Vcmax, Jmax and Rd all do, and Medlyn
-                // conductance follows assimilation), so rates are scaled from that node.
-                let lowest = CAPACITY_NODES[3];
-                let scale = if cap < lowest { cap / lowest } else { 1.0 };
-                let sun = table.lookup(a.sunlit, cap.max(lowest));
-                let shade = table.lookup(a.shaded, cap.max(lowest));
+                );
+                let sun = table.lookup(a.sunlit, cap);
+                let shade = table.lookup(a.shaded, cap);
                 let f = a.sunlit_fraction;
                 let area = self.arena.size[i].area.0;
-                let a_net = scale * (f * sun.a_net.0 + (1.0 - f) * shade.a_net.0);
-                let e = scale * (f * sun.e.0 + (1.0 - f) * shade.e.0);
+                let a_net = f * sun.a_net.0 + (1.0 - f) * shade.a_net.0;
+                let rd = f * sun.rd.0 + (1.0 - f) * shade.rd.0;
+                let e0 = f * sun.e.0 + (1.0 - f) * shade.e.0;
+                // Sink feedback (decision 0013, amended in WP9 review) acts on gross
+                // assimilation only, so a sugar-filled leaf still pays its respiration;
+                // conductance and transpiration follow assimilation.
+                let fb = hp.sink_feedback(conc);
+                let gross = (a_net + rd).max(0.0);
+                let a_net = fb * gross - rd;
+                let e = if gross > 0.0 {
+                    e0 * (a_net + rd) / gross
+                } else {
+                    e0
+                };
+                self.today.gross_potential += gross * area;
+                self.today.gross_lost += (1.0 - fb) * gross * area;
                 self.income[i] = UmolPerM2S(a_net).carbon_per_hour(ps_units::M2(area));
                 water += e * area * 3600.0 * KG_PER_MOL_WATER;
             }
@@ -807,6 +836,7 @@ impl Plant {
         let rep = self.report();
         self.today = DayStats::default();
         self.shortfall = KgWater(0.0);
+        self.income.clear();
         Ok(rep)
     }
 
@@ -825,6 +855,9 @@ impl Plant {
     }
 
     fn rebuild_light(&mut self, sun_path: &[Option<V3>; 24]) {
+        if self.sky.is_empty() {
+            self.sky = ps_light::sky_sectors().to_vec();
+        }
         let hp = &self.params;
         let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
         let mut points = Vec::new();
@@ -915,6 +948,40 @@ impl Plant {
         }
     }
 
+    /// Living leaf area, m².
+    #[must_use]
+    pub fn leaf_area(&self) -> f64 {
+        self.arena
+            .alive_of(OrganKind::Leaf)
+            .map(|id| self.arena.size[id.index()].area.0)
+            .sum()
+    }
+
+    /// Cuts an organ and everything it carries off the plant (the Prune action). The
+    /// collar and the hypocotyl cannot be cut.
+    ///
+    /// # Errors
+    /// [`ArchError::Graph`] if the organ does not exist or is already dead.
+    pub fn prune(&mut self, id: OrganId, now: Hours) -> Result<(), ArchError> {
+        if id.index() >= self.arena.len() {
+            return Err(GraphError::NoSuchOrgan(id).into());
+        }
+        if !self.arena.alive[id.index()] {
+            return Err(GraphError::Dead(id).into());
+        }
+        if id == self.collar || id == self.hypocotyl {
+            return Ok(());
+        }
+        allocation::shed(
+            &mut self.arena,
+            &self.params.carbon,
+            id,
+            now,
+            &mut self.ledger,
+        )?;
+        Ok(())
+    }
+
     /// Counts and totals now.
     #[must_use]
     pub fn report(&self) -> DayReport {
@@ -960,6 +1027,12 @@ impl Plant {
             root_length,
             root_mass: mass(OrganKind::Root),
             dry_mass: a.alive_ids().map(|id| a.structural(id).0).sum(),
+            total_dry_mass: a.ids().map(|id| a.structural(id).0).sum(),
+            feedback_loss: if self.today.gross_potential > 0.0 {
+                self.today.gross_lost / self.today.gross_potential
+            } else {
+                0.0
+            },
             fruit_mass: mass(OrganKind::Pod) + mass(OrganKind::SeedInPod),
             height,
             shortfall: self.shortfall.0,

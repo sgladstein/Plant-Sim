@@ -1,0 +1,26 @@
+[package]
+name = "ps-world"
+description = "The world: the step schedule, action log, snapshots and full-state hash"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-units.workspace = true
+ps-graph.workspace = true
+ps-species.workspace = true
+ps-soil.workspace = true
+ps-weather.workspace = true
+ps-arch.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+libm.workspace = true
+ron.workspace = true
+
+[dev-dependencies]
+rayon.workspace = true
+
+[lints]
+workspace = true
