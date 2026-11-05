@@ -64,9 +64,11 @@ against every field baseline, which is why g1 = 5.79 (decision 0032) came first.
   M0 check passes. One Info check slips: `harvest_index_tops` 0.415 → 0.392 (band 0.4 to
   0.6). Sunlit leaves in a temperate summer run a few kelvin above air, nearer the
   optimum of Vcmax and Jmax, and transpire less with the boundary layer in series, so
-  the pot plant makes more: total dry mass at maturity 23.4 → 24.7 g, pods 10.5 → 13.0;
-  with seed number fixed at pod set, seed size takes it (0.259 → 0.235 g per seed), the
-  known missing seed abortion rule (decision 0032), which also lowers the harvest index.
+  the pot plant makes more: total dry mass at maturity 23.4 → 24.7 g, pods 10.5 → 13.0.
+  The extra 1.3 g goes into the walls of the 2.5 extra pods: seed mass barely moves
+  (6.40 → 6.45 g, so seed size falls from 0.259 to 0.235 g) and stems are unchanged,
+  which lowers the harvest index. A young-pod abortion rule (shed pods the plant cannot
+  fill), not a seed abortion rule, is what would restore it.
   Responses keep their verdicts and move a few points: drought seed yield −49% →
   −44%, drought shoot mass −46% → −43%, drought root:shoot +26% → +23% (less water
   used), heat pods −20% → −24%, shade pods −56% → −53%.
