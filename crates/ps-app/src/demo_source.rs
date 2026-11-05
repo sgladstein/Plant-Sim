@@ -406,6 +406,7 @@ pub fn drive(
             size,
             skeleton,
             water_stress,
+            first_flower: None,
             organ_values,
             soil_water,
             container: true,
