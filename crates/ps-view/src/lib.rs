@@ -18,6 +18,7 @@
 
 pub mod camera;
 pub mod diorama;
+pub mod dressing;
 pub mod garden;
 pub mod lens;
 pub mod look;

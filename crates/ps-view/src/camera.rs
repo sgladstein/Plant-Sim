@@ -172,14 +172,15 @@ pub(crate) fn apply_rig(
     }
 }
 
-/// Linear haze from just behind the framed scene to well beyond it: 3 to 14 m for a
-/// camera within 1.5 m, pushed back with the camera.
+/// Linear haze from just behind the framed scene to well beyond it: about 2 to 60 m for
+/// a camera within 1.5 m (so the tree line reads as soft shapes), pushed back with the
+/// camera.
 #[must_use]
 pub fn fog_falloff(distance: f32) -> bevy::pbr::FogFalloff {
     let d = distance.max(1.5);
     bevy::pbr::FogFalloff::Linear {
-        start: d + 1.5,
-        end: d + 12.5,
+        start: d + 0.5,
+        end: d + 58.5,
     }
 }
 
