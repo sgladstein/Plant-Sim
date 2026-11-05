@@ -39,4 +39,11 @@ grass blades.
   the margins move only when the light code changes; the next light change (the
   within-cell "who is on top" fix, decision 0025) must re-read them first, and option 2
   or a better 5-point layout is the way back if one fails.
-- Validation and speed: see below.
+- Validation on four-seed means at 0.16.0: 87 checks, 68 pass, the same verdicts as
+  0.15.0, every M0 check passes. Seed-level results move by a few percent as pod-set
+  draws shift (pods at maturity 11 → 10.5, seed per plant 9.3 → 8.8 g,
+  pole_unstaked_seed_yield −54% → −56%); nothing else moves more than 3%.
+- Speed, plot_30_beans over its 90 days, best of 3, this container (slower than the
+  performance thread's): 0.12.0 33.9 to 34.1 ms per sim-day, 0.15.0 32.1 to 33.6 ms,
+  0.16.0 30.2 to 30.7 ms, about −8% against main. The performance thread re-times it
+  on top of its bit-identical pass (#103).
