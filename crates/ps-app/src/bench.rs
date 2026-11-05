@@ -2,7 +2,7 @@
 //!
 //! After the pipelines are ready and a warm-up, records N frame times (real time between
 //! frames, so it includes vsync waits), writes them as CSV, logs a summary line with the
-//! adapter, backend and present mode, then exits.
+//! adapter, backend, present mode, frame latency and frame cap, then exits.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -23,6 +23,8 @@ pub struct BenchConfig {
     pub out: PathBuf,
     /// Present mode, for the summary.
     pub present: String,
+    /// Maximum frame latency, for the summary.
+    pub latency: String,
 }
 
 /// Summary statistics over frame times, ms.
@@ -77,12 +79,13 @@ pub(crate) struct Recorder {
     ms: Vec<f64>,
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 pub(crate) fn record(
     config: Res<BenchConfig>,
     ready: Res<Ready>,
     time: Res<Time<Real>>,
     adapter: Option<Res<RenderAdapterInfo>>,
+    cap: Option<Res<crate::display::FrameCap>>,
     windows: Query<&Window>,
     mut rec: Local<Recorder>,
     mut exit: MessageWriter<AppExit>,
@@ -108,9 +111,12 @@ pub(crate) fn record(
     let size = windows.iter().next().map_or_else(String::new, |w| {
         format!(" {}x{}", w.physical_width(), w.physical_height())
     });
+    let cap = cap
+        .and_then(|c| if c.off { None } else { c.effective_fps() })
+        .map_or_else(|| "off".to_owned(), |f| format!("{f:.0}"));
     let summary = format!(
-        "{gpu}{size} present={} frames={} mean={:.2} p50={:.2} p95={:.2} p99={:.2} max={:.2} ms",
-        config.present, s.n, s.mean, s.p50, s.p95, s.p99, s.max
+        "{gpu}{size} present={} latency={} cap={cap} frames={} mean={:.2} p50={:.2} p95={:.2} p99={:.2} max={:.2} ms",
+        config.present, config.latency, s.n, s.mean, s.p50, s.p95, s.p99, s.max
     );
     info!("bench: {summary}");
     println!("{summary}");

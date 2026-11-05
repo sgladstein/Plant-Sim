@@ -8,8 +8,13 @@
 //! plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
 //!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 //!           [--bench-frames N] [--bench-out FILE.csv]
-//!           [--scenario FILE.ron] [--data DIR] [--demo]
+//!           [--scenario FILE.ron] [--data DIR] [--demo] [--window WxH] [--fps-cap N]
 //! ```
+//!
+//! The default present mode is mailbox with a frame cap at the monitor's refresh rate
+//! (`--fps-cap N` overrides it, 0 turns it off; FIFO and auto vsync are never capped).
+//! `--window` sets the logical window size (default 1600x900); the window shrinks to fit
+//! the monitor either way.
 //!
 //! `--day` starts the view that many days in (the sim steps there as fast as it can).
 //! `--scenario` is a path, or relative to the data directory (default
@@ -33,6 +38,7 @@
 
 mod bench;
 mod demo_source;
+mod display;
 mod sim_source;
 
 use std::path::PathBuf;
@@ -58,6 +64,8 @@ struct Options {
     demo: bool,
     scenario: PathBuf,
     data: Option<PathBuf>,
+    fps_cap: Option<f64>,
+    window: (u32, u32),
 }
 
 fn parse_present(name: &str) -> Result<PresentMode> {
@@ -92,14 +100,16 @@ fn parse_args() -> Result<Options> {
         paused: false,
         lens: Lens::Off,
         screenshot: None,
-        present: PresentMode::AutoVsync,
+        present: PresentMode::Mailbox,
         frame_latency: None,
-        present_name: "auto".into(),
+        present_name: "mailbox".into(),
         bench_frames: None,
         bench_out: PathBuf::from("frame-times.csv"),
         demo: false,
         scenario: PathBuf::from(sim_source::DEFAULT_SCENARIO),
         data: None,
+        fps_cap: None,
+        window: (1600, 900),
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -123,6 +133,22 @@ fn parse_args() -> Result<Options> {
             }
             "--bench-out" => o.bench_out = PathBuf::from(value()?),
             "--demo" => o.demo = true,
+            "--fps-cap" => {
+                o.fps_cap = Some(anyhow::Context::context(
+                    value()?.parse::<f64>(),
+                    "--fps-cap",
+                )?);
+            }
+            "--window" => {
+                let v = value()?;
+                let parsed = v
+                    .split_once(['x', 'X'])
+                    .and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)))
+                    .filter(|(w, h)| *w >= 320 && *h >= 240);
+                o.window = anyhow::Context::with_context(parsed, || {
+                    format!("--window wants WxH, at least 320x240, got {v:?}")
+                })?;
+            }
             "--scenario" => o.scenario = PathBuf::from(value()?),
             "--data" => o.data = Some(PathBuf::from(value()?)),
             "--frame-latency" => {
@@ -131,7 +157,7 @@ fn parse_args() -> Result<Options> {
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo] [--window WxH] [--fps-cap N]"
                 );
                 std::process::exit(0);
             }
@@ -148,7 +174,7 @@ fn main() -> Result<()> {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "Plant-Sim".into(),
-            resolution: WindowResolution::new(1600, 900),
+            resolution: WindowResolution::new(options.window.0, options.window.1),
             present_mode: options.present,
             desired_maximum_frame_latency: options.frame_latency,
             ..default()
@@ -180,11 +206,19 @@ fn main() -> Result<()> {
         ))
         .add_systems(Update, demo_source::drive.in_set(ViewSet::Source));
     }
+    let vsync = matches!(options.present, PresentMode::Fifo | PresentMode::AutoVsync);
+    let cap_off = vsync || options.fps_cap.is_some_and(|f| f <= 0.0);
+    app.insert_resource(display::FrameCap::new(options.fps_cap, cap_off))
+        .add_systems(Update, display::fit_to_monitor)
+        .add_systems(Last, display::limit_frame);
     if let Some(frames) = options.bench_frames {
         app.insert_resource(bench::BenchConfig {
             frames: frames.max(1),
             out: options.bench_out.clone(),
             present: options.present_name.clone(),
+            latency: options
+                .frame_latency
+                .map_or_else(|| "default".to_owned(), |n| n.to_string()),
         })
         .add_systems(Last, bench::record);
     }
