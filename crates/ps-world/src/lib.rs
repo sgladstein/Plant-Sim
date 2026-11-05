@@ -6,12 +6,14 @@
 //! resumes to the same bits. Model card: docs/models/world-and-schedule.md.
 
 pub mod hash;
+pub mod lens;
 pub mod scenario;
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
 
-use ps_arch::{ArchError, DayReport, HourCtx, Plant};
+use ps_arch::{ArchError, DayReport, HourCtx, HourLens, Plant};
 use ps_soil::{SoilError, SoilGrid, SoilHour, WaterLedger};
 use ps_species::Species;
 use ps_units::{Celsius, Degrees, Hours, KPa, KgWater, Meters, Millimeters, Ppm, WPerM2};
@@ -20,6 +22,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub use hash::hash_of;
+pub use lens::{LensData, PlantLens, SoilLens};
 pub use scenario::{
     Action, ActionKind, FieldVariation, Irrigation, ObstacleSpec, Scenario, SeedChoice, SoilSpec,
     Sowing, Start, SupportSpec, WeatherSource,
@@ -319,11 +322,14 @@ impl WorldState {
 /// A daily hash being computed on a snapshot (see [`World::run_until`]).
 type PendingHash = Option<std::sync::mpsc::Receiver<u64>>;
 
-/// A world: state plus the weather series rebuilt from it.
+/// A world: state plus the weather series rebuilt from it, and the lens data of the
+/// last hour when recording is on (never part of the state; WP26).
 #[derive(Clone, Debug)]
 pub struct World {
     state: WorldState,
     weather: WeatherSeries,
+    record_lens: bool,
+    lens: Option<Arc<LensData>>,
 }
 
 fn weather_for(s: &Scenario, c: &Catalog) -> Result<WeatherSeries, WorldError> {
@@ -524,6 +530,93 @@ fn shaded(h: &HourWeather, f: f64) -> HourWeather {
     }
 }
 
+/// Hourly steps 8 to 12 for one soil's plants, in parallel. With `out` (lens
+/// recording, WP26) the growth is the same and each plant's [`PlantLens`] is written
+/// into `out` at its id.
+fn grow_soil(
+    members: &mut [&mut PlantEntry],
+    ctx: &HourCtx<'_>,
+    soil: &SoilGrid,
+    uptake: &[ps_soil::Uptake],
+    out: Option<&mut [PlantLens]>,
+) -> Result<(), WorldError> {
+    let Some(out) = out else {
+        members
+            .par_iter_mut()
+            .enumerate()
+            .map(|(k, e)| e.plant.grow_hour(ctx, soil, uptake.get(k)))
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(());
+    };
+    let hours: Vec<(HourLens, PlantLens)> = members
+        .par_iter_mut()
+        .enumerate()
+        .map(|(k, e)| {
+            let mut h = HourLens::default();
+            let (leaf_area, absorbed_par) = e.plant.absorbed_par(ctx);
+            let open_sky_par = e.plant.open_sky_par(ctx);
+            e.plant
+                .grow_hour_recording(ctx, soil, uptake.get(k), Some(&mut h))
+                .map(|_| {
+                    let l = PlantLens {
+                        plant: e.id,
+                        leaf_area,
+                        absorbed_par,
+                        open_sky_par,
+                        relative_light: if open_sky_par.0 > 0.0 {
+                            absorbed_par.0 / open_sky_par.0
+                        } else {
+                            0.0
+                        },
+                        organ_n: e.plant.organ_n_concentration(),
+                        ..PlantLens::default()
+                    };
+                    (h, l)
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    // Light share in plant order: a sequential sum, so the bits do not depend on the
+    // thread count.
+    let total: f64 = hours
+        .iter()
+        .map(|(_, l)| l.leaf_area.0 * l.absorbed_par.0)
+        .sum();
+    for (h, mut l) in hours {
+        l.light_share = if total > 0.0 {
+            l.leaf_area.0 * l.absorbed_par.0 / total
+        } else {
+            0.0
+        };
+        l.phloem_import = h.phloem_import;
+        l.organ_temperature = h.temperature;
+        // Plant ids are their positions in the plant list (sowing appends, nothing
+        // removes plants); a later change to that must not drop lens rows silently.
+        debug_assert!(
+            (l.plant as usize) < out.len(),
+            "plant id {} is not a position in the plant list",
+            l.plant
+        );
+        if let Some(slot) = out.get_mut(l.plant as usize) {
+            *slot = l;
+        }
+    }
+    Ok(())
+}
+
+/// Each soil's layer temperatures, for the temperature lens (WP26).
+fn soil_lens(soils: &[SoilEntry]) -> Vec<SoilLens> {
+    soils
+        .iter()
+        .map(|e| {
+            let (_, _, nz) = e.grid.dims();
+            SoilLens {
+                soil: e.id,
+                layer_temperature: (0..nz).map(|z| e.grid.layer_temperature(z)).collect(),
+            }
+        })
+        .collect()
+}
+
 impl World {
     /// Builds a world at tick 0 and sows the scenario's seeds.
     ///
@@ -585,6 +678,8 @@ impl World {
                 added_obstacles: Vec::new(),
             },
             weather,
+            record_lens: false,
+            lens: None,
         };
         for s in &sowings {
             w.sow(s)?;
@@ -609,7 +704,12 @@ impl World {
             );
         }
         let weather = weather_for(&state.scenario, &state.catalog)?;
-        Ok(Self { state, weather })
+        Ok(Self {
+            state,
+            weather,
+            record_lens: false,
+            lens: None,
+        })
     }
 
     /// Replays a recorded action log from the scenario up to `tick`.
@@ -692,6 +792,29 @@ impl World {
         let state: WorldState =
             ron::from_str(text).map_err(|e| WorldError::Snapshot(e.to_string()))?;
         Self::from_state(state)
+    }
+
+    /// Turns lens recording on or off (off by default). Recording copies values out of
+    /// each hourly step and reads the state after it; it never changes the state, so
+    /// the hashes are the same either way (WP26). Turning it off drops the last data.
+    pub fn set_lens_recording(&mut self, on: bool) {
+        self.record_lens = on;
+        if !on {
+            self.lens = None;
+        }
+    }
+
+    /// Whether lens recording is on.
+    #[must_use]
+    pub fn lens_recording(&self) -> bool {
+        self.record_lens
+    }
+
+    /// The lens data of the last hour stepped with recording on, if any. A world just
+    /// loaded or rebuilt has none until it steps.
+    #[must_use]
+    pub fn lens(&self) -> Option<&Arc<LensData>> {
+        self.lens.as_ref()
     }
 
     /// Applies an action at the current tick (appends it to the log).
@@ -1165,6 +1288,9 @@ impl World {
         let co2 = Ppm(self.state.scenario.co2_ppm);
         let hour_index = usize::try_from(hour).unwrap_or(0);
         let n_soils = self.state.soils.len();
+        let record = self.record_lens;
+        let mut plant_lens =
+            vec![PlantLens::default(); usize::from(record) * self.state.plants.len()];
         for si in 0..n_soils {
             let f = self.state.soils[si].radiation_fraction;
             let local = shaded(&wx, f);
@@ -1240,11 +1366,17 @@ impl World {
             soils[si].ledger.accumulate(&joint.ledger);
             // 8 to 12. Carbon.
             let soil = &soils[si].grid;
-            members
-                .par_iter_mut()
-                .enumerate()
-                .map(|(k, e)| e.plant.grow_hour(&ctx, soil, joint.plants.get(k)))
-                .collect::<Result<Vec<_>, _>>()?;
+            let out = record.then_some(&mut plant_lens[..]);
+            grow_soil(&mut members, &ctx, soil, &joint.plants, out)?;
+        }
+        if record {
+            let soils = soil_lens(&self.state.soils);
+            let plants = plant_lens;
+            self.lens = Some(Arc::new(LensData {
+                tick,
+                plants,
+                soils,
+            }));
         }
         self.state.tick += 1;
         if hour == 23 {
