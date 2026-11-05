@@ -165,6 +165,11 @@ With no water storage (no capacitance) the level has no state of its own, so swi
 in either direction converts nothing and can't break the water ledger.
 
 ### 6.2 Switching (owner's choice: follow zoom and speed)
+
+The full rules (step buttons, experiments, field scale, goldens) are in
+[fidelity-levels.md](fidelity-levels.md), which wins where the two differ. R3 must also
+meet its §2.1 requirements for the field-scale level.
+
 - A per-plant state `HydraulicsLevel { Detailed, Simplified }`, in the snapshot and the
   hash.
 - A new action `SetFidelity { plants, level }`, taking effect at the next hour boundary,
