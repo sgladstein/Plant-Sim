@@ -71,10 +71,11 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 | 15 Scene sync and look | Working. Round pots and glass-fronted plot beds with a soil cutaway, stakes and trellis strings, obstacles (walls reach the lawn, cloths on posts), a garden setting (bench, lawn, tree ring), camera-relative fog, a 2% rebuild rule, and high-speed daily-mean light. |
 | 16 Sim thread | Done (sim side #32, viewer side in ps-app). |
 | 17 UI | Working: top bar, lenses with legends, charts, inspector with a why line and units (and each plant's own seed), model-card side panel, garden tools, seed library, new-run dialog. Experiment mode (dialog, cards in data/experiments, lab notebook, `--experiment CARD`). Not done: assimilation and transpiration charts (they are not in the daily rows). |
-| 18 Lenses | All seven M1 lenses read sim values. |
+| 18 Lenses | All eleven lenses read sim values (the seven M1 lenses plus the four WP26 lenses). |
 | 19 Capture | Done: screenshot (P), CSV export, offline time-lapse (`--timelapse DIR --day --to-day --timelapse-hours 6-19`), and `--clean`. |
 | 20 The moments | Built (`ps_mesh::moments::pose`, `ps_view::moments`): emerging hook and cotyledons, lean toward the light, wilting and recovery, flowering cue (camera move-in and banner on sim time). Done-when: the owner signs off on a 60-second sun-versus-shade clip. |
 | 25 UI side | Done (#76). |
+| 26 UI side | Done: save and load (ps-app `saves.rs`, ps-ui `saves.rs`; the load note reports whether the state hash matches), `--load DIR`, replay-bar markers for scenario events and player actions, competition, temperature, nitrogen and carbon-flow lenses read from `Snapshot::lens` (`SessionOptions.lens = true`), phloem flow arrows (`ps_view::arrows`, a gizmo group with a small depth bias so they show through the tubes). |
 
 ## 5. The look decision
 
@@ -97,7 +98,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 2. Done: `Plant::individual` in the whole-plant inspector.
 3. WP20, the moments, then render the sun-versus-shade clip with `--timelapse` and `--clean` for sign-off.
 4. The rest of WP17: assimilation and transpiration charts once the sim adds them to the daily rows. Experiment mode varies only what one world can (per-pot light, water, pot size); latitude, sowing date or weather sweeps would need one world per pot.
-5. Performance with many plants: wheat_stand (200 plants) is slow to step in debug. Profile the release build's per-frame skeleton rebuild and instance upload.
+5. Performance with many plants. Done: a frame where the snapshot, the interpolation fraction, the high-speed flag, the lens and the camera focus are all unchanged rebuilds nothing (`SimSource.shown`, `SceneIndex.synced`); on the 30-bean plot paused at day 50 the CPU cost of drive plus scene sync fell from about 10 ms to about 0.25 ms a frame (release, lavapipe container). Each plant's petioles are one merged mesh and entity (`PetioleGroup`, 25 fewer entities per bean at day 50), instance transforms are written only when they change, and lens values are computed once per snapshot (`SimSource.lens_values`), not per frame. Open: while running, every frame still re-lerps every skeleton, recomputes every axis signature and color and moves every instance; roots (about 65 axes per bean) could be merged the same way.
 6. If a look option is chosen, rebase that branch onto main and gate it behind `--look`.
 
 ## 8. Gotchas

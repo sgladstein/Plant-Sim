@@ -26,6 +26,14 @@ pub enum Lens {
     Phenology,
     /// Red:far-red proxy per leaf and internode.
     ShadeSignal,
+    /// Each plant by the light its leaves get, as a share of the open sky (M2, WP26).
+    Competition,
+    /// Organ temperature (M2, WP26).
+    Temperature,
+    /// Nitrogen per structural dry mass of each organ (M2, WP26).
+    Nitrogen,
+    /// Carbon moved into each organ from its parent this hour (M2, WP26), with arrows.
+    CarbonFlow,
 }
 
 /// How a lens maps values to colors.
@@ -78,8 +86,8 @@ pub struct LensInfo {
 }
 
 impl Lens {
-    /// Every lens in panel order (M1 set).
-    pub const ALL: [Self; 8] = [
+    /// Every lens in panel order (the M1 set, then M2's).
+    pub const ALL: [Self; 12] = [
         Self::Off,
         Self::Light,
         Self::SoilWater,
@@ -88,10 +96,15 @@ impl Lens {
         Self::Carbon,
         Self::Phenology,
         Self::ShadeSignal,
+        Self::Competition,
+        Self::Temperature,
+        Self::Nitrogen,
+        Self::CarbonFlow,
     ];
 
     /// Legend data, or `None` for [`Lens::Off`].
     #[must_use]
+    #[allow(clippy::too_many_lines)] // One legend per lens.
     pub fn info(self) -> Option<LensInfo> {
         let info = match self {
             Self::Off => return None,
@@ -178,6 +191,54 @@ impl Lens {
                 explanation: "Leaves absorb red light and pass far-red, so the ratio falls under foliage. Below 0.7 (blue) new internodes stretch and new leaves thin out.",
                 origin: Origin::Encoded,
                 model_card: "docs/models/light.md",
+            },
+            Self::Competition => LensInfo {
+                name: "Competition",
+                colors: "Each whole plant",
+                quantity: "Light reaching its leaves, as a share of the open sky",
+                unit: "0 to 1",
+                min: 0.0,
+                max: 1.0,
+                scale: Scale::Sequential,
+                explanation: "1 means its leaves absorb as much light as an unshaded leaf would this hour. Dark plants are shaded by their neighbours and their own upper leaves; the inspector gives each plant's share of the light on its soil.",
+                origin: Origin::Emergent,
+                model_card: "docs/models/light.md",
+            },
+            Self::Temperature => LensInfo {
+                name: "Temperature",
+                colors: "Organs",
+                quantity: "Temperature the organ grew at this hour",
+                unit: "°C",
+                min: 5.0,
+                max: 40.0,
+                scale: Scale::Diverging { center: 25.0 },
+                explanation: "Shoots follow the air and roots the soil layer they sit in, so roots run cooler by day and warmer at night. White is 25 °C, near the bean's optimum; blue is cool and orange is hot.",
+                origin: Origin::Encoded,
+                model_card: "docs/models/thermal-time-and-phenology.md",
+            },
+            Self::Nitrogen => LensInfo {
+                name: "Nitrogen",
+                colors: "Organs",
+                quantity: "Nitrogen per structural dry mass",
+                unit: "g N per g",
+                min: 0.0,
+                max: 0.06,
+                scale: Scale::Sequential,
+                explanation: "Young leaves are rich in nitrogen and old or shaded ones give theirs up to growing organs and seeds. A plant short of nitrogen dims from the bottom up.",
+                origin: Origin::Emergent,
+                model_card: "docs/models/nitrogen.md",
+            },
+            Self::CarbonFlow => LensInfo {
+                name: "Carbon flow",
+                colors: "Organs, with arrows along the stems",
+                quantity: "Carbon moved in from the parent organ this hour",
+                unit: "mg C/h",
+                min: -1.0,
+                max: 1.0,
+                scale: Scale::Diverging { center: 0.0 },
+                explanation: "Orange organs import sugar through the phloem and blue ones export it; arrows point the way it moves, longer for more. Leaves in the sun export and growing tips, roots and pods import.",
+                origin: Origin::Emergent,
+                model_card: "docs/models/carbon-allocation.md",
             },
         };
         Some(info)

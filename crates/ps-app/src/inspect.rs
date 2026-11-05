@@ -67,12 +67,20 @@ pub fn inspect(src: Res<SimSource>, selection: Res<Selection>, mut inspector: Re
         organ(plant, i, src.day_start_hour(), fraction)
     } else {
         let row = snap.history.iter().rev().find(|r| r.plant == plant.id);
-        whole_plant(
+        let (title, mut fields, why) = whole_plant(
             plant,
             row,
             src.pot_label(picked.pot),
             src.soil_center(picked.pot),
-        )
+        );
+        let lens = snap
+            .lens
+            .as_deref()
+            .and_then(|l| l.plants.iter().find(|x| x.plant == plant.id));
+        if let Some(l) = lens {
+            fields.extend(competition(l));
+        }
+        (title, fields, why)
     };
     let actions = picked
         .organ
@@ -359,7 +367,7 @@ pub fn individual(p: &PlantEntry, soil_center: [f64; 2]) -> Vec<Field> {
                 (pos[0] - soil_center[0]) * 100.0,
                 (pos[1] - soil_center[1]) * 100.0
             ),
-            "cm E, N of center",
+            "cm E, N",
             VARIATION,
         ),
         Field::new(
@@ -384,6 +392,31 @@ pub fn individual(p: &PlantEntry, soil_center: [f64; 2]) -> Vec<Field> {
         ));
     }
     f
+}
+
+/// The plant's light this hour against the open sky and its neighbours (WP26).
+#[must_use]
+pub fn competition(l: &ps_session::PlantLens) -> Vec<Field> {
+    vec![
+        Field::new(
+            "Absorbed light (hour)",
+            format!("{:.0}", l.absorbed_par.0),
+            "µmol/m²/s per leaf area",
+            LIGHT,
+        ),
+        Field::new(
+            "Share of open sky",
+            format!("{:.2}", l.relative_light),
+            "0 to 1",
+            LIGHT,
+        ),
+        Field::new(
+            "Share of its soil's light",
+            format!("{:.0}", l.light_share * 100.0),
+            "% of all plants there",
+            LIGHT,
+        ),
+    ]
 }
 
 /// Title, fields and why line for the whole plant, from its latest daily row.
