@@ -515,6 +515,7 @@ impl Plant {
                     light: 0.0,
                     pre_anthesis,
                     min_ftsw: 1.0,
+                    pollen: None,
                 });
             }
             self.racemes[r] = rc;
@@ -560,6 +561,7 @@ impl Plant {
                     id,
                     seeds: false,
                     fertility: heat,
+                    pollen: f.pollen,
                 });
             }
         }

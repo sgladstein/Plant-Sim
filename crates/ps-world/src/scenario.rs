@@ -550,4 +550,15 @@ pub enum ActionKind {
         /// Nitrogen, g N per m² of surface (10 g m⁻² is 100 kg N ha⁻¹).
         g_per_m2: f64,
     },
+    /// Hand-pollinate an open flower with another plant's pollen (§2, WP29): every
+    /// seed of the flower's pod has `pollen` as its father. Flowers left alone self.
+    Pollinate {
+        /// Seed parent: the plant that carries the flower.
+        plant: u32,
+        /// Organ id of the open flower within that plant.
+        organ: u32,
+        /// Pollen parent: a plant with an open flower whose genome crosses with the
+        /// seed parent's.
+        pollen: u32,
+    },
 }

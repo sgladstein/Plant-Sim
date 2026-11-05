@@ -244,7 +244,7 @@ Emergent consequences this is designed to give: shaded lower leaves and branches
 - **Pods** expand over \~20 days to full length, then **seeds** fill over \~20 days as the strongest sinks; 3 to 6 seeds per pod; final seed mass is a species parameter reduced by unmet demand.
 - **Temperature on growth**: an expansion multiplier, zero at 5 °C, one from 25 to 30 °C, zero at 40 °C. Leaves die at -1 °C (frost preset). Heat waves abort flowers and raise respiration.
 - **Senescence**: leaf lifespan \~600 °C·day; leaves below 10% of full-sun absorbed PAR for 5 days senesce; during seed fill leaves senesce from the base upward at a rate tied to seed demand (encoded in M0; emergent via nitrogen remobilization in M2). Whole-plant senescence at maturity ends the annual's life.
-- **Pollination (M3)**: flowers self-pollinate by default. A hand-pollination action records a cross (pollen parent id) on the flower; its seeds then carry recombined genotypes (§3.12).
+- **Pollination (M3)**: flowers self-pollinate by default. A hand-pollination action records a cross (pollen parent id) on the flower; its seeds then carry recombined genotypes (§3.12; decision 0035).
 
 ### 3.12 Species, genotype and phenotype
 

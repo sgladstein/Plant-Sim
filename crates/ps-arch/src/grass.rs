@@ -490,6 +490,7 @@ impl Plant {
             id,
             seeds: false,
             fertility: 1.0,
+            pollen: None,
         });
         Ok(id)
     }

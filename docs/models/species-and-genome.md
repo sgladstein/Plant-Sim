@@ -27,9 +27,9 @@ both homologues, drawn through ps-rng (purpose `GenotypeSample`, four draws per 
 locus. `σ_l = CV_G · d_k / √n_k` over the trait's `n_k` loci, so the trait's genetic SD
 across founders is `CV_G · d_k`. The genotype is stored with the plant.
 
-### Meiosis, mutation and seed colour (decisions 0023 and 0031)
+### Meiosis, mutation and seed colour (decisions 0023, 0031 and 0035)
 `ps_species::genetics` and `ps_species::seed_colour` hold the breeding engine.
-Pollination and seed set (WP29) will call meiosis; the viewer and the genotype lens
+Pollination and seed set (WP29, below) call meiosis; the viewer and the genotype lens
 (WP31) will call the colour table.
 
 - **Linkage.** A locus may carry `chromosome` (1 to 11) and `position_cm`; without them
@@ -50,9 +50,11 @@ Pollination and seed set (WP29) will call meiosis; the viewer and the genotype l
   true. These rates are a game approximation (Houle 1996 frames mutational variance near
   1e-3 of the environmental variance, [K, to verify]).
 - **Seeds.** A seed's genotype is (egg, pollen): the egg from a meiosis of the mother,
-  the pollen from a meiosis of the pollen parent (the mother again when selfed).
-- **Keys.** A meiosis is keyed by (world seed, the seed's ovule entity, tick of
-  fertilization) and its side (egg or pollen). Recombination draws use purpose
+  the pollen from a meiosis of the pollen parent (the mother again when selfed), each
+  with its own species' map and rates (`Species::cross_genotype`).
+- **Keys.** A meiosis is keyed by (world seed, the seed's own organ entity
+  `(mother << 32) | organ`, the tick the seed organ was made at seed set) and its side
+  (egg or pollen). Recombination draws use purpose
   `Recombination` (code 10, reserved since WP1; it is decision 0023's "Meiosis"
   purpose) with a fixed block of draws per side and chromosome; mutation draws use
   `Mutation` with a fixed slot per side and locus. Decision 0023 keyed by plant id and
@@ -128,19 +130,39 @@ one radicle, unique names, order 0 for seed-borne types and order above 0 for la
 and a parent order for every lateral order. Specific root length follows from diameter
 and `root_density`.
 
+### Pollination and seed set (WP29, decision 0035)
+- Flowers self: each seed's father is its mother. Natural outcrossing is not modelled.
+- `Pollinate { plant, organ, pollen }` hand-pollinates an open flower with another
+  plant's pollen. The flower is taken as emasculated in time, and every seed of its pod
+  has `pollen` as father. Pod set follows the usual rule (no handling penalty).
+- Checks: the organ is a living open flower that is not yet crossed; the pollen plant
+  has an open flower that tick; the two species cross (`Species::can_cross`: the same
+  loci with the same trait, symbol, tier, chromosome and position, and the same
+  chromosome lengths). Bush and pole bean cross; bean and wheat do not.
+- A seed's genotype is fixed by its key and both parents, so it is computed when needed
+  (`World::seed_genotype` for a seed in its pod) and written to the seed lot at harvest
+  (`SeedLot::seed_genotypes`: organ, mother, father, genotype). Its species is its
+  mother's.
+- Seed size stays maternal: a seed fills to its mother's heritable `seed_mass`.
+
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
 | --- | --- | --- | --- |
 | in | species file | - | data/species/*.ron |
 | in | world seed, plant entity | - | scenario, world |
 | out | genotype, phenotype, typed `Traits` view (`Phenotype::traits`) | trait units | architecture, physiology |
+| in | hand-pollination (`ActionKind::Pollinate`) | - | player, scenario events |
+| out | seed parents and genotypes (`SeedLot::seed_genotypes`, `World::seed_genotype`) | - | seed library, inspector |
 
 ## Encoded or emergent
 Encoded: the mapping. Trade-offs between traits are not tabulated here; they arise from
 physiology (§3.12).
 
 ## Known limits
-- Meiosis is not yet called by the sim (WP29 adds pollination and seed set).
+- Pollination is selfing or one hand cross per flower: no pollinator outcrossing, pollen
+  competition or mixed paternity in a pod, and no handling penalty on a crossed flower's
+  pod set (decision 0035).
+- Seed size is the mother's heritable value; the embryo's own genotype does not change it.
 - No crossover interference. Only Pv01 and Pv09 have published lengths; the rest are 100 cM.
 - Most positions and every allele frequency are "~" placements; only Rk–B (28 cM),
   P–Phs (9 cM) and B–I (very tight) are published distances.
@@ -160,6 +182,12 @@ physiology (§3.12).
 - `ps_species::tests::every_parameter_has_unit_and_source`, `round_trip_through_ron`.
 - `ps_arch::tests::root_types_convert_to_model_units` (root type conversion).
 - `ps_species::genetics_tests::recombination_follows_the_map` (Haldane r at 10, 20, 100 cM; 0.5 unlinked and across chromosomes), `meiosis_is_keyed`, `adding_a_locus_keeps_other_draws`, `pure_lines_breed_true`, `habit_segregates_three_to_one` (bush × pole F2 is 3 : 1 climbing).
+- `ps_world` `a_cross_records_both_parents_in_each_seed` (WP29 done-when: every F1 seed
+  names mother and father and pairs their alleles at every locus; selfed seeds name the
+  mother twice; the run replays to the same hashes), `a_selfed_heterozygote_segregates_seed_by_seed`
+  (23 seeds, all distinct; all 32 heterozygous loci segregate), `pollination_is_checked`.
+- `ps_species::genetics_tests::crosses_need_one_genome_layout` (bush × pole cross, bean ×
+  wheat does not; the F1 is Fin fin and climbs).
 - `ps_species::genetics_tests::f2_variance_exceeds_f1` (WP28 done-when 2 on a 12-locus test genome), `two_tier_mutation`, `linkage_map_is_validated`, `optional_genome_keys_round_trip`.
 - `ps_species::genetics_tests::seed_colour_table_evaluates_in_layers`, `seed_colour_table_is_validated`, `expressed_reads_an_allelic_series`, `lines_and_frequencies_are_validated`.
 - `ps_species::genetics_tests::bean_seed_colour_table`: black (P C J G B V), dark brown violet, dark brown, yellow brown, dark red kidney, Prim yellow with a pink flower, grey-white, and the tt patterns (self, virgarcus, bipunctata, anasazi, sellatus) against the research rows.
