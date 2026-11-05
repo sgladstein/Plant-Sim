@@ -21,6 +21,12 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 11 Validation harness | #12 | not started |
 | 12 Tuning and lock | #13 | not started |
 
+## M1 groundwork (parallel to M0, viewer thread)
+| WP | State |
+| --- | --- |
+| 13 Lock the engine | in progress: Bevy 0.20.1 + bevy_egui 0.43 chosen (needs Rust 1.97.1, toolchain bumped) |
+| 14 Mesh generation (ps-mesh) | done (this PR); driven by `ps_mesh::demo` until ps-world snapshots exist |
+
 ## Last validation report
 None yet (WP11).
 
