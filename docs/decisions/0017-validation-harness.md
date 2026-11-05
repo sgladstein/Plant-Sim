@@ -54,5 +54,9 @@ failed on every miss would keep CI red until then.
 - A new reference value is a data change only, with no code change, unless it needs a
   new derived variable.
 - Python 3.12 and matplotlib are the only extra CI dependencies.
+- An M0 check that cannot be evaluated fails the build, and so does a known-miss entry
+  that names no M0 check (a typo, or a check since moved to Info).
+- Curves report a shape NRMSE beside the absolute one, as field curves are at stand
+  density.
 - Per-plant targets average over replicates. Stand-level targets (density, M2) will
   need a per-area aggregate.

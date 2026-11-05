@@ -3,8 +3,6 @@
 // miss fails it, and a listed target that starts passing is reported as "fixed" so it
 // can be removed. WP12 (tuning and lock) aims to empty this list.
 KnownMisses(misses: [
-  KnownMiss(id: "maturity_thermal_time_b10", until: "WP12",
-    why: "phenology runs fast in thermal time: flowering at 271 Cd (base 10) against about 430; the species thresholds need retuning"),
   KnownMiss(id: "drought_pods", until: "WP12",
     why: "pods fall 12% against 30 to 90%: pod set reads the daily FTSW minimum only, and the sink feedback hides the carbon shortfall"),
   KnownMiss(id: "shade_internode", until: "WP12",

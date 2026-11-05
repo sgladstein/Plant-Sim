@@ -114,12 +114,18 @@ Curve(
 | `Max` | The largest value over the run (peak leaf area, for example) |
 | `Stage(s)` | The first row whose `stage` is `s`; `s` is the Rust `Stage` enum: `Sown`, `Germinated`, `Emerged`, `FirstTrifoliate`, `Flowering`, `PodSet`, `SeedFill`, `Mature` |
 
+A scenario's plants are replicates: a value is the mean over the plants that have it, and at
+least half must have it (a pot that never matures, or a plant with no pods for
+`seeds_per_pod`, drops out; the report notes "mean of k of n plants"). An M0 check that
+cannot be evaluated fails the build like a miss.
+
 ### `expect` for targets and parameters
 
 | Variant | Passes when |
 | --- | --- |
 | `Range(min, max)` | `min <= value <= max` |
 | `Approx(value, rel_tol)` | `abs(sim - value) <= rel_tol * abs(value)` |
+| `LogisticR2(min_r2)` | A three-parameter logistic `K / (1 + exp(-r (day - t0)))` fitted to the variable's daily course (first plant, every day it is defined) has `R² >= min_r2` (plan §8.3 shape rule); `at` is ignored |
 
 ### `expect` for responses
 
@@ -158,6 +164,15 @@ weighed standing plants; each target's note says which and why.
 | `leaf_area_per_leaf_cm2` | `leaf_area_m2 * 1e4 / leaves` | cm² |
 | `leaf_share_new_veg`, `stem_share_new_veg`, `root_share_new_veg` | Share of new vegetative structure over the trailing 3 days: for leaf, `Δleaf_mass_g / (Δleaf_mass_g + Δstem_mass_g + Δroot_mass_g)` with `Δ` = value on day d minus day d-3. Undefined (skipped) when the denominator is not positive | g/g |
 | `mean_internode_cm` | Mean `length_m * 100` over live organs.csv rows with role `Stem` (end of run only, so `at: Final`) | cm |
+| `day` | The sim day (days after sowing); the x of a curve whose axis is `days_since_sowing` or `days_after_sowing` | d |
+| `day_of_<Stage>` or `day_of(<Stage>)` | The first day at or past the stage | d |
+| `height_cm` | `height_m * 100` | cm |
+| `leaf_area_cm2` | `leaf_area_m2 * 1e4` | cm² |
+| `harvest_index` | `seed_mass_g / (total_dry_mass_g - root_mass_g)` | g/g |
+
+A curve may name `scenario` (default `single_pot`). Its comparison reports NRMSE (RMSE over
+the mean observed value) and shape NRMSE (each series divided by its own maximum first),
+since field curves at stand density compare in shape and timing only.
 
 The thermal-time variables let a target keep the base temperature its paper used: a target in
 `thermal_time_cd_b10` is compared against a sum the harness builds on base 10 °C from the

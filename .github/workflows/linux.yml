@@ -53,8 +53,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: install matplotlib
-        run: pip install "matplotlib>=3.9"
+      - name: install the plot dependencies
+        run: pip install -r validation/requirements.txt
       - name: validate
         run: cargo run --release --locked -p ps-cli -- validate
       - name: plot report

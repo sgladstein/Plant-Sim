@@ -453,9 +453,16 @@ fn cmd_validate(a: &Args) -> Result<()> {
     std::fs::write(out.join("report.md"), &report)?;
     println!("{}", report.lines().nth(2).unwrap_or_default());
     let failing = print_misses(&outcomes, &known_path);
+    let stale = ps_validate::stale_known_misses(&known, &outcomes);
+    for s in &stale {
+        eprintln!("STALE {}: {s}", known_path.display());
+    }
     println!("report: {}", out.join("report.md").display());
     if failing > 0 {
-        bail!("{failing} validation targets missed");
+        bail!("{failing} M0 validation checks missed or not evaluated");
+    }
+    if !stale.is_empty() {
+        bail!("{} stale entries in {}", stale.len(), known_path.display());
     }
     Ok(())
 }

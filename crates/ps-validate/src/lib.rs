@@ -97,11 +97,11 @@ pub struct Outcome {
 }
 
 impl Outcome {
-    /// Whether this outcome fails the build: a miss on an M0 target that is not a known
-    /// miss.
+    /// Whether this outcome fails the build: a miss on an M0 check that is not a known
+    /// miss, or an M0 check that could not be evaluated.
     #[must_use]
     pub fn fails_build(&self) -> bool {
-        self.verdict == Verdict::Miss && self.gate == Gate::M0
+        matches!(self.verdict, Verdict::Miss | Verdict::NotEvaluated) && self.gate == Gate::M0
     }
 }
 
@@ -114,22 +114,84 @@ pub fn plant_rows(state: &WorldState, plant: u32) -> Vec<&DayRow> {
     state.history.iter().filter(|r| r.plant == plant).collect()
 }
 
+/// A replicate mean: the value and how many of the run's plants it averages.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Mean {
+    /// Mean over the plants that have the value.
+    pub value: f64,
+    /// Plants that have it.
+    pub used: usize,
+    /// Plants in the run.
+    pub total: usize,
+}
+
+impl Mean {
+    /// "k of n plants" when some replicates lack the value, else empty.
+    #[must_use]
+    pub fn note(&self) -> String {
+        if self.used < self.total {
+            format!("mean of {} of {} plants", self.used, self.total)
+        } else {
+            String::new()
+        }
+    }
+}
+
 /// The value of `variable` at `at` in a run, or why there is none: the mean over the
-/// run's plants, which a scenario uses as replicates (decision 0017).
+/// run's plants that have it, which a scenario uses as replicates (decision 0017). A
+/// replicate can lack a value (a pot that never matures, a plant with no pods for
+/// seeds per pod); at least half the plants must have it.
 ///
 /// # Errors
-/// A sentence saying why the value is not available for some plant.
+/// A sentence saying why the value is not available.
 pub fn value(state: &WorldState, variable: &str, at: &At) -> Result<f64, String> {
+    replicate_mean(state, variable, at).map(|m| m.value)
+}
+
+/// [`value`] with the count of plants it averages.
+///
+/// # Errors
+/// As [`value`].
+pub fn replicate_mean(state: &WorldState, variable: &str, at: &At) -> Result<Mean, String> {
     let ids: Vec<u32> = state.plants.iter().map(|p| p.id).collect();
     if ids.is_empty() {
         return Err("the run has no plants".into());
     }
-    let mut sum = 0.0;
+    let mut values = Vec::with_capacity(ids.len());
+    let mut first_error = None;
     for &id in &ids {
-        sum += plant_value(state, id, variable, at)?;
+        match plant_value(state, id, variable, at) {
+            Ok(v) => values.push(v),
+            // An unknown name is the same for every plant: report it at once.
+            Err(e) if e.starts_with("unknown") => return Err(e),
+            Err(e) => {
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+    if values.is_empty() || 2 * values.len() < ids.len() {
+        let why = first_error.unwrap_or_default();
+        return Err(format!(
+            "{why} ({} of {} plants have a value; at least half are needed)",
+            values.len(),
+            ids.len()
+        ));
     }
     #[allow(clippy::cast_precision_loss)] // a handful of plants
-    Ok(sum / ids.len() as f64)
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    Ok(Mean {
+        value: mean,
+        used: values.len(),
+        total: ids.len(),
+    })
+}
+
+fn with_note(note: &str, extra: &str) -> String {
+    match (note.is_empty(), extra.is_empty()) {
+        (_, true) => note.to_string(),
+        (true, false) => extra.to_string(),
+        (false, false) => format!("{extra}. {note}"),
+    }
 }
 
 /// The value of `variable` at `at` for one plant.
@@ -179,6 +241,23 @@ pub fn plant_value(state: &WorldState, plant: u32, variable: &str, at: &At) -> R
             best.ok_or_else(|| format!("{variable} has no finite value"))
         }
     }
+}
+
+/// Known-miss entries that match no M0 check: a typo, a removed check or one that is no
+/// longer gated. Each is a sentence; the build fails on any.
+#[must_use]
+pub fn stale_known_misses(known: &KnownMisses, outcomes: &[Outcome]) -> Vec<String> {
+    known
+        .misses
+        .iter()
+        .filter_map(|k| match outcomes.iter().find(|o| o.id == k.id) {
+            None => Some(format!("{} matches no check", k.id)),
+            Some(o) if o.gate != Gate::M0 => {
+                Some(format!("{} is gated {:?}, not M0; remove it", k.id, o.gate))
+            }
+            Some(_) => None,
+        })
+        .collect()
 }
 
 fn known(known: &KnownMisses, id: &str) -> Option<String> {
@@ -246,7 +325,10 @@ pub fn evaluate_targets(file: &TargetFile, runs: &Runs, known: &KnownMisses) -> 
             let got = if let Expect::LogisticR2 { .. } = t.expect {
                 logistic::series(state, "day", &t.variable).map(|(x, y)| logistic::fit(&x, &y).r2)
             } else {
-                value(state, &t.variable, &t.at)
+                replicate_mean(state, &t.variable, &t.at).map(|m| {
+                    note = with_note(&note, &m.note());
+                    m.value
+                })
             };
             match got {
                 Ok(v) => {
@@ -290,13 +372,19 @@ pub fn evaluate_responses(file: &ResponseFile, runs: &Runs, known: &KnownMisses)
             let (Some(t), Some(b)) = (runs.get(&r.scenario), runs.get(&r.baseline)) else {
                 return base(None, Verdict::NotEvaluated, "a scenario has no run".into());
             };
-            let change = |var: &str| -> Result<f64, String> {
-                let vt = value(t, var, &r.at)?;
-                let vb = value(b, var, &r.at)?;
-                if vb == 0.0 {
+            let mut counts = String::new();
+            let mut change = |var: &str| -> Result<f64, String> {
+                let mt = replicate_mean(t, var, &r.at)?;
+                let mb = replicate_mean(b, var, &r.at)?;
+                for (m, which) in [(mt, "treatment"), (mb, "baseline")] {
+                    if !m.note().is_empty() {
+                        counts = with_note(&counts, &format!("{which} {var}: {}", m.note()));
+                    }
+                }
+                if mb.value == 0.0 {
                     return Err(format!("{var} is zero in the baseline"));
                 }
-                Ok((vt - vb) / vb.abs())
+                Ok((mt.value - mb.value) / mb.value.abs())
             };
             let got = match change(&r.variable) {
                 Ok(c) => c,
@@ -310,6 +398,7 @@ pub fn evaluate_responses(file: &ResponseFile, runs: &Runs, known: &KnownMisses)
             } else {
                 r.expect.holds(got)
             };
+            note = with_note(&note, &counts);
             let verdict = settle(pass, &r.id, known, &mut note);
             base(Some(got), verdict, note)
         })
@@ -374,6 +463,10 @@ pub struct CurveComparison {
     pub sim: Vec<Option<f64>>,
     /// RMSE over the points with a sim value, divided by the mean observed value.
     pub nrmse: Option<f64>,
+    /// The same with each series first divided by its own maximum: the shape alone.
+    /// Field curves are at stand density, so a lone pot plant is larger and only the
+    /// shape and timing compare (decision 0017).
+    pub shape_nrmse: Option<f64>,
     /// Why there is no comparison, if there is none.
     pub note: String,
 }
@@ -392,6 +485,7 @@ pub fn compare_curves(curves: &[Curve], runs: &Runs) -> Vec<CurveComparison> {
                     curve: c.clone(),
                     sim: vec![None; c.points.len()],
                     nrmse: None,
+                    shape_nrmse: None,
                     note: format!("no run for scenario {scenario}"),
                 };
             };
@@ -415,26 +509,43 @@ pub fn compare_curves(curves: &[Curve], runs: &Runs) -> Vec<CurveComparison> {
                 .zip(&sim)
                 .filter_map(|(p, s)| s.map(|s| (p.y, s)))
                 .collect();
-            #[allow(clippy::cast_precision_loss)] // point counts are small
-            let nrmse = if pairs.is_empty() {
-                None
+            let peak = |f: fn(&(f64, f64)) -> f64| {
+                pairs.iter().map(f).fold(0.0_f64, |a, v| a.max(v.abs()))
+            };
+            let (obs_max, sim_max) = (peak(|p| p.0), peak(|p| p.1));
+            let shape: Vec<(f64, f64)> = if obs_max > 0.0 && sim_max > 0.0 {
+                pairs
+                    .iter()
+                    .map(|p| (p.0 / obs_max, p.1 / sim_max))
+                    .collect()
             } else {
-                let n = pairs.len() as f64;
-                let mean = pairs.iter().map(|p| p.0).sum::<f64>() / n;
-                let mse = pairs.iter().map(|p| (p.1 - p.0) * (p.1 - p.0)).sum::<f64>() / n;
-                (mean != 0.0).then(|| libm::sqrt(mse) / mean.abs())
+                Vec::new()
             };
             CurveComparison {
                 curve: c.clone(),
                 sim,
-                nrmse,
+                nrmse: nrmse_of(&pairs),
+                shape_nrmse: nrmse_of(&shape),
                 note,
             }
         })
         .collect()
 }
 
+/// RMSE of `(observed, sim)` pairs over the mean observed value.
+fn nrmse_of(pairs: &[(f64, f64)]) -> Option<f64> {
+    if pairs.is_empty() {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)] // point counts are small
+    let n = pairs.len() as f64;
+    let mean = pairs.iter().map(|p| p.0).sum::<f64>() / n;
+    let mse = pairs.iter().map(|p| (p.1 - p.0) * (p.1 - p.0)).sum::<f64>() / n;
+    (mean != 0.0).then(|| libm::sqrt(mse) / mean.abs())
+}
+
 fn interpolate(x: &[f64], y: &[f64], at: f64) -> Option<f64> {
+    debug_assert!(x.windows(2).all(|w| w[0] <= w[1]), "x must ascend");
     let i = x.iter().position(|&v| v >= at)?;
     if i == 0 {
         return ((x[0] - at).abs() < 1e-9).then_some(y[0]);
@@ -548,16 +659,17 @@ pub fn report_markdown(outcomes: &[Outcome], curves: &[CurveComparison]) -> Stri
         s.push('\n');
     }
     if !curves.is_empty() {
-        s.push_str("## Curves (information)\n\n| Curve | Variable | Points | NRMSE | Note |\n| --- | --- | --- | --- | --- |\n");
+        s.push_str("## Curves (information)\n\nShape NRMSE divides each series by its own maximum first: field curves are at stand density, so a lone pot plant is larger and only shape and timing compare.\n\n| Curve | Variable | Points | NRMSE | Shape NRMSE | Note |\n| --- | --- | --- | --- | --- | --- |\n");
+        let pct = |v: Option<f64>| v.map_or_else(|| "-".into(), |v| format!("{:.0}%", v * 100.0));
         for c in curves {
             let _ = writeln!(
                 s,
-                "| {} | {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {} | {} |",
                 c.curve.id,
                 c.curve.y.variable,
                 c.curve.points.len(),
-                c.nrmse
-                    .map_or_else(|| "-".into(), |v| format!("{:.0}%", v * 100.0)),
+                pct(c.nrmse),
+                pct(c.shape_nrmse),
                 c.note
             );
         }
@@ -595,5 +707,36 @@ mod tests {
         for title in ["## Targets", "## Responses", "## Parameters"] {
             assert_eq!(md.matches(title).count(), 1, "{title} in\n{md}");
         }
+    }
+
+    #[test]
+    fn known_misses_must_name_an_m0_check() {
+        let mut gated = outcome("target");
+        gated.gate = Gate::M0;
+        let info = Outcome {
+            id: "info_1".into(),
+            ..outcome("target")
+        };
+        let entry = |id: &str| files::KnownMiss {
+            id: id.into(),
+            until: "WP12".into(),
+            why: String::new(),
+        };
+        let known = KnownMisses {
+            misses: vec![entry("target_1"), entry("info_1"), entry("typo")],
+        };
+        let stale = stale_known_misses(&known, &[gated, info]);
+        assert_eq!(stale.len(), 2, "{stale:?}");
+        assert!(stale[0].contains("info_1") && stale[1].contains("typo"));
+    }
+
+    #[test]
+    fn an_unevaluated_m0_check_fails_the_build() {
+        let mut o = outcome("target");
+        o.gate = Gate::M0;
+        o.verdict = Verdict::NotEvaluated;
+        assert!(o.fails_build());
+        o.gate = Gate::Info;
+        assert!(!o.fails_build());
     }
 }
