@@ -1,0 +1,22 @@
+[package]
+name = "ps-cli"
+description = "Headless runner: run, hash, bench, replay and validate scenarios"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ps-cli"
+path = "src/main.rs"
+
+[dependencies]
+ps-world.workspace = true
+ps-export.workspace = true
+anyhow.workspace = true
+tracing-subscriber.workspace = true
+ron.workspace = true
+
+[lints]
+workspace = true

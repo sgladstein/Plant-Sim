@@ -16,9 +16,9 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 6 Light | #7 | done (PRs #17, #18); owner accepted 95% of leaves within 10% for M0, re-check in WP12 (decision 0008) |
 | 7 Physiology | #8 | done (PR #20) |
 | 8 Herb architecture and roots | #9 | done (PR #27; decision 0013) |
-| 9 World | #10 | done (this PR; decision 0014) |
-| 10 Export and CLI | #11 | next |
-| 11 Validation harness | #12 | not started |
+| 9 World | #10 | done (PR #29; decision 0014) |
+| 10 Export and CLI | #11 | done (this PR; decision 0015, docs/cli.md) |
+| 11 Validation harness | #12 | next; reference data in data/validation/ from the reference-data thread |
 | 12 Tuning and lock | #13 | not started |
 
 ## M1 groundwork (parallel to M0, viewer thread)
@@ -50,7 +50,9 @@ None yet (WP11).
 
 ## Notes for the next session
 - WP9 (decision 0014, model card world-and-schedule): `ps_world::World` steps scenarios from `data/scenarios/`, keeps the action log, writes RON snapshots and a full-state hash per day. For the viewer: `WorldState.plants[i].plant` carries `positions` (base, tip per organ, soil-grid frame) and `meta` (role, attach, multiplicity); `World::snapshot_ron`/`from_snapshot_ron` round-trip bit for bit.
-- WP10: golden hash files under `tests/golden/<platform>/` are not committed yet; the CLI should print them, and the Windows file has to come from a Windows run (CI job or the owner).
+- WP10: golden hashes for linux-x86_64 are committed; the windows-x86_64 file comes from the first CI run of `ps-cli hash --check-golden`, which prints hashes when a platform has no file.
+- WP11/WP12, first response runs (decision 0015): heat at flowering cuts seed weight by 21% (cited 50 to 71%), drought from flowering by 19%, shade 50% cuts total mass by 35% but pods rise and root mass falls sixfold.
+- WP16 (sim thread) runs in its own thread; the viewer thread does the viewer side.
 - WP12: regenerate the light ray tracer fixture from a sim-exported 60-day plant and re-run `single_plant_matches_ray_tracer`; tighten its bounds if every leaf passes (decision 0008).
 - Local checks: see CLAUDE.md "Session start".
 - `cargo nextest` runs in CI; locally `cargo test --workspace` is equivalent.

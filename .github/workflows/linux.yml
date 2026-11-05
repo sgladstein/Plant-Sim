@@ -31,6 +31,8 @@ jobs:
         run: cargo nextest run --workspace --locked --no-tests=warn
       - name: doc tests
         run: cargo test --workspace --doc --locked
+      - name: golden hashes
+        run: cargo run --locked -p ps-cli -- hash data/scenarios/single_pot.ron data/scenarios/two_pot_sun_shade.ron --check-golden tests/golden
       - name: dependency rules
         run: python3 scripts/check_deps.py
       - name: determinism lint

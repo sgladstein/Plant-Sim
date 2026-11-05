@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use ps_soil::Texture;
+use ps_weather::presets::HeatWave;
 use serde::{Deserialize, Serialize};
 
 use crate::WorldError;
@@ -136,6 +137,14 @@ pub struct Scenario {
     pub sowings: Vec<Sowing>,
     /// Length of the run, days.
     pub duration_days: u32,
+    /// A hot spell replacing the preset's own (preset weather only).
+    #[serde(default)]
+    pub heat_wave: Option<HeatWave>,
+    /// Scripted treatments, part of the scenario rather than the player's log (a
+    /// drought from a set day, a shade cloth taken off). Sorted by tick; applied before
+    /// log actions of the same tick.
+    #[serde(default)]
+    pub events: Vec<Action>,
 }
 
 impl Scenario {
@@ -165,8 +174,12 @@ impl Scenario {
         if !(-90.0..=90.0).contains(&self.latitude_deg) {
             return bad(format!("latitude {} out of range", self.latitude_deg));
         }
-        if self.start.hour > 23 {
-            return bad(format!("start hour {} out of range", self.start.hour));
+        let st = self.start;
+        if ps_weather::DateHour::new(st.year, st.month, st.day, st.hour).is_none() {
+            return bad(format!(
+                "start {}-{:02}-{:02} hour {} is not a valid date and hour",
+                st.year, st.month, st.day, st.hour
+            ));
         }
         let ids: Vec<u32> = self.soils.iter().map(SoilSpec::id).collect();
         for (i, id) in ids.iter().enumerate() {
@@ -205,6 +218,17 @@ impl Scenario {
         }
         if !(self.co2_ppm.is_finite() && self.co2_ppm > 0.0) {
             return bad(format!("CO2 {} ppm", self.co2_ppm));
+        }
+        if let Some(hw) = &self.heat_wave {
+            if !matches!(self.weather, WeatherSource::Preset(_)) {
+                return bad("a heat wave needs preset weather".into());
+            }
+            if !(hw.t_min_c.is_finite() && hw.t_max_c.is_finite() && hw.t_min_c <= hw.t_max_c) {
+                return bad(format!("heat wave {} to {} °C", hw.t_min_c, hw.t_max_c));
+            }
+        }
+        if self.events.windows(2).any(|w| w[1].tick < w[0].tick) {
+            return bad("events must be sorted by tick".into());
         }
         Ok(())
     }

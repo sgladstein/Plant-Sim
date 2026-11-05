@@ -81,7 +81,8 @@ pub fn is_expanding_kind(kind: OrganKind) -> bool {
 }
 
 /// Carbon flows of one plant since the ledger started. The balance closes when
-/// `stock now = start + added + income − maintenance − growth respiration − litter`.
+/// `stock now = start + added + income − maintenance − growth respiration − litter −
+/// removed`.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CarbonLedger {
     /// Stock (reserves plus structural carbon of living organs) when the ledger started.
@@ -96,6 +97,9 @@ pub struct CarbonLedger {
     pub growth_respiration: GramsC,
     /// Carbon shed with dead organs.
     pub litter: GramsC,
+    /// Carbon cut off and taken away (pruning, harvest).
+    #[serde(default)]
+    pub removed: GramsC,
 }
 
 impl CarbonLedger {
@@ -115,7 +119,8 @@ impl CarbonLedger {
             self.start.0 + self.added.0 + self.income.0
                 - self.maintenance.0
                 - self.growth_respiration.0
-                - self.litter.0,
+                - self.litter.0
+                - self.removed.0,
         )
     }
 
@@ -131,6 +136,7 @@ impl CarbonLedger {
             self.maintenance.0,
             self.growth_respiration.0,
             self.litter.0.abs(),
+            self.removed.0.abs(),
             1e-12,
         ]
         .into_iter()
@@ -470,6 +476,30 @@ pub fn shed(
         });
     }
     Ok(deaths)
+}
+
+/// Cuts `root` and everything it carries off the plant (pruning, harvest). Unlike
+/// [`shed`], nothing is resorbed: each organ's structure and reserve leave with the
+/// gardener (ledger `removed`), and a negative reserve leaves with its organ instead of
+/// being charged to the ancestor. Returns the carbon removed.
+///
+/// # Errors
+/// A [`GraphError`] if `root` is dead or missing.
+pub fn cut(
+    arena: &mut OrganArena,
+    p: &CarbonParams,
+    root: OrganId,
+    now: Hours,
+    ledger: &mut CarbonLedger,
+) -> Result<GramsC, GraphError> {
+    let killed = arena.kill_subtree(root, now)?;
+    let mut total = GramsC(0.0);
+    for (id, mass) in killed {
+        total += mass.to_carbon(p.carbon_fraction) + arena.reserve[id.index()];
+        arena.reserve[id.index()] = GramsC(0.0);
+    }
+    ledger.removed += total;
+    Ok(total)
 }
 
 /// Daily step 4, starvation part (§3.9 step 6): organs whose reserve has been negative

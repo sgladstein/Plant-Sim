@@ -154,10 +154,31 @@ pub struct PlantEntry {
 /// One daily summary row (§3.2 daily step 7).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DayRow {
+    /// Sim day (0 = the scenario's first day).
+    pub day: u32,
     /// Plant id.
     pub plant: u32,
     /// The plant's report.
     pub report: DayReport,
+    /// The day's weather and soil as this plant met them.
+    pub env: DayEnv,
+}
+
+/// The day's weather and soil water around one plant, for the daily table.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DayEnv {
+    /// Lowest hourly air temperature, °C.
+    pub t_min_c: f64,
+    /// Highest hourly air temperature, °C.
+    pub t_max_c: f64,
+    /// Global radiation reaching the plant's soil (after shade cloth), MJ m⁻².
+    pub radiation_mj: f64,
+    /// Rain, mm.
+    pub rain_mm: f64,
+    /// Root-weighted fraction of transpirable soil water at the end of the day.
+    pub ftsw: f64,
+    /// Water in the plant's soil, kg.
+    pub soil_water_kg: f64,
 }
 
 /// The world's complete state: what snapshots store and the hash covers.
@@ -179,6 +200,8 @@ pub struct WorldState {
     pub log: Vec<Action>,
     /// Actions in the log already applied.
     pub applied: usize,
+    /// Scenario events already applied.
+    pub scripted: usize,
     /// Daily rows, in day then plant order.
     pub history: Vec<DayRow>,
     /// Full-state hash after each daily step.
@@ -247,7 +270,13 @@ fn weather_for(s: &Scenario, c: &Catalog) -> Result<WeatherSeries, WorldError> {
         WeatherSource::Preset(name) => {
             let p = Preset::from_name(name)
                 .ok_or_else(|| WorldError::Weather(format!("unknown preset {name:?}")))?;
-            Ok(ps_weather::preset_series(p, lat, start, days, s.world_seed))
+            let mut params = p.params();
+            if s.heat_wave.is_some() {
+                params.heat_wave = s.heat_wave;
+            }
+            let daily =
+                ps_weather::presets::generate_daily(&params, lat, start, days + 1, s.world_seed);
+            Ok(WeatherSeries::from_daily(lat, start, daily))
         }
         WeatherSource::File(f) | WeatherSource::DailyFile(f) => {
             let text = c
@@ -299,6 +328,13 @@ impl World {
     /// Any [`WorldError`] for an inconsistent scenario or catalog.
     pub fn new(scenario: Scenario, catalog: Catalog) -> Result<Self, WorldError> {
         scenario.validate()?;
+        if scenario.model_version != MODEL_VERSION {
+            tracing::warn!(
+                scenario = %scenario.model_version,
+                build = MODEL_VERSION,
+                "the scenario was written for another model version; results may differ"
+            );
+        }
         let weather = weather_for(&scenario, &catalog)?;
         let mut soils = Vec::new();
         for spec in &scenario.soils {
@@ -327,6 +363,7 @@ impl World {
                 plants: Vec::new(),
                 log: Vec::new(),
                 applied: 0,
+                scripted: 0,
                 history: Vec::new(),
                 hashes: Vec::new(),
                 hashed_log: 0,
@@ -345,6 +382,13 @@ impl World {
     /// # Errors
     /// [`WorldError::Weather`] if the weather cannot be rebuilt.
     pub fn from_state(state: WorldState) -> Result<Self, WorldError> {
+        if state.model_version != MODEL_VERSION {
+            tracing::warn!(
+                saved = %state.model_version,
+                build = MODEL_VERSION,
+                "the save comes from another model version; it will not continue bit for bit"
+            );
+        }
         let weather = weather_for(&state.scenario, &state.catalog)?;
         Ok(Self { state, weather })
     }
@@ -418,7 +462,55 @@ impl World {
     /// [`WorldError::Action`] if the action is invalid.
     pub fn apply(&mut self, kind: ActionKind) -> Result<(), WorldError> {
         let tick = self.state.tick;
+        self.check(tick, &kind, true)?;
         self.schedule(Action { tick, kind })
+    }
+
+    /// Checks an action against the world now; `now` adds the checks that need the
+    /// current state (a pruned organ must exist and be alive). Rejected actions never
+    /// reach the log.
+    fn check(&self, tick: u64, kind: &ActionKind, now: bool) -> Result<(), WorldError> {
+        let err = |why: String| Err(WorldError::Action { tick, why });
+        let soil_known = |soil: u32| self.soil_index(soil).is_some();
+        match kind {
+            ActionKind::Sow(s) => {
+                if !soil_known(s.soil) {
+                    return err(format!("unknown soil {}", s.soil));
+                }
+            }
+            ActionKind::Water { soil, mm } => {
+                if !soil_known(*soil) {
+                    return err(format!("unknown soil {soil}"));
+                }
+                if !(mm.is_finite() && *mm >= 0.0) {
+                    return err(format!("water {mm} mm"));
+                }
+            }
+            ActionKind::SetRadiationFraction { soil, fraction } => {
+                if !soil_known(*soil) {
+                    return err(format!("unknown soil {soil}"));
+                }
+                if !(0.0..=1.0).contains(fraction) {
+                    return err(format!("radiation fraction {fraction}"));
+                }
+            }
+            ActionKind::SetIrrigation { soil, .. } => {
+                if !soil_known(*soil) {
+                    return err(format!("unknown soil {soil}"));
+                }
+            }
+            ActionKind::Prune { plant, organ } => {
+                if now {
+                    let Some(p) = self.state.plants.get(*plant as usize) else {
+                        return err(format!("unknown plant {plant}"));
+                    };
+                    if let Err(e) = p.plant.check_prune(ps_graph::OrganId(*organ)) {
+                        return err(e.to_string());
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Adds an action to the log for a current or future tick.
@@ -432,6 +524,7 @@ impl World {
                 why: format!("tick is before the world's tick {}", self.state.tick),
             });
         }
+        self.check(a.tick, &a.kind, false)?;
         // Keep the log sorted by tick, stable for equal ticks.
         let at = self.state.log.partition_point(|x| x.tick <= a.tick);
         self.state.log.insert(at.max(self.state.applied), a);
@@ -527,48 +620,61 @@ impl World {
     }
 
     fn apply_due(&mut self) -> Result<(), WorldError> {
+        let now = self.state.tick;
+        while let Some(a) = self.state.scenario.events.get(self.state.scripted).cloned() {
+            if a.tick > now {
+                break;
+            }
+            self.state.scripted += 1;
+            self.apply_kind(a.tick, a.kind)?;
+        }
         while let Some(a) = self.state.log.get(self.state.applied).cloned() {
-            if a.tick > self.state.tick {
+            if a.tick > now {
                 break;
             }
             self.state.applied += 1;
-            let err = |why: String| WorldError::Action { tick: a.tick, why };
-            match a.kind {
-                ActionKind::Sow(s) => self.sow(&s)?,
-                ActionKind::Water { soil, mm } => {
-                    let i = self
-                        .soil_index(soil)
-                        .ok_or_else(|| err(format!("unknown soil {soil}")))?;
-                    if !(mm.is_finite() && mm >= 0.0) {
-                        return Err(err(format!("water {mm} mm")));
-                    }
-                    self.state.soils[i].pending_mm += mm;
+            self.apply_kind(a.tick, a.kind)?;
+        }
+        Ok(())
+    }
+
+    fn apply_kind(&mut self, tick: u64, kind: ActionKind) -> Result<(), WorldError> {
+        let err = |why: String| WorldError::Action { tick, why };
+        match kind {
+            ActionKind::Sow(s) => self.sow(&s)?,
+            ActionKind::Water { soil, mm } => {
+                let i = self
+                    .soil_index(soil)
+                    .ok_or_else(|| err(format!("unknown soil {soil}")))?;
+                if !(mm.is_finite() && mm >= 0.0) {
+                    return Err(err(format!("water {mm} mm")));
                 }
-                ActionKind::SetRadiationFraction { soil, fraction } => {
-                    let i = self
-                        .soil_index(soil)
-                        .ok_or_else(|| err(format!("unknown soil {soil}")))?;
-                    if !(0.0..=1.0).contains(&fraction) {
-                        return Err(err(format!("radiation fraction {fraction}")));
-                    }
-                    self.state.soils[i].radiation_fraction = fraction;
+                self.state.soils[i].pending_mm += mm;
+            }
+            ActionKind::SetRadiationFraction { soil, fraction } => {
+                let i = self
+                    .soil_index(soil)
+                    .ok_or_else(|| err(format!("unknown soil {soil}")))?;
+                if !(0.0..=1.0).contains(&fraction) {
+                    return Err(err(format!("radiation fraction {fraction}")));
                 }
-                ActionKind::SetIrrigation { soil, irrigation } => {
-                    let i = self
-                        .soil_index(soil)
-                        .ok_or_else(|| err(format!("unknown soil {soil}")))?;
-                    self.state.soils[i].irrigation = irrigation;
-                }
-                ActionKind::Prune { plant, organ } => {
-                    let p = self
-                        .state
-                        .plants
-                        .get_mut(plant as usize)
-                        .ok_or_else(|| err(format!("unknown plant {plant}")))?;
-                    p.plant
-                        .prune(ps_graph::OrganId(organ), Hours(a.tick))
-                        .map_err(|e| err(e.to_string()))?;
-                }
+                self.state.soils[i].radiation_fraction = fraction;
+            }
+            ActionKind::SetIrrigation { soil, irrigation } => {
+                let i = self
+                    .soil_index(soil)
+                    .ok_or_else(|| err(format!("unknown soil {soil}")))?;
+                self.state.soils[i].irrigation = irrigation;
+            }
+            ActionKind::Prune { plant, organ } => {
+                let p = self
+                    .state
+                    .plants
+                    .get_mut(plant as usize)
+                    .ok_or_else(|| err(format!("unknown plant {plant}")))?;
+                p.plant
+                    .prune(ps_graph::OrganId(organ), Hours(tick))
+                    .map_err(|e| err(e.to_string()))?;
             }
         }
         Ok(())
@@ -697,13 +803,47 @@ impl World {
     /// The daily step (§3.2) for every plant, then the day's rows and hash.
     fn step_day(&mut self) -> Result<(), WorldError> {
         let now = self.state.tick;
+        let day = u32::try_from(self.state.hashes.len()).unwrap_or(u32::MAX);
         let path = self.sun_path(now);
+        let (mut t_min, mut t_max, mut global, mut rain) = (f64::MAX, f64::MIN, 0.0, 0.0);
+        for t in now.saturating_sub(24)..now {
+            if let Some(h) = self.weather.at(Hours(t)) {
+                t_min = t_min.min(h.t_air.0);
+                t_max = t_max.max(h.t_air.0);
+                global += h.global.0 * 3600.0 * 1e-6;
+                rain += h.rain.0;
+            }
+        }
         for p in 0..self.state.plants.len() {
             let si = self.state.plants[p].soil;
-            let soil = &self.state.soils[si].grid;
+            let entry = &self.state.soils[si];
+            let soil = &entry.grid;
             let report = self.state.plants[p].plant.day(soil, &path, Hours(now))?;
+            let roots = &self.state.plants[p].plant.roots;
+            let ftsw = if roots.cells().is_empty() {
+                // No roots yet: the mean over the soil's cells.
+                let active: Vec<usize> = (0..soil.len()).filter(|&i| soil.is_active(i)).collect();
+                #[allow(clippy::cast_precision_loss)] // cell counts are far below 2^52
+                let n = active.len().max(1) as f64;
+                active.iter().map(|&i| soil.cell_ftsw(i)).sum::<f64>() / n
+            } else {
+                soil.ftsw(roots)?
+            };
+            let env = DayEnv {
+                t_min_c: t_min,
+                t_max_c: t_max,
+                radiation_mj: global * entry.radiation_fraction,
+                rain_mm: rain,
+                ftsw,
+                soil_water_kg: soil.total_water().0,
+            };
             let plant = self.state.plants[p].id;
-            self.state.history.push(DayRow { plant, report });
+            self.state.history.push(DayRow {
+                day,
+                plant,
+                report,
+                env,
+            });
         }
         // 7. Output: the chained daily hash.
         let h = self.state.day_hash();

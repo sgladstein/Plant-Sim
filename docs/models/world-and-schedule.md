@@ -36,13 +36,15 @@ replayed exactly.
 | --- | --- | --- | --- |
 | in | scenario | RON | data/scenarios |
 | in | species files, weather file | RON, CSV | data/ (kept in the catalog) |
+| in | scenario events, heat wave | tick, kind; °C | the scenario's treatments (decision 0015) |
 | in | actions | tick, kind | player, scripts, replay |
-| out | daily rows per plant | - | CSV export (WP10) |
+| out | daily rows per plant, with the day's weather and soil water | - | `ps-export` CSV (decision 0015) |
 | out | full-state hash per day | u64 | golden tests |
 | out | snapshot | RON | saves, the viewer (WP16) |
 
 ## Encoded or emergent
-Encoded: the step order, the watering rule, shade as a radiation multiplier.
+Encoded: the step order, the watering rule, shade as a radiation multiplier, and
+pruning as a cut whose carbon leaves the plant.
 Emergent: plants in one pot compete for water through the joint uptake; nothing else
 couples them in M0.
 
@@ -50,7 +52,10 @@ couples them in M0.
 - Plants in different pots, or in the same pot, do not shade each other yet (M1 merges
   light grids of overlapping pots).
 - No elevation, wind or soil nitrogen.
-- Snapshots are RON text, a few hundred kilobytes for one plant at day 90.
+- Snapshots are RON text, about 740 KB for one plant at day 90.
+- The scenario is part of the hash: a shorter run of the same scenario has different
+  daily hashes from the start.
+- Treatments start at fixed ticks, not at a stage.
 
 ## Validation
 - `ps_world::tests` in `crates/ps-world/tests/determinism.rs`:
@@ -59,6 +64,10 @@ couples them in M0.
   `replay_of_the_action_log_matches_the_session` (§11.5 checklist),
   `actions_in_the_past_are_rejected`, `shade_cloth_slows_the_shaded_plant`.
 - `ps_world::hash::tests::*`: bit-pattern hashing and shape tags.
+- `pruning_removes_carbon_and_refuses_the_hypocotyl`, `scenario_events_and_heat_waves_apply`,
+  `invalid_start_dates_are_rejected`.
+- Golden daily hashes: `tests/golden/<os>-<arch>/`, checked in CI with
+  `ps-cli hash --check-golden tests/golden`.
 
 ## References
 - Vigna, S. (2014). splitmix64 (public domain reference implementation).

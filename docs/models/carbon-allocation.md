@@ -54,8 +54,11 @@ reserve `R` (g C), structure `W` (g DM) and concentration `C = R / max(W, 1e-6)`
    to its parent; only structure is split into resorbed and litter (decision 0013).
    Starvation is not checked after maturity, when tissue is dry and no longer
    respires (organ nitrogen is set to zero, so maintenance is zero).
+   A cut (pruning; harvest later) goes through `allocation::cut` instead: nothing is
+   resorbed, and each cut organ's structure and reserve (a debt included) leave the
+   plant as `removed` (WP10, WP9 review).
 8. Ledger: `stock = Σ_living (R + 0.45 W)` must equal
-   `start + added + income − maintenance − growth respiration − litter`; debug builds
+   `start + added + income − maintenance − growth respiration − litter − removed`; debug builds
    assert it every hour at 1e-9 relative.
 
 ## Parameters

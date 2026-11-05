@@ -21,6 +21,7 @@ ps-light = { path = "crates/ps-light" }
 ps-physio = { path = "crates/ps-physio" }
 ps-arch = { path = "crates/ps-arch" }
 ps-world = { path = "crates/ps-world" }
+ps-export = { path = "crates/ps-export" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 libm = "0.2"
@@ -29,6 +30,9 @@ ron = "0.10"
 rayon = "1"
 ps-mesh = { path = "crates/ps-mesh" }
 glam = "0.33"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
