@@ -19,6 +19,7 @@ ps-light.workspace = true
 ps-mesh.workspace = true
 ps-view.workspace = true
 ps-ui.workspace = true
+ps-arch.workspace = true
 ps-world.workspace = true
 ps-export.workspace = true
 ps-session.workspace = true
@@ -33,7 +34,6 @@ anyhow.workspace = true
 static-dxc = ["bevy/statically-linked-dxc"]
 
 [dev-dependencies]
-ps-arch.workspace = true
 
 [lints]
 workspace = true

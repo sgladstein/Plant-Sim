@@ -211,21 +211,23 @@ fn axes_follow_continuation() {
     let s = Skeleton::from_arena(&g, [0.0; 3]);
     let a = axes(&s, true);
     let ids = |ax: &crate::Axis| ax.organs.iter().map(|o| o.0).collect::<Vec<_>>();
-    assert_eq!(a.len(), 3);
+    assert_eq!(a.len(), 4);
     assert_eq!((a[0].kind, ids(&a[0])), (AxisKind::Shoot, vec![1, 2, 4]));
     assert_eq!((a[1].kind, ids(&a[1])), (AxisKind::Shoot, vec![3, 5]));
-    assert_eq!((a[2].kind, ids(&a[2])), (AxisKind::Root, vec![7, 8]));
+    // The leaf's petiole is an axis of its own.
+    assert_eq!((a[2].kind, ids(&a[2])), (AxisKind::Petiole, vec![6]));
+    assert_eq!((a[3].kind, ids(&a[3])), (AxisKind::Root, vec![7, 8]));
     for ax in &a {
-        let style = if ax.kind == AxisKind::Root {
-            AxisStyle::ROOT
-        } else {
-            AxisStyle::STEM
-        };
+        let style = AxisStyle::for_kind(ax.kind);
         let m = axis_mesh(&s, ax, style);
-        assert_eq!(
-            m.vertex_count(),
-            (ax.organs.len() + 1) * (style.sides as usize + 1)
-        );
+        // One ring per centerline node: the base, then each organ's own nodes.
+        let rings = 1 + ax
+            .organs
+            .iter()
+            .map(|id| crate::nodes_after_base(&s.organs[id.index()]))
+            .sum::<usize>();
+        assert_eq!(crate::axis_nodes(&s, ax, style).len(), rings);
+        assert_eq!(m.vertex_count(), rings * (style.sides as usize + 1));
         assert_sound(&m);
         assert_winding_matches_normals(&m);
     }
@@ -252,17 +254,19 @@ fn every_template_is_sound() {
         assert_sound(&m);
         assert_winding_matches_normals(&m);
     }
-    assert_eq!(TemplateKey::all().len(), 3 * 5 + 6);
+    // Two leaf forms × droop × unfolding, the grass blade × droop, seven others.
+    assert_eq!(TemplateKey::all().len(), 2 * 5 * 4 + 5 + 7);
 }
 
 #[test]
 fn leaf_templates_have_unit_blade_area() {
     for t in [Template::Unifoliate, Template::Trifoliate] {
-        // Both faces of the blade plus a little petiole: about 2 m² at droop 0 before
-        // bending (bending and cupping add a few percent).
+        // Both faces of the blade plus the rachis: about 2 m² at droop 0 before bending
+        // (bending and cupping add a few percent; the petiole is its own axis).
         let m = build_template(TemplateKey {
             template: t,
             droop: 0,
+            unfold: TemplateKey::OPEN,
         });
         let a = m.area();
         assert!((1.95..2.3).contains(&a), "{t:?} area {a}");
@@ -283,6 +287,7 @@ fn droop_lowers_the_blade() {
         build_template(TemplateKey {
             template: Template::Trifoliate,
             droop: d,
+            unfold: TemplateKey::OPEN,
         })
         .bounds()
         .unwrap()
@@ -500,10 +505,80 @@ fn a_grass_draws_blades_and_ears_at_the_sims_size() {
     let m = build_template(TemplateKey {
         template: Template::GrassBlade,
         droop: 0,
+        unfold: TemplateKey::OPEN,
     });
     let area = m.area() / 2.0;
     assert!(
         (area - crate::templates::BLADE_SHAPE).abs() < 0.05,
         "{area}"
     );
+}
+
+#[test]
+fn petiole_runs_from_node_to_pulvinus() {
+    let g = small_plant(0.1);
+    let s = Skeleton::from_arena(&g, [0.0; 3]);
+    let leaf = s.organs[6];
+    let axis = axes(&s, true)
+        .into_iter()
+        .find(|a| a.kind == AxisKind::Petiole)
+        .unwrap();
+    let nodes = crate::axis_nodes(&s, &axis, AxisStyle::PETIOLE);
+    assert!((nodes[0].position - leaf.base).length() < 1e-6);
+    let end = crate::pulvinus(&leaf);
+    assert!((nodes.last().unwrap().position - end).length() < 1e-6);
+    assert!(leaf.petiole_length() > 0.0);
+    // The blade instance starts at the pulvinus.
+    let inst = instances(&s, InstanceOptions::default());
+    let blade = inst.iter().find(|i| i.organ.index() == 6).unwrap();
+    assert!((blade.translation - end).length() < 1e-6);
+    // The sim's petiole, when given, is used as is.
+    let mut given = leaf;
+    given.petiole = 0.042;
+    assert!((given.petiole_length() - 0.042).abs() < 1e-7);
+}
+
+#[test]
+fn stems_swell_at_nodes() {
+    let g = small_plant(0.1);
+    let s = Skeleton::from_arena(&g, [0.0; 3]);
+    let main = &axes(&s, true)[0];
+    let nodes = crate::axis_nodes(&s, main, AxisStyle::STEM);
+    // Base, then shoulder, shoulder, node for each internode.
+    assert_eq!(nodes.len(), 1 + 3 * main.organs.len());
+    // An inner node is wider than the shoulders beside it; the apex is not.
+    assert!(nodes[3].radius > nodes[2].radius && nodes[3].radius > nodes[4].radius);
+    assert!(nodes.last().unwrap().radius < nodes[nodes.len() - 2].radius);
+}
+
+#[test]
+fn young_leaves_unfold_with_age() {
+    assert_eq!(crate::unfold_level(0.0), 0);
+    assert_eq!(crate::unfold_level(1000.0), TemplateKey::OPEN);
+    assert_eq!(crate::unfold_level(f32::NAN), TemplateKey::OPEN);
+    // Folded shut, the trifoliate is narrower across than when open.
+    let width = |unfold: u8| {
+        let (lo, hi) = build_template(TemplateKey {
+            template: Template::Trifoliate,
+            droop: 0,
+            unfold,
+        })
+        .bounds()
+        .unwrap();
+        hi.y - lo.y
+    };
+    assert!(width(0) < 0.8 * width(TemplateKey::OPEN));
+}
+
+#[test]
+fn jitter_is_deterministic_and_bounded() {
+    for id in 0..500 {
+        for k in 0..4 {
+            let j = crate::jitter(id, k);
+            assert!((-1.0..=1.0).contains(&j));
+            assert_eq!(j.to_bits(), crate::jitter(id, k).to_bits());
+        }
+    }
+    let mean: f32 = (0..1000).map(|i| crate::jitter(i, 0)).sum::<f32>() / 1000.0;
+    assert!(mean.abs() < 0.1, "{mean}");
 }

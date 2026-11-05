@@ -38,10 +38,15 @@ pub use axes::{
     Axis, AxisKind, AxisSignature, AxisStyle, GOLDEN_ANGLE, axes, axis_mesh, axis_nodes,
     copy_transforms, nodes_after_base,
 };
-pub use instances::{Instance, InstanceOptions, droop_level, instances, leaf_form};
+pub use instances::{
+    BLADE_TILT, Instance, InstanceOptions, LEAF_JITTER, droop_level, instances, jitter, leaf_form,
+    pulvinus, unfold_level,
+};
 pub use mesh::MeshData;
 pub use skeleton::{Coil, MAX_COPIES, Placement, Skeleton};
-pub use templates::{DROOP_LEVELS, Template, TemplateKey, build_template, build_template_shaded};
+pub use templates::{
+    DROOP_LEVELS, Template, TemplateKey, UNFOLD_LEVELS, build_template, build_template_shaded,
+};
 pub use tube::{TubeNode, tube};
 
 #[cfg(test)]

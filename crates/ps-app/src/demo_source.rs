@@ -138,10 +138,7 @@ fn template_centroid(t: Template) -> Vec3 {
         Template::ALL
             .iter()
             .map(|&t| {
-                let m = build_template(TemplateKey {
-                    template: t,
-                    droop: 0,
-                });
+                let m = build_template(TemplateKey::new(t));
                 let n = m.positions.len().max(1) as f32;
                 let sum: Vec3 = m.positions.iter().map(|p| Vec3::from(*p)).sum();
                 (t, sum / n)

@@ -332,12 +332,28 @@ fn skeleton_of(p: &PlantEntry, size: PotSize) -> Skeleton {
     // Twining internodes coil around their support (WP22). The skeleton frame is the
     // soil frame shifted so the soil surface's center is at the origin.
     let shift = bevy::math::Vec2::new(size.width * 0.5, size.depth * 0.5);
+    let petiole = plant.params.petiole.0;
     for (placement, meta) in skeleton.organs.iter_mut().zip(&plant.meta) {
         placement.coil = meta.twine.as_ref().map(|t| Coil {
             center: bevy::math::Vec2::new(t.center[0] as f32, t.center[1] as f32) - shift,
             radius: t.radius as f32,
             inclination: t.inclination as f32,
         });
+        // Leaves: the petiole grows with the blade, as the light model places it
+        // (ps_arch::geometry::leaf_points).
+        if matches!(
+            meta.role,
+            ps_arch::Role::Unifoliate | ps_arch::Role::Trifoliate
+        ) {
+            let area = f64::from(placement.area);
+            let expansion = if meta.potential_area > 0.0 {
+                (area / meta.potential_area).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            placement.petiole = (petiole * expansion.sqrt()) as f32;
+            placement.simple_leaf = Some(meta.role == ps_arch::Role::Unifoliate);
+        }
     }
     skeleton.relayout();
     // A grass draws blades and ears (WP23).

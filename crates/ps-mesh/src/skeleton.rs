@@ -55,6 +55,13 @@ pub struct Placement {
     /// The helix a twining internode coils along, if any. The placement itself is the
     /// chord from base to tip; the coil is drawn by sampling [`Coil::point`].
     pub coil: Option<Coil>,
+    /// Rendered petiole length of a leaf, m: the sim's petiole, grown with the blade
+    /// (`ps_arch::geometry::leaf_points`). 0 when unknown; [`Placement::petiole_length`]
+    /// then falls back to a typical bean proportion.
+    pub petiole: f32,
+    /// Leaf form from the sim's role: `Some(true)` for a simple (unifoliate) leaf,
+    /// `Some(false)` for a trifoliate, `None` when unknown (see [`crate::leaf_form`]).
+    pub simple_leaf: Option<bool>,
 }
 
 /// A stem coiled around a vertical support (the sim's `Twine`), in the skeleton frame.
@@ -123,6 +130,24 @@ impl Coil {
 pub const MAX_COPIES: u16 = 8;
 
 impl Placement {
+    /// The petiole drawn for a leaf, m: the sim's when known, otherwise about a
+    /// leaflet's length for a trifoliate and a third of that for a unifoliate.
+    #[must_use]
+    pub fn petiole_length(&self) -> f32 {
+        if self.kind != OrganKind::Leaf {
+            return 0.0;
+        }
+        if self.petiole > 0.0 {
+            return self.petiole;
+        }
+        let ratio = if self.simple_leaf == Some(true) {
+            0.3
+        } else {
+            0.75
+        };
+        ratio * self.area.max(0.0).sqrt()
+    }
+
     /// True for organs that extend along their direction (internodes, roots, tendrils).
     #[must_use]
     pub fn is_axis_organ(&self) -> bool {
@@ -241,6 +266,8 @@ impl Skeleton {
                 };
                 Placement {
                     coil: None,
+                    petiole: 0.0,
+                    simple_leaf: None,
                     kind,
                     parent: arena.parent[i],
                     axis_order: arena.axis_order[i],
@@ -335,6 +362,7 @@ impl Skeleton {
                     p.radius = lerp(pa.radius, pb.radius, t);
                     p.area = lerp(pa.area, pb.area, t);
                     p.thermal_age = lerp(pa.thermal_age, pb.thermal_age, t);
+                    p.petiole = lerp(pa.petiole, pb.petiole, t);
                     p.direction = unit_or(pa.direction.lerp(pb.direction, t), pb.kind);
                     p.azimuth = lerp(pa.azimuth, pb.azimuth, t);
                     // An organ that died during the interval stays visible until the end.
@@ -344,6 +372,7 @@ impl Skeleton {
                     p.radius *= t;
                     p.area *= t;
                     p.thermal_age *= t;
+                    p.petiole *= t;
                 }
                 p
             })
