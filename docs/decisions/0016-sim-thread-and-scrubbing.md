@@ -44,9 +44,18 @@ what an action taken in the past means.
    About 1 MB of state per copy at day 90, so 90 days of copies stay under about 100 MB;
    `keyframe_every_days` thins them for longer runs.
 6. **Acting in the past branches.** An action while behind the latest tick discards the
-   recorded future (later actions and midnight copies) and the latest tick becomes the
-   current one, as when a save is loaded and changed. The WP26 scrubber can add a
-   confirmation.
+   recorded future (actions logged for later ticks and later midnight copies) and the
+   latest tick becomes the current one, as when a save is loaded and changed. Actions
+   already logged for the current tick stay, and the new one follows them. The WP26
+   scrubber can add a confirmation.
+7. **Rejections** say which part failed: "rejected" when the world refuses the action,
+   "the hour after this action failed" when the probe hour errors.
+8. **Long runs.** At about 1 MB per copy, a multi-season run (M4) should raise
+   `keyframe_every_days` or compress the copies; seeks then replay up to that many days.
+9. **UI contract.** `ps_session::TimeCommand` mirrors `ps_ui::TimeCommand` variant for
+   variant (crates/ps-ui/src/lib.rs). The ps-app side maps one to the other and reads
+   `Session::latest()`; this decision and the ps-session crate docs are the one
+   reference for it.
 
 ## Consequences
 

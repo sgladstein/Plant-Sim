@@ -488,29 +488,41 @@ impl Runner {
             return Err("the scenario has ended".into());
         }
         let branch = tick < self.latest;
-        let log: Vec<Action> = if branch {
-            self.log.iter().filter(|a| a.tick < tick).cloned().collect()
+        // A branch keeps the actions already logged for the current tick (the player
+        // is standing on that hour and sees their markers) and drops later ones.
+        let branched = if branch {
+            let log: Vec<Action> = self
+                .log
+                .iter()
+                .filter(|a| a.tick <= tick)
+                .cloned()
+                .collect();
+            let world = self.rebuilt(tick, &log).map_err(|e| e.to_string())?;
+            Some((world, log))
         } else {
-            self.log.clone()
-        };
-        let mut world = if branch {
-            self.rebuilt(tick, &log).map_err(|e| e.to_string())?
-        } else {
-            self.world.clone()
+            None
         };
         // Try the action on a copy for one hour, so a bad action never enters the log.
-        let mut probe = world.clone();
-        probe.apply(kind.clone()).map_err(|e| e.to_string())?;
-        probe.step_hour().map_err(|e| e.to_string())?;
+        let mut probe = branched
+            .as_ref()
+            .map_or_else(|| self.world.clone(), |(w, _)| w.clone());
+        probe
+            .apply(kind.clone())
+            .map_err(|e| format!("rejected: {e}"))?;
+        probe
+            .step_hour()
+            .map_err(|e| format!("the hour after this action failed: {e}"))?;
         drop(probe);
-        world.apply(kind.clone()).map_err(|e| e.to_string())?;
-        self.world = world;
-        self.log = log;
-        self.log.push(Action { tick, kind });
-        if branch {
+        if let Some((world, log)) = branched {
+            self.world = world;
+            self.log = log;
             self.keyframes.retain(|k, _| *k <= tick);
             self.latest = tick;
         }
+        self.world
+            .apply(kind.clone())
+            .map_err(|e| format!("rejected: {e}"))?;
+        self.log.push(Action { tick, kind });
         self.refresh_cached();
         Ok(tick)
     }

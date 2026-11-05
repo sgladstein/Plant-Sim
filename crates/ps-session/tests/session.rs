@@ -205,3 +205,28 @@ fn running_follows_the_speed_and_pause_stops_it() {
     let tf = t as f64;
     assert!((snap.hour - tf).abs() < 1e-12);
 }
+
+/// A branch at an hour keeps the actions already logged for that hour.
+#[test]
+fn branch_keeps_actions_at_the_current_hour() {
+    let (s, c) = load("single_pot.ron", 4);
+    let session = spawn(&s, &c);
+    step(&session, 20.0);
+    session
+        .act_and_wait(ActionKind::Water { soil: 0, mm: 4.0 })
+        .unwrap();
+    step(&session, 24.0);
+    session
+        .act_and_wait(ActionKind::Water { soil: 0, mm: 6.0 })
+        .unwrap();
+    assert_eq!(seek(&session, 20.0), 20);
+    session
+        .act_and_wait(ActionKind::Water { soil: 0, mm: 8.0 })
+        .unwrap();
+    let ticks: Vec<u64> = session.latest().actions.iter().map(|a| a.tick).collect();
+    assert_eq!(ticks, [20, 20]);
+    step(&session, 1e9);
+    let live = session.stop().unwrap();
+    let replay = World::replay(s, c, &live.state().log, live.tick()).unwrap();
+    assert_eq!(replay.state_hash(), live.state_hash());
+}
