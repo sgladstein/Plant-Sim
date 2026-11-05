@@ -237,7 +237,12 @@ fn caption(ctx: &egui::Context, time: &TimeControl, garden: &Garden) {
                     let day = (time.hour / 24.0).floor();
                     ui.heading(format!("Day {day:.0}"));
                     ui.label(format!("{} · {}", time.date, time.season));
-                    let labels: Vec<&str> = garden.pots.iter().map(|p| p.label.as_str()).collect();
+                    let labels: Vec<&str> = garden
+                        .pots
+                        .iter()
+                        .map(|p| p.label.as_str())
+                        .filter(|l| !l.is_empty())
+                        .collect();
                     ui.colored_label(
                         egui::Color32::from_rgb(214, 222, 200),
                         labels.join("   |   "),
@@ -261,7 +266,12 @@ fn top_bar(
         ui.separator();
         ui.label(&time.weather);
         ui.separator();
-        let labels: Vec<&str> = garden.pots.iter().map(|p| p.label.as_str()).collect();
+        let labels: Vec<&str> = garden
+            .pots
+            .iter()
+            .map(|p| p.label.as_str())
+            .filter(|l| !l.is_empty())
+            .collect();
         ui.weak(labels.join("  |  "));
     });
     ui.horizontal(|ui| {
