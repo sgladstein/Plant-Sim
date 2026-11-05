@@ -756,22 +756,24 @@ impl SoilGrid {
             asked.push(req);
         }
         // Total request per cell, summed in a fixed order (plant, then cell), on a
-        // dense scratch grid. Every request is positive, so a touched cell's total is
-        // positive and an untouched cell keeps factor 1.
-        let mut totals = vec![0.0_f64; self.water.len()];
+        // dense scratch grid. Every pushed request is positive, so a touched cell's
+        // total is positive. Each total is then replaced by its cell's factor. An
+        // untouched cell reads 0, but only requests of exactly zero read it, and
+        // `0 · 0` and `0 · 1` are the same +0.
+        let mut scale = vec![0.0_f64; self.water.len()];
         let mut touched: Vec<usize> = Vec::new();
         for (i, r) in cell_total {
-            if totals[i] == 0.0 {
+            if scale[i] == 0.0 {
                 touched.push(i);
-                totals[i] = r;
+                scale[i] = r;
             } else {
-                totals[i] += r;
+                scale[i] += r;
             }
         }
-        let mut scale = vec![1.0_f64; self.water.len()];
         for &i in &touched {
             let a = avail(self.water[i]).0;
-            scale[i] = if totals[i] > a { a / totals[i] } else { 1.0 };
+            let total = scale[i];
+            scale[i] = if total > a { a / total } else { 1.0 };
         }
         let factor = |i: usize| scale[i];
         let mut out = Vec::with_capacity(plants.len());

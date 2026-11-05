@@ -319,7 +319,7 @@ fn skeleton_of(p: &PlantEntry, size: PotSize) -> Skeleton {
     Skeleton::from_arena_with(&plant.arena, origin, &attach, &mult)
 }
 
-/// FTSW on the vertical west-east slice of the grid through the plant's collar.
+/// FTSW on the vertical west-east slice of the grid at `collar_y` (m from the south edge).
 fn soil_slice(soil: &SoilEntry, collar_y: f64) -> SoilFace {
     let g = &soil.grid;
     let (nx, ny, nz) = g.dims();
@@ -614,7 +614,16 @@ pub fn drive(
                 info.radiation_fraction,
                 high_speed,
             ),
-            soil_water: soil_slice(soil, p.plant.collar_position[1]),
+            // A bed's glass shows the soil nearest it (the south row of cells); a pot's
+            // cutaway runs through its one plant.
+            soil_water: soil_slice(
+                soil,
+                if info.shared {
+                    0.0
+                } else {
+                    p.plant.collar_position[1]
+                },
+            ),
             container,
         });
     }
