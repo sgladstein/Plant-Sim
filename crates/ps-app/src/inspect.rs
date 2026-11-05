@@ -421,6 +421,7 @@ pub fn competition(l: &ps_session::PlantLens) -> Vec<Field> {
 
 /// Title, fields and why line for the whole plant, from its latest daily row.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One line per field.
 pub fn whole_plant(
     p: &PlantEntry,
     row: Option<&DayRow>,
@@ -484,6 +485,18 @@ pub fn whole_plant(
             "Root-zone soil water",
             format!("{:.2}", r.env.ftsw),
             "FTSW",
+            WATER,
+        ),
+        Field::new(
+            "Net assimilation",
+            format!("{:.2}", d.assimilation),
+            "g C today",
+            CARBON,
+        ),
+        Field::new(
+            "Water taken up",
+            format!("{:.1}", d.transpiration * 1000.0),
+            "g today",
             WATER,
         ),
         Field::new(
