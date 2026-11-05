@@ -47,4 +47,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: plant-sim-windows
-          path: target/release/plant-sim.exe
+          # The app looks for data/ next to the exe (or above it), so ship it alongside.
+          path: |
+            target/release/plant-sim.exe
+            data/

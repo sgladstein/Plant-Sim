@@ -1,13 +1,19 @@
 //! Plant-Sim desktop app: the two-pot screen (design plan §2.1, M1).
 //!
-//! Until ps-world exists the app is driven by [`demo_source`]: stand-in plants under
-//! real weather and the real light model. Options:
+//! The app runs a ps-world scenario on the ps-session sim thread ([`sim_source`]); with
+//! `--demo`, or when no data directory is found, it shows [`demo_source`]'s stand-in
+//! plants instead. Options:
 //!
 //! ```text
 //! plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png]
 //!           [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N]
 //!           [--bench-frames N] [--bench-out FILE.csv]
+//!           [--scenario FILE.ron] [--data DIR] [--demo]
 //! ```
+//!
+//! `--day` starts the view that many days in (the sim steps there as fast as it can).
+//! `--scenario` is a path, or relative to the data directory (default
+//! `scenarios/two_pot_sun_shade.ron`); `--data` overrides the search for `data/`.
 //!
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
 //! soil-water, plant-water, roots, carbon, phenology, shade. `--screenshot` waits until
@@ -27,6 +33,7 @@
 
 mod bench;
 mod demo_source;
+mod sim_source;
 
 use std::path::PathBuf;
 
@@ -48,6 +55,9 @@ struct Options {
     present_name: String,
     bench_frames: Option<u32>,
     bench_out: PathBuf,
+    demo: bool,
+    scenario: PathBuf,
+    data: Option<PathBuf>,
 }
 
 fn parse_present(name: &str) -> Result<PresentMode> {
@@ -87,6 +97,9 @@ fn parse_args() -> Result<Options> {
         present_name: "auto".into(),
         bench_frames: None,
         bench_out: PathBuf::from("frame-times.csv"),
+        demo: false,
+        scenario: PathBuf::from(sim_source::DEFAULT_SCENARIO),
+        data: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -109,13 +122,16 @@ fn parse_args() -> Result<Options> {
                 )?);
             }
             "--bench-out" => o.bench_out = PathBuf::from(value()?),
+            "--demo" => o.demo = true,
+            "--scenario" => o.scenario = PathBuf::from(value()?),
+            "--data" => o.data = Some(PathBuf::from(value()?)),
             "--frame-latency" => {
                 let n = anyhow::Context::context(value()?.parse::<u32>(), "--frame-latency")?;
                 o.frame_latency = std::num::NonZero::new(n);
             }
             "--help" | "-h" => {
                 println!(
-                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv]"
+                    "plant-sim [--day N] [--speed H] [--paused] [--lens NAME] [--screenshot FILE.png] [--present auto|fifo|mailbox|immediate|novsync] [--frame-latency N] [--bench-frames N] [--bench-out FILE.csv] [--scenario FILE.ron] [--data DIR] [--demo]"
                 );
                 std::process::exit(0);
             }
@@ -140,14 +156,30 @@ fn main() -> Result<()> {
         ..default()
     }))
     .add_plugins((PlantViewPlugin, ps_ui::PlantUiPlugin))
-    .insert_resource(demo_source::DemoSource::new(
-        options.day,
-        options.speed,
-        paused,
-    ))
     .insert_resource(options.lens)
-    .insert_resource(options.clone())
-    .add_systems(Update, demo_source::drive.in_set(ViewSet::Source));
+    .insert_resource(options.clone());
+    let sim = if options.demo {
+        None
+    } else {
+        match start_sim(&options, paused) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("plant-sim: {e:#}\nplant-sim: showing the stand-in demo plants instead");
+                None
+            }
+        }
+    };
+    if let Some(sim) = sim {
+        app.insert_resource(sim)
+            .add_systems(Update, sim_source::drive.in_set(ViewSet::Source));
+    } else {
+        app.insert_resource(demo_source::DemoSource::new(
+            options.day,
+            options.speed,
+            paused,
+        ))
+        .add_systems(Update, demo_source::drive.in_set(ViewSet::Source));
+    }
     if let Some(frames) = options.bench_frames {
         app.insert_resource(bench::BenchConfig {
             frames: frames.max(1),
@@ -161,6 +193,13 @@ fn main() -> Result<()> {
     }
     app.run();
     Ok(())
+}
+
+/// Loads the scenario and starts the sim thread.
+fn start_sim(options: &Options, paused: bool) -> Result<sim_source::SimSource> {
+    let data = sim_source::find_data_dir(options.data.as_deref())?;
+    let (world, scenario) = sim_source::load_world(&data, &options.scenario)?;
+    sim_source::SimSource::start(world, &scenario, options.day, options.speed, paused)
 }
 
 /// Frames rendered after the pipelines are ready before the screenshot, so the camera
@@ -185,6 +224,7 @@ fn screenshot_and_exit(
     mut commands: Commands,
     options: Res<Options>,
     ready: Res<Ready>,
+    time_ui: Res<ps_ui::TimeControl>,
     time: Res<Time<Real>>,
     mut shot: Local<Shot>,
     mut exit: MessageWriter<AppExit>,
@@ -192,8 +232,11 @@ fn screenshot_and_exit(
     let Some(path) = &options.screenshot else {
         return;
     };
-    if ready.ready {
+    // The sim may still be stepping to --day; wait until it has arrived.
+    if ready.ready && !time_ui.busy {
         shot.frames_ready += 1;
+    } else {
+        shot.frames_ready = 0;
     }
     if !shot.requested && shot.frames_ready >= SETTLE_AFTER_READY {
         shot.requested = true;

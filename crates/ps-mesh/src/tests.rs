@@ -392,3 +392,34 @@ fn ids_are_stable_across_hours() {
         assert_eq!(a.parent[i], b.parent[i]);
     }
 }
+
+#[test]
+fn partial_attachment_and_root_cohorts() {
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let down = [0.0, 0.0, -1.0];
+    let seed = g
+        .add(&organ(OrganKind::Seed, None, 0, 0.4, down), &a)
+        .unwrap();
+    let tap = g
+        .add(&organ(OrganKind::Root, Some(seed), 0, 1.0, down), &a)
+        .unwrap();
+    let _lat = g
+        .add(
+            &organ(OrganKind::Root, Some(tap), 1, 1.0, [1.0, 0.0, 0.0]),
+            &a,
+        )
+        .unwrap();
+    let plain = Skeleton::from_arena(&g, [0.0; 3]);
+    let s = Skeleton::from_arena_with(&g, [0.0; 3], &[1.0, 1.0, 0.25], &[1.0, 1.0, 4.0]);
+    let tap_p = s.organs[1];
+    let lat = s.organs[2];
+    // The lateral cohort starts a quarter of the way down the taproot...
+    let expect = tap_p.base.lerp(tap_p.tip(), 0.25);
+    assert!((lat.base - expect).length() < 1e-6);
+    // ...and is drawn as one of its four roots.
+    assert!((lat.length - plain.organs[2].length / 4.0).abs() < 1e-6);
+    // Blending keeps the attachment.
+    let half = Skeleton::lerp(&s, &s, 0.5);
+    assert!((half.organs[2].base - expect).length() < 1e-6);
+}

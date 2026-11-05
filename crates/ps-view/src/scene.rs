@@ -241,9 +241,10 @@ pub(crate) fn setup_scene(
         ..default()
     });
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(0.95, 0.03, 0.42))),
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(deck),
-        Transform::from_xyz(0.0, floor - 0.015, 0.0),
+        Transform::from_xyz(0.0, floor - 0.015, 0.0).with_scale(Vec3::new(0.95, 0.03, 0.42)),
+        Floor::Deck,
     ));
     let g = crate::look::GROUND;
     let ground = materials.add(StandardMaterial {
@@ -256,8 +257,37 @@ pub(crate) fn setup_scene(
         Mesh3d(meshes.add(Plane3d::default().mesh().size(80.0, 80.0))),
         MeshMaterial3d(ground),
         Transform::from_xyz(0.0, floor - 0.03, 0.0),
+        Floor::Ground,
     ));
     index.root = Some(root);
+}
+
+/// The deck and the ground, moved to sit under the pots whenever the pot layout changes.
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Floor {
+    Deck,
+    Ground,
+}
+
+/// Deck center x, z (Bevy frame), size x, z and top height y for a set of pots.
+fn deck_layout(pots: &[PotView]) -> Option<(Vec3, Vec2)> {
+    let (mut lo, mut hi) = (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY));
+    let mut depth = 0.0_f32;
+    for p in pots {
+        let c = Vec2::from(p.center);
+        let half = Vec2::new(p.size.width, p.size.depth) * 0.5;
+        lo = lo.min(c - half);
+        hi = hi.max(c + half);
+        depth = depth.max(p.size.soil_depth);
+    }
+    if !lo.is_finite() || !hi.is_finite() {
+        return None;
+    }
+    let margin = Vec2::new(0.12, 0.1);
+    let size = hi - lo + 2.0 * margin;
+    let c = 0.5 * (lo + hi);
+    // Sim (x, y) maps to Bevy (x, -z); the pot frames' feet sit 0.042 m below the soil.
+    Some((Vec3::new(c.x, -depth - 0.042, -c.y), size))
 }
 
 fn spawn_pot(
@@ -376,6 +406,7 @@ pub(crate) fn sync_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rig: ResMut<CameraRig>,
+    mut floors: Query<(&Floor, &mut Transform)>,
 ) {
     let Some(root) = index.root else {
         return;
@@ -395,6 +426,17 @@ pub(crate) fn sync_scene(
         for pot in &garden.pots {
             let scene = spawn_pot(&mut commands, &mut meshes, &assets, root, pot);
             index.pots.push(scene);
+        }
+        if let Some((top, size)) = deck_layout(&garden.pots) {
+            for (floor, mut t) in &mut floors {
+                match floor {
+                    Floor::Deck => {
+                        t.translation = Vec3::new(top.x, top.y - 0.015, top.z);
+                        t.scale = Vec3::new(size.x, 0.03, size.y);
+                    }
+                    Floor::Ground => t.translation.y = top.y - 0.03,
+                }
+            }
         }
     }
 

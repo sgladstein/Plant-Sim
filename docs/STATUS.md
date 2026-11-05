@@ -27,11 +27,11 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 13 Lock the engine | Bevy 0.20.1 + bevy_egui 0.43.1 pinned (docs/bevy-notes.md); waiting on the owner's screenshot from the GTX 1070 (CI artifact `plant-sim-windows`) |
 | 14 Mesh generation (ps-mesh) | done (PR #23) |
 | 15 Scene sync and look | started: ps-view draws two rhizobox pots, tubes and instanced organs, 2% rebuild rule, sky from ps-weather, auto-framing orbit camera, high-speed daily-mean light |
-| 16 Sim thread | sim side done (PR #32, decision 0016): ps-session runs the world on its own thread, double-buffered `Snapshot`, time commands, seek by midnight copies, session hash equals replay hash. ps-app side (Session resource, Garden from snapshot plants and positions) is the viewer thread's; `demo_source` stands in until then |
+| 16 Sim thread | done: sim side PR #32 (decision 0016); viewer side (this PR): ps-app runs the scenario on ps-session by default and draws its snapshots (`--demo` keeps the stand-ins). Skeletons use ps-arch's attach and multiplicity (matches `geometry::layout`, tested); every lens reads sim values |
 | 17 UI | started: ps-ui top bar (speeds, steps, replay scrubber) and lens panel with legends |
-| 18 Lenses | framework and all seven M1 lenses; Light and Shade signal run the real ps-light on stand-in plants; the rest are stand-in data, flagged in the legend |
+| 18 Lenses | framework and all seven M1 lenses, all on sim data since WP16: absorbed PAR from each leaf's light coefficients under the hour's weather and shade cloth, R:FR, reserve concentration, thermal age, root age, the stress factor, FTSW on the soil slice through the plant |
 
-The viewer reads `ps_view::Garden` and `SkyState` only. Swapping the stand-in for ps-world means filling those from the snapshot (WP16).
+The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.rs` fills them from `ps_session::Snapshot`. Still to do: lateral root cohorts are drawn as one representative root, not repeated at golden-angle azimuths; pots render as boxes the size of the soil grid.
 
 ## Last validation report
 None yet (WP11).

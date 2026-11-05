@@ -11,6 +11,8 @@
 //! - All other organs (seed, cotyledons, leaves, buds, flowers, pods, seeds in pods)
 //!   attach at a point: their base is the parent's attachment point, and they hand that
 //!   same point on to their children.
+//! - An organ whose `attach` is below 1 on an axis parent starts that fraction of the way
+//!   along it instead (ps-arch's lateral root cohorts; matches `ps_arch::geometry::layout`).
 //! - The seed sits at the plant origin.
 //!
 //! A zero or non-finite direction falls back to straight up for shoots and straight down
@@ -44,6 +46,9 @@ pub struct Placement {
     pub area: f32,
     /// Thermal age, °C·day.
     pub thermal_age: f32,
+    /// Where along an axis parent the organ attaches, 0 (its base) to 1 (its tip).
+    /// Lateral root cohorts attach partway along their parent.
+    pub attach: f32,
 }
 
 impl Placement {
@@ -108,9 +113,24 @@ pub struct Skeleton {
 }
 
 impl Skeleton {
-    /// Places every organ of `arena` with the seed at `origin` (sim frame, m).
+    /// Places every organ of `arena` with the seed at `origin` (sim frame, m), every
+    /// organ attached at its parent's tip.
     #[must_use]
     pub fn from_arena(arena: &OrganArena, origin: [f64; 3]) -> Self {
+        Self::from_arena_with(arena, origin, &[], &[])
+    }
+
+    /// Places every organ of `arena` with per-organ attachment fractions and root
+    /// multiplicities (ps-arch's `Meta::attach` and `Meta::multiplicity`, indexed by organ
+    /// id; missing entries mean 1). An axis organ standing for `m` identical roots is drawn
+    /// as one root of `length / m`, as ps-arch's layout places it.
+    #[must_use]
+    pub fn from_arena_with(
+        arena: &OrganArena,
+        origin: [f64; 3],
+        attach: &[f64],
+        multiplicity: &[f64],
+    ) -> Self {
         let origin = Vec3::new(origin[0] as f32, origin[1] as f32, origin[2] as f32);
         let organs = arena
             .ids()
@@ -124,6 +144,23 @@ impl Skeleton {
                     o.direction[2] as f32,
                 );
                 let size = arena.size[i];
+                let m = multiplicity
+                    .get(i)
+                    .copied()
+                    .filter(|m| m.is_finite())
+                    .unwrap_or(1.0)
+                    .max(1.0);
+                let a = attach
+                    .get(i)
+                    .copied()
+                    .filter(|a| a.is_finite())
+                    .unwrap_or(1.0)
+                    .clamp(0.0, 1.0);
+                let length = if is_axis_kind(kind) {
+                    size.length.0 / m
+                } else {
+                    size.length.0
+                };
                 Placement {
                     kind,
                     parent: arena.parent[i],
@@ -136,10 +173,11 @@ impl Skeleton {
                     } else {
                         0.0
                     },
-                    length: finite_or_zero(size.length.0),
+                    length: finite_or_zero(length),
                     radius: finite_or_zero(size.radius.0),
                     area: finite_or_zero(size.area.0),
                     thermal_age: finite_or_zero(arena.thermal_age[i].0),
+                    attach: a as f32,
                 }
             })
             .collect();
@@ -151,8 +189,16 @@ impl Skeleton {
     /// Recomputes every base point from the parent links and the current sizes.
     pub fn relayout(&mut self) {
         for i in 0..self.organs.len() {
+            let attach = self.organs[i].attach;
             let base = match self.organs[i].parent {
-                Some(p) if p.index() < i => self.organs[p.index()].tip(),
+                Some(p) if p.index() < i => {
+                    let parent = &self.organs[p.index()];
+                    if attach < 1.0 && parent.is_axis_organ() {
+                        parent.base.lerp(parent.tip(), attach.max(0.0))
+                    } else {
+                        parent.tip()
+                    }
+                }
                 _ => self.origin,
             };
             self.organs[i].base = base;
