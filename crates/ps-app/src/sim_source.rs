@@ -12,6 +12,9 @@
 //! the hour's weather and the pot's shade cloth, the red to far-red ratio, reserve
 //! concentration, thermal age, root age, the plant's water stress factor, and FTSW on the
 //! vertical soil slice through the plant.
+//!
+//! The charts panel reads the snapshot's daily rows (the same rows the CSV export
+//! writes), rebuilt only when a day is added.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -22,11 +25,11 @@ use bevy::prelude::{ResMut, Resource};
 use ps_graph::OrganKind;
 use ps_mesh::Skeleton;
 use ps_session::{Session, SessionOptions, Snapshot, TimeCommand as SimCommand};
-use ps_ui::{TimeCommand, TimeControl};
+use ps_ui::{Chart, Charts, Series, TimeCommand, TimeControl};
 use ps_units::{Hours, WPerM2};
-use ps_view::{Garden, Lens, PotSize, PotView, SkyState, SoilFace};
+use ps_view::{Garden, Lens, PotShape, PotSize, PotView, SkyState, SoilFace};
 use ps_weather::{HourWeather, WeatherSeries};
-use ps_world::{Catalog, PlantEntry, Scenario, SoilEntry, SoilSpec, World};
+use ps_world::{Catalog, DayRow, PlantEntry, Scenario, SoilEntry, SoilSpec, World};
 
 /// The scenario the app runs when none is given.
 pub const DEFAULT_SCENARIO: &str = "scenarios/two_pot_sun_shade.ron";
@@ -109,6 +112,8 @@ pub struct SimSource {
     resume_speed: Option<f64>,
     /// The tick the startup step goes to; the source reports busy until it is reached.
     startup_tick: u64,
+    /// The sim hour at which day 0 starts (minus the scenario's start hour).
+    day_start_hour: f64,
 }
 
 impl SimSource {
@@ -165,6 +170,7 @@ impl SimSource {
             snapshot,
             resume_speed,
             startup_tick,
+            day_start_hour: -f64::from(scenario.start.hour),
         })
     }
 }
@@ -202,6 +208,8 @@ fn pot_infos(
                     label: format!("Pot {}: {light}", e.id),
                     center: [(p.0 - mean_x) as f32, (p.1 - mean_y) as f32],
                     size: PotSize {
+                        // Every container is a cylindrical pot for now (`SoilSpec::Pot`).
+                        shape: PotShape::Round,
                         width: nx as f32 * cell,
                         depth: ny as f32 * cell,
                         soil_depth: nz as f32 * cell,
@@ -279,6 +287,80 @@ fn absorbed(p: &PlantEntry, i: usize, hour: usize, w: &HourWeather, fraction: f6
     .0
 }
 
+/// A chart line's quantity: label, color, and the value from a daily row.
+type Quantity = (&'static str, [f32; 3], fn(&DayRow) -> f64);
+
+/// The charts of §5.4 that the daily rows carry, with each plant's lines in its pot's
+/// line style (`pot_of` maps a plant id to its pot index).
+#[must_use]
+pub fn charts_from(history: &[DayRow], pot_of: &BTreeMap<u32, usize>) -> Vec<Chart> {
+    let leaf = [0.3, 0.6, 0.15];
+    let charts: [(&str, &str, Vec<Quantity>); 6] = [
+        (
+            "Dry mass by organ",
+            "g",
+            vec![
+                ("Leaf", leaf, |r| r.report.leaf_mass),
+                ("Stem", [0.55, 0.6, 0.2], |r| r.report.stem_mass),
+                ("Root", [0.75, 0.6, 0.4], |r| r.report.root_mass),
+                ("Pods", [0.85, 0.45, 0.2], |r| r.report.fruit_mass),
+            ],
+        ),
+        (
+            "Leaf area",
+            "cm²",
+            vec![("Leaf area", leaf, |r| r.report.leaf_area * 1e4)],
+        ),
+        (
+            "Height",
+            "cm",
+            vec![("Height", [0.6, 0.75, 0.45], |r| r.report.height * 100.0)],
+        ),
+        (
+            "Root-zone soil water",
+            "FTSW",
+            vec![("FTSW", [0.3, 0.55, 0.85], |r| r.env.ftsw)],
+        ),
+        (
+            "Water shortfall",
+            "g/day",
+            vec![("Shortfall", [0.85, 0.5, 0.3], |r| {
+                r.report.shortfall * 1000.0
+            })],
+        ),
+        (
+            "Pods",
+            "count",
+            vec![("Pods", [0.85, 0.45, 0.2], |r| f64::from(r.report.pods))],
+        ),
+    ];
+    charts
+        .into_iter()
+        .map(|(title, unit, quantities)| {
+            let mut series = Vec::new();
+            for (&plant, &pot) in pot_of {
+                for (label, color, value) in &quantities {
+                    series.push(Series {
+                        label: (*label).to_owned(),
+                        color: *color,
+                        pot,
+                        points: history
+                            .iter()
+                            .filter(|r| r.plant == plant)
+                            .map(|r| [f64::from(r.day), value(r)])
+                            .collect(),
+                    });
+                }
+            }
+            Chart {
+                title: title.to_owned(),
+                unit: unit.to_owned(),
+                series,
+            }
+        })
+        .collect()
+}
+
 fn season(month: u32) -> &'static str {
     match month {
         3..=5 => "spring",
@@ -348,6 +430,7 @@ pub fn drive(
     mut time_ui: ResMut<TimeControl>,
     mut garden: ResMut<Garden>,
     mut sky: ResMut<SkyState>,
+    mut charts: ResMut<Charts>,
 ) {
     for c in std::mem::take(&mut time_ui.commands) {
         // A user command overrides the pending resume after the startup step.
@@ -454,6 +537,19 @@ pub fn drive(
     garden.pots = pots;
     garden.stand_in_lenses.clear();
 
+    if charts.rows != snap.history.len() || charts.pots.len() != garden.pots.len() {
+        let pot_of: BTreeMap<u32, usize> = snap
+            .plants
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.id, i))
+            .collect();
+        charts.charts = charts_from(&snap.history, &pot_of);
+        charts.pots = garden.pots.iter().map(|p| p.label.clone()).collect();
+        charts.day_start_hour = src.day_start_hour;
+        charts.rows = snap.history.len();
+    }
+
     let date = snap.date;
     time_ui.hour = snap.hour;
     time_ui.latest_hour = snap.latest_tick as f64;
@@ -498,6 +594,7 @@ mod tests {
         w.run_days(20).unwrap_or_else(|e| unreachable!("{e}"));
         for p in &w.state().plants {
             let size = PotSize {
+                shape: PotShape::Round,
                 width: 0.2,
                 depth: 0.2,
                 soil_depth: 0.2,
@@ -514,6 +611,35 @@ mod tests {
                 assert!((o.tip() - t).length() < 1e-4, "tip {:?} vs {t:?}", o.tip());
             }
         }
+    }
+
+    #[test]
+    fn charts_have_one_point_per_day_and_plant() {
+        let (mut w, _) = world();
+        w.run_days(6).unwrap_or_else(|e| unreachable!("{e}"));
+        let pot_of: BTreeMap<u32, usize> = w
+            .state()
+            .plants
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.id, i))
+            .collect();
+        let charts = charts_from(&w.state().history, &pot_of);
+        assert_eq!(charts.len(), 6);
+        let days = w.state().history.len() / pot_of.len();
+        assert!(days >= 5);
+        for c in &charts {
+            assert!(!c.series.is_empty() && !c.unit.is_empty());
+            for s in &c.series {
+                assert_eq!(s.points.len(), days, "{} {}", c.title, s.label);
+                assert!(s.points.windows(2).all(|p| p[0][0] < p[1][0]));
+                assert!(s.points.iter().all(|p| p[1].is_finite()));
+            }
+        }
+        // Pots get their own line styles.
+        let pots: std::collections::BTreeSet<usize> =
+            charts[0].series.iter().map(|s| s.pot).collect();
+        assert_eq!(pots.len(), pot_of.len());
     }
 
     #[test]

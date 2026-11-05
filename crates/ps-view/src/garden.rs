@@ -11,10 +11,22 @@ use ps_mesh::{Placement, Skeleton};
 
 use crate::lens::Lens;
 
+/// The pot's shape.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum PotShape {
+    /// A rhizobox: a rectangular slab with a glass front.
+    #[default]
+    Box,
+    /// A round pot of diameter `width`: the back half terracotta, the front half glass.
+    Round,
+}
+
 /// A pot's footprint and depth, m. The soil surface is at z = 0 in the sim frame.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct PotSize {
-    /// East-west width.
+    /// Box or round.
+    pub shape: PotShape,
+    /// East-west width (the diameter of a round pot).
     pub width: f32,
     /// North-south depth (the glass front faces south).
     pub depth: f32,
@@ -25,6 +37,7 @@ pub struct PotSize {
 impl PotSize {
     /// The M1 rhizobox: 32 × 18 cm, 45 cm deep.
     pub const RHIZOBOX: Self = Self {
+        shape: PotShape::Box,
         width: 0.32,
         depth: 0.18,
         soil_depth: 0.45,
