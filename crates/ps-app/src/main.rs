@@ -21,7 +21,8 @@
 //! `scenarios/two_pot_sun_shade.ron`); `--data` overrides the search for `data/`.
 //!
 //! `--speed` is sim hours per second (1, 6, 24, 72, 168). `--lens` is one of light,
-//! soil-water, plant-water, roots, carbon, phenology, shade. `--screenshot` waits until
+//! soil-water, plant-water, roots, carbon, phenology, shade. `--charts` opens the
+//! charts panel. `--screenshot` waits until
 //! the GPU pipelines have compiled and the scene has settled, saves the window and exits
 //! (for headless checks and bug reports). `--present` and `--frame-latency` set the
 //! swap chain's present mode (default auto vsync) and maximum queued frames (default
@@ -49,12 +50,15 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::{PresentMode, WindowResolution};
 use ps_view::{Lens, PlantViewPlugin, Ready, ViewSet};
 
+// Command-line switches are independent flags.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, Resource)]
 struct Options {
     day: f64,
     speed: f64,
     paused: bool,
     lens: Lens,
+    charts: bool,
     screenshot: Option<PathBuf>,
     present: PresentMode,
     frame_latency: Option<std::num::NonZero<u32>>,
@@ -100,6 +104,7 @@ fn parse_args() -> Result<Options> {
         speed: 24.0,
         paused: false,
         lens: Lens::Off,
+        charts: false,
         screenshot: None,
         present: PresentMode::Mailbox,
         frame_latency: None,
@@ -122,6 +127,7 @@ fn parse_args() -> Result<Options> {
             "--speed" => o.speed = anyhow::Context::context(value()?.parse::<f64>(), "--speed")?,
             "--paused" => o.paused = true,
             "--lens" => o.lens = parse_lens(&value()?)?,
+            "--charts" => o.charts = true,
             "--screenshot" => o.screenshot = Some(PathBuf::from(value()?)),
             "--present" => {
                 o.present_name = value()?;
@@ -186,6 +192,10 @@ fn main() -> Result<()> {
     }))
     .add_plugins((PlantViewPlugin, ps_ui::PlantUiPlugin))
     .insert_resource(options.lens)
+    .insert_resource(ps_ui::Charts {
+        open: options.charts,
+        ..default()
+    })
     .insert_resource(options.clone());
     let sim = if options.demo {
         None

@@ -7,7 +7,12 @@
 //! - Right panel: the lens list and the active lens's legend, which is always visible
 //!   while a lens is on, with its unit, explanation, encoded-or-emergent tag and model
 //!   card.
+//! - Bottom panel: the charts (§5.4), toggled from the top bar.
 //! - A custom theme so the panels match the diorama rather than a debug tool (§4).
+
+mod charts;
+
+pub use charts::{Chart, Charts, Series, nearest, nice_max};
 
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
@@ -89,6 +94,7 @@ impl Plugin for PlantUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EguiPlugin::default())
             .init_resource::<TimeControl>()
+            .init_resource::<Charts>()
             .add_systems(EguiPrimaryContextPass, panels)
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -126,6 +132,7 @@ fn panels(
     mut lens: ResMut<Lens>,
     mut rig: ResMut<CameraRig>,
     garden: Res<Garden>,
+    mut charts: ResMut<Charts>,
     mut themed: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -141,7 +148,9 @@ fn panels(
             .max_rect(ctx.viewport_rect()),
     );
     let top = egui::Panel::top("time")
-        .show(&mut root, |ui| top_bar(ui, &mut time, &garden))
+        .show(&mut root, |ui| {
+            top_bar(ui, &mut time, &garden, &mut charts.open);
+        })
         .response
         .rect
         .height();
@@ -153,6 +162,11 @@ fn panels(
         .rect
         .width();
     let bottom = egui::Panel::bottom("help").show(&mut root, |ui| {
+        if charts.open {
+            ui.add_space(4.0);
+            charts::panel(ui, &charts, &mut time);
+            ui.separator();
+        }
         ui.horizontal(|ui| {
             ui.weak("Drag to orbit · right-drag to pan · wheel to zoom · F to reframe");
             if !rig.auto_frame && ui.button("Reframe").clicked() {
@@ -172,7 +186,7 @@ fn panels(
     Ok(())
 }
 
-fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden) {
+fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden, charts_open: &mut bool) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         let day = (time.hour / 24.0).floor();
@@ -202,6 +216,8 @@ fn top_bar(ui: &mut egui::Ui, time: &mut TimeControl, garden: &Garden) {
                 time.commands.push(TimeCommand::Step(hours));
             }
         }
+        ui.separator();
+        ui.toggle_value(charts_open, "Charts");
         ui.separator();
         if time.busy {
             ui.colored_label(egui::Color32::from_rgb(200, 210, 170), "Simulating…");
