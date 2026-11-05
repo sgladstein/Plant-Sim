@@ -213,9 +213,11 @@ impl WorldState {
     /// chain covers the whole history at a cost that does not grow with the day.
     #[must_use]
     pub fn day_hash(&self) -> u64 {
-        let prev = self.hashes.last().copied().unwrap_or_else(|| {
-            hash_of(&(&self.model_version, &self.scenario, &self.catalog))
-        });
+        let prev = self
+            .hashes
+            .last()
+            .copied()
+            .unwrap_or_else(|| hash_of(&(&self.model_version, &self.scenario, &self.catalog)));
         hash_of(&(
             prev,
             self.tick,
