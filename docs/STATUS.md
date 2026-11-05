@@ -32,6 +32,12 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 26 Save, load and lens data | #89 | sim side done (this PR): `Session::save_ron` saves without stopping the sim (the save holds the timeline's whole log); lens data recorded beside the state and never hashed or saved (per-plant absorbed PAR, relative light and light share; per-organ phloem import, temperature and N concentration; soil layer temperatures), in `Snapshot::lens`. Done-when test `ps-session/tests/save.rs`: the 30-bean plot with an obstacle, a support, a cut and a harvest, saved while running, loaded and finished, matches the session and a replay of its log. No model change. UI half (save/load UI, scrubber action markers, competition, temperature and nitrogen lenses, flow arrows) is the viewer's |
 | 27 | | open |
 
+## M3: seeds, breeding and challenges
+| WP | Issue | State |
+| --- | --- | --- |
+| 28 Genome | #90 | in progress. Step 1 (result-neutral, golden hashes unchanged): `ps_species::genetics` (Haldane linkage, meiosis keyed per ovule, two-tier mutation, crosses) and `ps_species::seed_colour` (layered rule-table evaluator); optional locus keys `name`, `tier`, `chromosome`, `position_cm` and genome keys `named_mutation_rate`, `mutation_effect_sd`, `chromosome_lengths_cm` (one per chromosome). F2 > F1 variance shown on a test genome. Step 2 (model PR): 20 to 40 loci with allele distributions in the species files, the named-locus placements of decision 0023, the bean seed-colour table, a decision record, schema and model bumps |
+| 29 to 32 | | open |
+
 **M0 exit (§7):** the validation report passes every M0 gate, the 90-day run is deterministic (golden hashes, Linux = Windows, debug = release), frost kills the plant for good, and the known limits are in decision 0018 and the model cards. The owner signs off M0.
 
 ## M1 groundwork (parallel to M0, viewer thread)

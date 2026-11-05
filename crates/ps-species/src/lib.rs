@@ -10,7 +10,9 @@
 //!
 //! Model card: docs/models/species-and-genome.md.
 
+pub mod genetics;
 pub mod schema;
+pub mod seed_colour;
 
 use std::collections::BTreeMap;
 
@@ -61,6 +63,44 @@ pub struct Locus {
     pub dominance: f64,
     /// Standard deviation of allele values in the species population.
     pub allele_sd: f64,
+    /// Gene symbol of a named Mendelian locus (`fin`, `Ppd`, `P`, ...), which the
+    /// seed-colour table refers to. Absent for anonymous QTL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Mutation tier (decision 0023). Absent means an anonymous QTL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<LocusTier>,
+    /// Chromosome, 1 to [`genetics::CHROMOSOMES`] (decision 0023). Absent means the
+    /// locus is unlinked to every other locus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chromosome: Option<u8>,
+    /// Position on its chromosome, cM from the end of the linkage group. Required with
+    /// `chromosome`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position_cm: Option<f64>,
+}
+
+/// How a locus mutates (decision 0023: two tiers).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LocusTier {
+    /// An anonymous quantitative locus: continuous allele values, mutating at the
+    /// genome's `mutation_rate` by a small Gaussian step.
+    Qtl,
+    /// A named Mendelian locus with `states` discrete alleles coded 0 to `states - 1`
+    /// (0 the recessive or null allele), mutating at `named_mutation_rate` to another
+    /// state.
+    Named {
+        /// Number of allele states, at least 2.
+        states: u8,
+    },
+}
+
+impl Locus {
+    /// The tier, an anonymous QTL when absent.
+    #[must_use]
+    pub fn tier(&self) -> LocusTier {
+        self.tier.unwrap_or(LocusTier::Qtl)
+    }
 }
 
 /// The genome definition.
@@ -69,8 +109,80 @@ pub struct Locus {
 pub struct Genome {
     /// Loci, in a fixed order (the genotype is a list in this order).
     pub loci: Vec<Locus>,
-    /// Mutation rate.
+    /// Mutation rate of anonymous QTL, per locus per gamete.
     pub mutation_rate: Param,
+    /// Mutation rate of named Mendelian loci, per locus per gamete (decision 0023).
+    /// Absent: [`genetics::DEFAULT_NAMED_MUTATION_RATE`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub named_mutation_rate: Option<Param>,
+    /// SD of a QTL mutation step, as a fraction of that locus's `allele_sd`
+    /// (decision 0023). Absent: [`genetics::DEFAULT_MUTATION_EFFECT_SD`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation_effect_sd: Option<Param>,
+    /// Genetic length of each chromosome, Pv01 first (decision 0023). Absent: every
+    /// chromosome is [`genetics::DEFAULT_CHROMOSOME_LENGTH_CM`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chromosome_lengths_cm: Option<ChromosomeLengths>,
+}
+
+/// Genetic lengths of the chromosomes, one per chromosome in order, with provenance.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChromosomeLengths {
+    /// Lengths, one per chromosome, chromosome 1 first.
+    pub values: Vec<f64>,
+    /// Unit string; must be [`schema::CHROMOSOME_LENGTH_UNIT`].
+    pub unit: String,
+    /// Where the lengths come from.
+    pub source: String,
+}
+
+impl Genome {
+    /// The optional decision-0023 parameters present in the file, as
+    /// `(key, expected unit, param)`.
+    #[must_use]
+    pub fn optional_params(&self) -> Vec<(&'static str, &'static str, &Param)> {
+        [
+            (
+                "named_mutation_rate",
+                schema::MUTATION_RATE_UNIT,
+                self.named_mutation_rate.as_ref(),
+            ),
+            (
+                "mutation_effect_sd",
+                schema::MUTATION_EFFECT_SD_UNIT,
+                self.mutation_effect_sd.as_ref(),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(k, u, p)| p.map(|p| (k, u, p)))
+        .collect()
+    }
+
+    /// Mutation rate of named loci, per locus per gamete.
+    #[must_use]
+    pub fn named_mutation_rate(&self) -> f64 {
+        self.named_mutation_rate
+            .as_ref()
+            .map_or(genetics::DEFAULT_NAMED_MUTATION_RATE, |p| p.value)
+    }
+
+    /// SD of a QTL mutation step, as a fraction of the locus's allele SD.
+    #[must_use]
+    pub fn mutation_effect_sd(&self) -> f64 {
+        self.mutation_effect_sd
+            .as_ref()
+            .map_or(genetics::DEFAULT_MUTATION_EFFECT_SD, |p| p.value)
+    }
+
+    /// Genetic length of chromosome `c` (1-based), cM.
+    #[must_use]
+    pub fn chromosome_length_cm(&self, c: u8) -> f64 {
+        self.chromosome_lengths_cm
+            .as_ref()
+            .and_then(|l| l.values.get(usize::from(c).wrapping_sub(1)).copied())
+            .unwrap_or(genetics::DEFAULT_CHROMOSOME_LENGTH_CM)
+    }
 }
 
 /// Growth form, which selects the architecture module (§3.4).
@@ -357,11 +469,7 @@ impl Species {
                 });
             }
         }
-        check_param(
-            "genome.mutation_rate",
-            schema::MUTATION_RATE_UNIT,
-            &self.genome.mutation_rate,
-        )?;
+        self.validate_genome()?;
         for (spec, p) in self.phenology.entries() {
             check_param(&format!("phenology.{}", spec.key), spec.unit, p)?;
         }
@@ -457,6 +565,87 @@ impl Species {
                 "lodge_height",
                 "lodge_height and vegetative_after_flowering must be 0 or more",
             );
+        }
+        Ok(())
+    }
+
+    /// Checks the mutation rates, the linkage map and the named loci (decision 0023).
+    fn validate_genome(&self) -> Result<(), SpeciesError> {
+        let g = &self.genome;
+        check_param(
+            "genome.mutation_rate",
+            schema::MUTATION_RATE_UNIT,
+            &g.mutation_rate,
+        )?;
+        for (key, unit, p) in g.optional_params() {
+            check_param(&format!("genome.{key}"), unit, p)?;
+        }
+        let bad = |at: String, why: &str| {
+            Err(SpeciesError::Value {
+                at,
+                why: why.to_owned(),
+            })
+        };
+        for (key, rate) in [
+            ("mutation_rate", g.mutation_rate.value),
+            ("named_mutation_rate", g.named_mutation_rate()),
+        ] {
+            if !(0.0..=1.0).contains(&rate) {
+                return bad(format!("genome.{key}"), "must be in [0, 1]");
+            }
+        }
+        if !(g.mutation_effect_sd().is_finite() && g.mutation_effect_sd() >= 0.0) {
+            return bad(
+                "genome.mutation_effect_sd".into(),
+                "must be finite and >= 0",
+            );
+        }
+        if let Some(l) = &g.chromosome_lengths_cm {
+            let at = "genome.chromosome_lengths_cm";
+            if l.unit != schema::CHROMOSOME_LENGTH_UNIT {
+                return Err(SpeciesError::Unit {
+                    at: at.into(),
+                    found: l.unit.clone(),
+                    expected: schema::CHROMOSOME_LENGTH_UNIT,
+                });
+            }
+            if l.source.trim().is_empty() {
+                return Err(SpeciesError::MissingSource { at: at.into() });
+            }
+            if l.values.len() != usize::from(genetics::CHROMOSOMES)
+                || l.values.iter().any(|v| !(v.is_finite() && *v > 0.0))
+            {
+                return bad(at.into(), "one finite length > 0 per chromosome (11)");
+            }
+        }
+        let mut names = std::collections::BTreeSet::new();
+        for (index, l) in g.loci.iter().enumerate() {
+            let at = format!("genome.loci[{index}]");
+            match (l.chromosome, l.position_cm) {
+                (None, None) => {}
+                (Some(c), Some(x)) => {
+                    if !(1..=genetics::CHROMOSOMES).contains(&c) {
+                        return bad(at, "chromosome must be 1 to 11");
+                    }
+                    if !(x.is_finite() && (0.0..=g.chromosome_length_cm(c)).contains(&x)) {
+                        return bad(at, "position_cm must lie within its chromosome's length");
+                    }
+                }
+                _ => return bad(at, "chromosome and position_cm come together"),
+            }
+            if let LocusTier::Named { states } = l.tier() {
+                if states < 2 {
+                    return bad(at, "a named locus needs at least 2 states");
+                }
+                if l.name.is_none() {
+                    return bad(at, "a named locus needs a name");
+                }
+            }
+            if let Some(n) = &l.name
+                && (n.is_empty() || !names.insert(n.as_str()))
+            {
+                return bad(at, "locus names must be non-empty and unique");
+            }
         }
         Ok(())
     }
@@ -622,6 +811,24 @@ impl Species {
                 p.source.clone(),
             ));
         }
+        if let Some(l) = &self.genome.chromosome_lengths_cm {
+            for (i, v) in l.values.iter().enumerate() {
+                out.push((
+                    format!("genome.chromosome_lengths_cm[{}]", i + 1),
+                    *v,
+                    l.unit.clone(),
+                    l.source.clone(),
+                ));
+            }
+        }
+        for (key, unit, p) in self.genome.optional_params() {
+            out.push((
+                format!("genome.{key}"),
+                p.value,
+                unit.to_owned(),
+                p.source.clone(),
+            ));
+        }
         for (k, h) in &self.heritable {
             out.push((
                 format!("heritable.{k}"),
@@ -712,3 +919,6 @@ mod traits;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod genetics_tests;

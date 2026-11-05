@@ -5085,6 +5085,7 @@ dependencies = [
 name = "ps-species"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "proptest",
  "ps-rng",
  "ps-units",
