@@ -80,7 +80,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
   - A, illustrated or cel-shaded: branch `claude/project-thread-u7o4cj`. Commits 0c9ed89 and ae2aba3 add ps-view `toon.rs`, `shaders/toon.wesl` and `--look natural|illustrated`.
   - B, painterly: branch `claude/project-thread-fml7eu`.
   - Both were based on main before #76, #78 and #84, so they need a rebase. Both touch `scene.rs` materials.
-- Review and renders are in `docs/archive` (the handoff thread copies them), from `/mnt/project-files/design/viewer-look-review.md`.
+- Review and renders: [docs/design/viewer-look-review.md](design/viewer-look-review.md) and `docs/design/viewer-look/`; option renders in `docs/archive/viewer/look-options/`.
 
 ## 6. Open owner items
 
