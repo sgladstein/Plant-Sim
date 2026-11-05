@@ -83,7 +83,48 @@ impl CameraRig {
         let distance = 1.15 * radius / (0.5 * FOV_Y).sin();
         (center, distance)
     }
+
+    /// Target and distance that fit `bounds` in a view of `aspect` (width over height)
+    /// seen from `yaw` and `pitch`, with some margin: each corner of the box is kept
+    /// inside both the vertical and the horizontal field of view. Tighter than
+    /// [`CameraRig::framing`] for a wide, low garden on a wide screen, where a bounding
+    /// sphere leaves most of the frame empty.
+    #[must_use]
+    pub fn framing_fit(bounds: (Vec3, Vec3), yaw: f32, pitch: f32, aspect: f32) -> (Vec3, f32) {
+        let (lo, hi) = bounds;
+        let center = 0.5 * (lo + hi);
+        let back = Vec3::new(
+            pitch.cos() * yaw.sin(),
+            pitch.sin(),
+            pitch.cos() * yaw.cos(),
+        );
+        let right = Vec3::Y.cross(back).normalize_or(Vec3::X);
+        let up = back.cross(right);
+        let tan_v = (0.5 * FOV_Y).tan();
+        let tan_h = tan_v
+            * if aspect.is_finite() && aspect > 0.1 {
+                aspect
+            } else {
+                1.0
+            };
+        let mut distance: f32 = 0.05;
+        for k in 0..8_u8 {
+            let corner = Vec3::new(
+                if k & 1 == 0 { lo.x } else { hi.x },
+                if k & 2 == 0 { lo.y } else { hi.y },
+                if k & 4 == 0 { lo.z } else { hi.z },
+            ) - center;
+            let near = corner.dot(back);
+            distance = distance
+                .max(near + corner.dot(right).abs() / tan_h)
+                .max(near + corner.dot(up).abs() / tan_v);
+        }
+        (center, FIT_MARGIN * distance)
+    }
 }
+
+/// Room left around the framed box by [`CameraRig::framing_fit`] (a factor on distance).
+pub const FIT_MARGIN: f32 = 1.15;
 
 /// Marker for the orbit camera entity.
 #[derive(Component)]
@@ -156,23 +197,37 @@ pub(crate) fn orbit_input(
     }
 }
 
+/// The orbit camera's parts that [`apply_rig`] writes or reads.
+type RigCamera = (
+    &'static mut Transform,
+    Option<&'static mut bevy::pbr::DistanceFog>,
+    Option<&'static Projection>,
+);
+
 /// Eases toward the auto-frame and writes the camera transform.
 #[allow(clippy::needless_pass_by_value)]
 pub(crate) fn apply_rig(
     mut rig: ResMut<CameraRig>,
     time: Res<Time>,
-    mut cameras: Query<(&mut Transform, Option<&mut bevy::pbr::DistanceFog>), With<OrbitCamera>>,
+    mut cameras: Query<RigCamera, With<OrbitCamera>>,
 ) {
+    let aspect = cameras
+        .iter()
+        .find_map(|(_, _, p)| match p {
+            Some(Projection::Perspective(p)) => Some(p.aspect_ratio),
+            _ => None,
+        })
+        .unwrap_or(16.0 / 9.0);
     if rig.auto_frame
         && let Some(bounds) = rig.frame_bounds
     {
-        let (target, distance) = CameraRig::framing(bounds);
+        let (target, distance) = CameraRig::framing_fit(bounds, rig.yaw, rig.pitch, aspect);
         let distance = distance * rig.zoom * rig.cue_zoom;
         let k = 1.0 - (-3.0 * time.delta_secs()).exp();
         rig.target = rig.target.lerp(target, k);
         rig.distance += (distance - rig.distance) * k;
     }
-    for (mut t, fog) in &mut cameras {
+    for (mut t, fog, _) in &mut cameras {
         *t = Transform::from_translation(rig.eye()).looking_at(rig.target, Vec3::Y);
         // The haze starts behind the scene however far out the camera is (a wide
         // garden frames from beyond the default fog's end).
@@ -249,6 +304,35 @@ mod tests {
         // The bounding sphere fits inside the vertical field of view.
         let radius = 0.5 * Vec3::ONE.length();
         assert!(radius / rig.distance < (0.5 * FOV_Y).sin());
+    }
+
+    #[test]
+    fn a_fitted_frame_keeps_every_corner_in_view_and_is_tighter_for_wide_scenes() {
+        let bounds = (Vec3::new(-0.45, -0.2, -0.1), Vec3::new(0.45, 0.15, 0.1));
+        let (yaw, pitch, aspect) = (0.0, 0.28, 16.0 / 9.0);
+        let (c, d) = CameraRig::framing_fit(bounds, yaw, pitch, aspect);
+        let rig = CameraRig {
+            target: c,
+            distance: d,
+            yaw,
+            pitch,
+            ..CameraRig::default()
+        };
+        let eye = rig.eye();
+        let fwd = (c - eye).normalize();
+        let right = fwd.cross(Vec3::Y).normalize();
+        let up = right.cross(fwd);
+        let (tv, th) = ((0.5 * FOV_Y).tan(), (0.5 * FOV_Y).tan() * aspect);
+        for k in 0..8_u8 {
+            let p = Vec3::new(
+                if k & 1 == 0 { -0.45 } else { 0.45 },
+                if k & 2 == 0 { -0.2 } else { 0.15 },
+                if k & 4 == 0 { -0.1 } else { 0.1 },
+            ) - eye;
+            let z = p.dot(fwd);
+            assert!(p.dot(right).abs() <= z * th + 1e-4 && p.dot(up).abs() <= z * tv + 1e-4);
+        }
+        assert!(d < CameraRig::framing(bounds).1 * 0.8);
     }
 
     #[test]
