@@ -64,7 +64,7 @@ The viewer reads `ps_view::Garden` and `SkyState` only; `ps-app/src/sim_source.r
   - Pod set should read nitrogen. N-short plants set as many pods as fed ones and fill smaller seeds.
   - Leaf aging still multiplies capacity next to leaf N.
   - The root reach and the 25x uptake capacity stand in for root length the sim does not draw.
-  - Uptake capacity should scale with root mass (or drawn plus undrawn length), not a constant 25x: drawn length is a tenth of a real bean's at day 40 and near all of it at maturity. The factor should then return to CROPGRO's RTNO3 and plot Ndfa rise from 18%. Mineralization (0.03 g N per m2 a day on the plot) is low against gardens (0.05 to 0.15). Issue to follow.
+  - Uptake capacity should scale with root mass (or drawn plus undrawn length), not a constant 25x: drawn length is a tenth of a real bean's at day 40 and near all of it at maturity. The factor should then return to CROPGRO's RTNO3 and plot Ndfa rise from 18%. Mineralization (0.03 g N per m2 a day on the plot) is low against gardens (0.05 to 0.15). Issue #58.
   - WP24 review (/mnt/project-files/reviews/wp24-review.md), folded in as model 0.5.0 (decision 0020 amendment). Still open: thin shade leaves carry the same N per mass as sun leaves (real ones carry somewhat more); the density pass comes mostly from topsoil N running out; fixation is 34% of the N-free plant's carbon; more N giving less mass at maturity (Rd scales with capacity while the sink feedback throttles A).
   - The soil water has no upward flow.
 - WP12 review (/mnt/project-files/reviews/wp12-review.md): an ignored test or weekly CI job that runs the M0 gates at world seeds 11, 23 and 31 (today only `seeds.sh`-style local runs check them).
