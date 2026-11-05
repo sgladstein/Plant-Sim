@@ -56,6 +56,9 @@ couples them in M0.
 - The scenario is part of the hash: a shorter run of the same scenario has different
   daily hashes from the start.
 - Treatments start at fixed ticks, not at a stage.
+- Actions are checked when given; a prune scheduled for later can still fail when it
+  comes due (the organ died meanwhile), which stops the run. The interactive session
+  probes actions on a copy first (decision 0016).
 
 ## Validation
 - `ps_world::tests` in `crates/ps-world/tests/determinism.rs`:

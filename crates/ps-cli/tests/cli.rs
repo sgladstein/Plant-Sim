@@ -104,3 +104,23 @@ fn unknown_options_fail() {
     let o = cli(&["run", "data/scenarios/single_pot.ron", "--dayz", "3"]);
     assert!(!o.status.success());
 }
+
+#[test]
+fn a_missing_golden_file_fails_unless_allowed() {
+    let empty = out_dir("golden");
+    std::fs::create_dir_all(&empty).unwrap();
+    let e = empty.to_string_lossy().into_owned();
+    let args = [
+        "hash",
+        "data/scenarios/single_pot.ron",
+        "--days",
+        "1",
+        "--check-golden",
+        &e,
+    ];
+    assert!(!cli(&args).status.success());
+    let mut allowed = args.to_vec();
+    allowed.push("--allow-missing");
+    assert!(cli(&allowed).status.success());
+    let _ = std::fs::remove_dir_all(&empty);
+}

@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! ps-cli run    SCENARIO... [--data DIR] [--out DIR] [--days N] [--snapshot-day D]
-//! ps-cli hash   SCENARIO... [--data DIR] [--days N] [--write-golden DIR] [--check-golden DIR]
+//! ps-cli hash   SCENARIO... [--data DIR] [--days N] [--write-golden DIR] [--check-golden DIR [--allow-missing]]
 //! ps-cli bench  SCENARIO... [--data DIR] [--days N] [--repeat N]
 //! ps-cli replay SCENARIO LOG [--data DIR] [--until-tick T] [--out DIR]
 //! ps-cli replay --snapshot FILE [--out DIR]
@@ -20,10 +20,13 @@ use ps_world::{Action, Catalog, Scenario, World};
 
 const USAGE: &str = "usage:
   ps-cli run    SCENARIO... [--data DIR] [--out DIR] [--days N] [--snapshot-day D]
-  ps-cli hash   SCENARIO... [--data DIR] [--days N] [--write-golden DIR] [--check-golden DIR]
+  ps-cli hash   SCENARIO... [--data DIR] [--days N] [--write-golden DIR] [--check-golden DIR [--allow-missing]]
   ps-cli bench  SCENARIO... [--data DIR] [--days N] [--repeat N]
   ps-cli replay SCENARIO LOG [--data DIR] [--until-tick T] [--out DIR]
   ps-cli replay --snapshot FILE [--out DIR]";
+
+/// Options that take no value.
+const FLAGS: [&str; 1] = ["allow-missing"];
 
 /// Parsed command line: positional arguments and `--key value` options.
 #[derive(Debug, Default)]
@@ -42,6 +45,10 @@ impl Args {
         };
         while let Some(x) = it.next() {
             if let Some(key) = x.strip_prefix("--") {
+                if FLAGS.contains(&key) {
+                    a.options.push((key.to_string(), "true".into()));
+                    continue;
+                }
                 let v = it
                     .next()
                     .with_context(|| format!("--{key} needs a value\n{USAGE}"))?;
@@ -172,13 +179,13 @@ fn cmd_run(a: &Args) -> Result<()> {
         }
         w.run_to_end()?;
         write_outputs(&dir, &w)?;
-        Ok(w.state_hash())
+        Ok(w.state().hashes.last().copied().unwrap_or_default())
     });
     let mut failed = false;
     for (l, r) in loaded.iter().zip(results) {
         match r {
             Ok(h) => println!(
-                "{}: {} days, hash {h:016x} -> {}",
+                "{}: {} days, last daily hash {h:016x} -> {}",
                 l.stem,
                 l.scenario.duration_days,
                 out.join(&l.stem).display()
@@ -200,7 +207,13 @@ fn platform() -> String {
 }
 
 fn cmd_hash(a: &Args) -> Result<()> {
-    a.check_keys(&["data", "days", "write-golden", "check-golden"])?;
+    a.check_keys(&[
+        "data",
+        "days",
+        "write-golden",
+        "check-golden",
+        "allow-missing",
+    ])?;
     let loaded = load_all(a)?;
     let results = run_parallel(&loaded, |l| {
         let mut w = World::new(l.scenario.clone(), l.catalog.clone())?;
@@ -238,6 +251,9 @@ fn cmd_hash(a: &Args) -> Result<()> {
                         l.stem,
                         p.display()
                     );
+                    if a.get("allow-missing").is_none() {
+                        bad.push(format!("{} (no golden file)", l.stem));
+                    }
                 }
             }
         }
@@ -296,7 +312,7 @@ fn cmd_replay(a: &Args) -> Result<()> {
         let until = a.number::<u64>("until-tick")?.unwrap_or(end);
         World::replay(l.scenario, l.catalog, &actions, until)?
     };
-    println!("tick {}: hash {:016x}", w.tick(), w.state_hash());
+    println!("tick {}: full-state hash {:016x}", w.tick(), w.state_hash());
     if let Some(last) = w.state().hashes.last() {
         println!("day {}: daily hash {last:016x}", w.state().hashes.len() - 1);
     }

@@ -1,4 +1,5 @@
-// Response scenarios (design plan §8.3), control: the single_pot set-up unchanged.
+// Response scenarios (design plan §8.3), control: a copy of single_pot (same seed, pot
+// and weather), kept here so the four response runs sit together.
 Scenario(
   schema: 1,
   model_version: "0.1.0",

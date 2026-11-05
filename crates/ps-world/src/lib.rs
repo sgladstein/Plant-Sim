@@ -353,6 +353,7 @@ impl World {
             });
         }
         let sowings = scenario.sowings.clone();
+        let events = scenario.events.clone();
         let mut w = Self {
             state: WorldState {
                 model_version: MODEL_VERSION.to_string(),
@@ -373,6 +374,10 @@ impl World {
         };
         for s in &sowings {
             w.sow(s)?;
+        }
+        // The static part of the action check; a future prune can still fail when due.
+        for e in &events {
+            w.check(e.tick, &e.kind, false)?;
         }
         Ok(w)
     }
