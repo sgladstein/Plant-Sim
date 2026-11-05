@@ -18,6 +18,11 @@ Daily (§3.2 daily step 6), in crate `ps-light`:
   of 3 cm (larger if the widest axis would need more than 96), a 10 cm margin around
   the leaves, and its bottom at the ground. `n_a = ⌊span_a / s⌋ + 1`. Each leaf still
   traces its own rays; per-voxel transmittance was measured and is not used.
+- **Obstacles** (WP25, decision 0024). A box with transmittance `T` through its
+  thinnest side `t` has `κ = −ln(max(T, 10⁻⁶)) / t` (m⁻¹). Each cell it overlaps gains
+  `D_c += κ · V_overlap / s³`, so a thin wall keeps its optical depth across a coarse
+  cell at normal incidence. The grid is fitted to include the boxes' corners. Obstacles
+  add optical depth only, not leaf area, so they do not change the red:far-red proxy.
 - **Footprint.** Leaf `i` of area `A_i` (m²) is a horizontal disc of radius
   `r_i = √(A_i/π)` at its center height, sampled on a square lattice of spacing at most
   `s/2`; each lattice point carries `A_i / N_points`. Leaf area density in cell `c`:
@@ -94,6 +99,10 @@ interception as it grows, and shade between neighboring plants.
 
 ## Known limits
 - Leaves are discs; real bean leaflets are ovate. Stems and pods do not cast shade yet.
+- Obstacles are smeared over the cells they touch, so a thin wall in a 3 cm plot cell
+  casts a soft edge. A large obstacle far from a pot stretches the pot's grid and
+  coarsens its cells. Obstacles are grey: under a shade cloth, red:far-red stays as it
+  is, as it does under a neutral cloth.
 - Within a cell, the model does not know which leaf is on top: two leaflets that overlap
   inside one cell layer shade each other partly instead of one shading the other fully
   (leaves in one cell combine as a Poisson product). That is where most per-leaf error
@@ -127,6 +136,8 @@ interception as it grows, and shade between neighboring plants.
   work per day, about 5 ms on 4 cores; a 60-leaflet bean about 1 ms (decision 0010).
 
 ## Validation
+- `ps_light::obstacle::tests`: a 1 cm wall at 10% transmittance gives `−ln 0.1` of
+  optical depth along a ray across 10 cm cells; a ray beside it is clear.
 - `ps_light::tests::uniform_canopy_matches_beers_law`: 40 × 40 × 12 cells, LAI 0.5–6,
   elevations 45–90°, absorbed fraction within 2% of `1 − exp(−G LAI / sin β)`.
 - `single_plant` (crates/ps-light/tests/single_plant.rs) against the Monte Carlo ray

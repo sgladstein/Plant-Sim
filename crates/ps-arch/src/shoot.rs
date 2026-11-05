@@ -237,11 +237,14 @@ impl Plant {
             };
             let node = self.arena.parent[bud.id.index()].unwrap_or(bud.id);
             let carbon = self.carbon_factor(node, self.params.bud_reserve_reference);
-            let dominance = if main.terminated {
+            // A cut apex (topping, WP25) frees the buds at once.
+            let dominance = if main.terminated || !self.arena.alive[main.apex.index()] {
                 1.0
             } else {
-                let d = f64::from(main.nodes.saturating_sub(bud.rank));
-                1.0 - libm::exp(-d / hp.dominance_nodes)
+                // Buds of the top `hold_nodes` nodes stay dormant under a growing
+                // apex; below that, dominance decays over `dominance_nodes` (WP25).
+                let d = f64::from(main.nodes.saturating_sub(bud.rank)) - hp.hold_nodes;
+                1.0 - libm::exp(-d.max(0.0) / hp.dominance_nodes)
             };
             let p = hp.bud_activation * light * carbon * dominance;
             if self.stream(bud.id, now, Purpose::BudFate).bernoulli(p) {

@@ -569,9 +569,31 @@ pub fn rebuild_daily(
     sky: &[SkySector],
     g: f64,
 ) -> (Option<LightGrid>, Vec<LightCoeffs>) {
-    let Some((grid, feet)) = LightGrid::fit_with_footprints(leaves, extra_bounds, g) else {
+    rebuild_daily_with(leaves, extra_bounds, &[], sun_path, sky, g)
+}
+
+/// [`rebuild_daily`] with obstacles: the grid also spans their corners, and their
+/// optical depth is added after the leaves' (WP25).
+#[must_use]
+pub fn rebuild_daily_with(
+    leaves: &[LeafPoint],
+    extra_bounds: &[[f64; 3]],
+    obstacles: &[Obstacle],
+    sun_path: &[Option<[f64; 3]>; 24],
+    sky: &[SkySector],
+    g: f64,
+) -> (Option<LightGrid>, Vec<LightCoeffs>) {
+    let fit = if obstacles.is_empty() {
+        LightGrid::fit_with_footprints(leaves, extra_bounds, g)
+    } else {
+        let mut extra = extra_bounds.to_vec();
+        extra.extend(obstacles.iter().flat_map(Obstacle::corners));
+        LightGrid::fit_with_footprints(leaves, &extra, g)
+    };
+    let Some((mut grid, feet)) = fit else {
         return (None, Vec::new());
     };
+    grid.add_obstacles(obstacles);
     let coeffs = coefficients_with(&grid, leaves, &feet, sun_path, sky);
     (Some(grid), coeffs)
 }
@@ -760,8 +782,10 @@ pub fn absorbed_par(
     }
 }
 
+pub mod obstacle;
 pub mod plot;
-pub use plot::rebuild_plot;
+pub use obstacle::Obstacle;
+pub use plot::{rebuild_plot, rebuild_plot_with};
 
 #[cfg(test)]
 mod tests;

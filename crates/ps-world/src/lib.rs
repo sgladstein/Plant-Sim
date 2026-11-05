@@ -21,13 +21,13 @@ use serde::{Deserialize, Serialize};
 
 pub use hash::hash_of;
 pub use scenario::{
-    Action, ActionKind, Irrigation, Scenario, SeedChoice, SoilSpec, Sowing, Start, SupportSpec,
-    WeatherSource,
+    Action, ActionKind, Irrigation, ObstacleSpec, Scenario, SeedChoice, SoilSpec, Sowing, Start,
+    SupportSpec, WeatherSource,
 };
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.7.0";
+pub const MODEL_VERSION: &str = "0.8.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -202,6 +202,25 @@ pub struct DayEnv {
     pub soil_mineral_n_g: f64,
 }
 
+/// Seeds picked by one harvest action (WP25): the seed library is a list of these.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SeedLot {
+    /// Sim day of the harvest.
+    pub day: u32,
+    /// Plant the pod or ear came from.
+    pub plant: u32,
+    /// Its species id.
+    pub species: String,
+    /// The pod or ear's organ id within the plant.
+    pub organ: u32,
+    /// Seeds (grains) picked.
+    pub seeds: u32,
+    /// Their dry mass, g.
+    pub seed_mass_g: f64,
+    /// Whether the plant had reached maturity (seeds picked earlier are green).
+    pub mature: bool,
+}
+
 /// The world's complete state: what snapshots store and the hash covers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WorldState {
@@ -231,6 +250,15 @@ pub struct WorldState {
     pub hashed_log: usize,
     /// History rows already covered by a daily hash.
     pub hashed_rows: usize,
+    /// Harvested seed lots, in harvest order (WP25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seed_library: Vec<SeedLot>,
+    /// Supports added by actions, in action order (WP25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added_supports: Vec<SupportSpec>,
+    /// Obstacles placed by actions, in action order (WP25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added_obstacles: Vec<ObstacleSpec>,
 }
 
 impl WorldState {
@@ -238,7 +266,7 @@ impl WorldState {
     /// are intentions rather than state (a replay knows its whole log from the start).
     #[must_use]
     pub fn hash(&self) -> u64 {
-        hash_of(&(
+        let base = hash_of(&(
             &self.model_version,
             &self.scenario,
             &self.catalog,
@@ -248,7 +276,22 @@ impl WorldState {
             &self.log[..self.applied],
             &self.history,
             &self.hashes,
-        ))
+        ));
+        // The WP25 lists join the hash only when used, so runs without them keep their
+        // hashes.
+        if self.seed_library.is_empty()
+            && self.added_supports.is_empty()
+            && self.added_obstacles.is_empty()
+        {
+            base
+        } else {
+            hash_of(&(
+                base,
+                &self.seed_library,
+                &self.added_supports,
+                &self.added_obstacles,
+            ))
+        }
     }
 
     /// The daily hash: the previous day's hash (or, on day 0, the model version,
@@ -315,6 +358,33 @@ fn weather_for(s: &Scenario, c: &Catalog) -> Result<WeatherSeries, WorldError> {
             r.map_err(|e| WorldError::Weather(format!("{f}: {e}")))
         }
     }
+}
+
+/// A soil's center in its own frame (east, north), m: the frame sowings, supports and
+/// obstacles are placed in.
+fn soil_centre(grid: &SoilGrid) -> [f64; 2] {
+    let (nx, ny, _) = grid.dims();
+    let c = grid.cell_size().0;
+    #[allow(clippy::cast_precision_loss)]
+    let centre = [nx as f64 * c * 0.5, ny as f64 * c * 0.5];
+    centre
+}
+
+fn support_in_frame(p: &SupportSpec, centre: [f64; 2]) -> ps_arch::Support {
+    ps_arch::Support {
+        base: [
+            centre[0] + p.offset_cm.0 * 0.01,
+            centre[1] + p.offset_cm.1 * 0.01,
+            0.0,
+        ],
+        height: p.height_cm * 0.01,
+        diameter: p.diameter_cm * 0.01,
+    }
+}
+
+fn obstacle_in_frame(o: &ObstacleSpec, centre: [f64; 2]) -> ps_light::Obstacle {
+    let at = |v: (f64, f64, f64)| [centre[0] + v.0 * 0.01, centre[1] + v.1 * 0.01, v.2 * 0.01];
+    ps_light::Obstacle::with_transmittance(at(o.min_cm), at(o.max_cm), o.transmittance)
 }
 
 fn soil_grid(spec: &SoilSpec) -> Result<SoilGrid, WorldError> {
@@ -418,6 +488,9 @@ impl World {
                 hashes: Vec::new(),
                 hashed_log: 0,
                 hashed_rows: 0,
+                seed_library: Vec::new(),
+                added_supports: Vec::new(),
+                added_obstacles: Vec::new(),
             },
             weather,
         };
@@ -582,14 +655,36 @@ impl World {
                     ));
                 }
             }
-            ActionKind::Prune { plant, organ } => {
+            ActionKind::Prune { plant, organ } | ActionKind::Harvest { plant, organ } => {
                 if now {
                     let Some(p) = self.state.plants.get(*plant as usize) else {
                         return err(format!("unknown plant {plant}"));
                     };
-                    if let Err(e) = p.plant.check_prune(ps_graph::OrganId(*organ)) {
+                    let id = ps_graph::OrganId(*organ);
+                    let r = if matches!(kind, ActionKind::Harvest { .. }) {
+                        p.plant.check_harvest(id)
+                    } else {
+                        p.plant.check_prune(id)
+                    };
+                    if let Err(e) = r {
                         return err(e.to_string());
                     }
+                }
+            }
+            ActionKind::PlaceObstacle(o) => {
+                if !soil_known(o.soil) {
+                    return err(format!("unknown soil {}", o.soil));
+                }
+                if let Err(e) = o.check() {
+                    return err(e);
+                }
+            }
+            ActionKind::AddSupport(p) => {
+                if !soil_known(p.soil) {
+                    return err(format!("unknown soil {}", p.soil));
+                }
+                if let Err(e) = p.check() {
+                    return err(e);
                 }
             }
         }
@@ -706,23 +801,23 @@ impl World {
             at,
             Hours(tick),
         )?;
-        #[allow(clippy::cast_precision_loss)]
-        let centre = [nx as f64 * c * 0.5, ny as f64 * c * 0.5];
-        plant.supports = self
-            .state
+        let centre = soil_centre(grid);
+        let st = &self.state;
+        plant.supports = st
             .scenario
             .supports
             .iter()
+            .chain(&st.added_supports)
             .filter(|p| p.soil == s.soil)
-            .map(|p| ps_arch::Support {
-                base: [
-                    centre[0] + p.offset_cm.0 * 0.01,
-                    centre[1] + p.offset_cm.1 * 0.01,
-                    0.0,
-                ],
-                height: p.height_cm * 0.01,
-                diameter: p.diameter_cm * 0.01,
-            })
+            .map(|p| support_in_frame(p, centre))
+            .collect();
+        plant.obstacles = st
+            .scenario
+            .obstacles
+            .iter()
+            .chain(&st.added_obstacles)
+            .filter(|o| o.soil == s.soil)
+            .map(|o| obstacle_in_frame(o, centre))
             .collect();
         self.state.plants.push(PlantEntry {
             id,
@@ -804,6 +899,47 @@ impl World {
                 p.plant
                     .prune(ps_graph::OrganId(organ), Hours(tick))
                     .map_err(|e| err(e.to_string()))?;
+            }
+            ActionKind::Harvest { plant, organ } => {
+                let p = self
+                    .state
+                    .plants
+                    .get_mut(plant as usize)
+                    .ok_or_else(|| err(format!("unknown plant {plant}")))?;
+                let got = p
+                    .plant
+                    .harvest(ps_graph::OrganId(organ), Hours(tick))
+                    .map_err(|e| err(e.to_string()))?;
+                let lot = SeedLot {
+                    day: p.plant.day,
+                    plant,
+                    species: p.species.clone(),
+                    organ,
+                    seeds: got.seeds,
+                    seed_mass_g: got.seed_mass.0,
+                    mature: got.mature,
+                };
+                self.state.seed_library.push(lot);
+            }
+            ActionKind::PlaceObstacle(o) => {
+                let i = self
+                    .soil_index(o.soil)
+                    .ok_or_else(|| err(format!("unknown soil {}", o.soil)))?;
+                let frame = obstacle_in_frame(&o, soil_centre(&self.state.soils[i].grid));
+                for p in self.state.plants.iter_mut().filter(|p| p.soil == i) {
+                    p.plant.obstacles.push(frame);
+                }
+                self.state.added_obstacles.push(o);
+            }
+            ActionKind::AddSupport(sp) => {
+                let i = self
+                    .soil_index(sp.soil)
+                    .ok_or_else(|| err(format!("unknown soil {}", sp.soil)))?;
+                let frame = support_in_frame(&sp, soil_centre(&self.state.soils[i].grid));
+                for p in self.state.plants.iter_mut().filter(|p| p.soil == i) {
+                    p.plant.supports.push(frame);
+                }
+                self.state.added_supports.push(sp);
             }
         }
         Ok(())
@@ -1149,7 +1285,10 @@ impl World {
             }
             // One G per plot: the first plant's (one species per plot until WP23).
             let g = plants[first].plant.g_function();
-            let (_, coeffs) = ps_light::rebuild_plot(&leaves, &extra, path, &sky, g);
+            // Every plant in a soil carries the soil's obstacles.
+            let obstacles = &plants[first].plant.obstacles;
+            let (_, coeffs) =
+                ps_light::rebuild_plot_with(&leaves, &extra, obstacles, path, &sky, g);
             // Each plant's slice of the coefficients, then the rest of the daily step
             // for every member in parallel (each depends only on itself).
             let mut slices: Vec<Option<(usize, usize)>> = vec![None; plants.len()];

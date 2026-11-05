@@ -13,7 +13,7 @@
 use ps_graph::LightCoeffs;
 use ps_units::Meters;
 
-use crate::{LeafPoint, LightGrid, SkySector, as_f64, coefficients_with, leaf_radius};
+use crate::{LeafPoint, LightGrid, Obstacle, SkySector, as_f64, coefficients_with, leaf_radius};
 
 /// Cell edge of a plot light grid, m (decision 0019).
 pub const PLOT_CELL_M: f64 = 0.03;
@@ -89,11 +89,27 @@ pub fn rebuild_plot(
     sky: &[SkySector],
     g: f64,
 ) -> (Option<LightGrid>, Vec<LightCoeffs>) {
-    let Some(mut grid) = LightGrid::fit_plot_geometry(leaves, extra_bounds, g) else {
+    rebuild_plot_with(leaves, extra_bounds, &[], sun_path, sky, g)
+}
+
+/// [`rebuild_plot`] with obstacles (see [`crate::rebuild_daily_with`]).
+#[must_use]
+pub fn rebuild_plot_with(
+    leaves: &[LeafPoint],
+    extra_bounds: &[[f64; 3]],
+    obstacles: &[Obstacle],
+    sun_path: &[Option<[f64; 3]>; 24],
+    sky: &[SkySector],
+    g: f64,
+) -> (Option<LightGrid>, Vec<LightCoeffs>) {
+    let mut extra = extra_bounds.to_vec();
+    extra.extend(obstacles.iter().flat_map(Obstacle::corners));
+    let Some(mut grid) = LightGrid::fit_plot_geometry(leaves, &extra, g) else {
         return (None, Vec::new());
     };
     // Footprints are computed once, for the grid and for the rays.
     let feet = grid.add_leaves_keeping(leaves);
+    grid.add_obstacles(obstacles);
     let coeffs = coefficients_with(&grid, leaves, &feet, sun_path, sky);
     (Some(grid), coeffs)
 }

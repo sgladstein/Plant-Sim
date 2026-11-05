@@ -22,7 +22,7 @@ All parameters, with values, units and sources, are in `data/species/bush_bean.r
 `data/species/pole_bean.ron` and `data/species/spring_wheat.ron` (schema 3: the
 `climbing` group, WP22, decision 0021; every species carries it and only vines read it;
 schema 4: the optional `grass` group, WP23, decision 0022, present exactly when the
-growth form is `Grass`);
+growth form is `Grass`; schema 5: the constant `apical_hold_nodes`, WP25, decision 0024);
 the expected units are in `crates/ps-species/src/schema.rs`. The loader rejects a wrong
 unit, an empty source, an unknown or missing key, a non-finite value, and a default
 outside its bounds.

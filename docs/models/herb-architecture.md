@@ -31,8 +31,10 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   internode length (max 2.0), and the internode's specific length by the same factor,
   so a shaded internode is longer and thinner at the same potential mass; SLA (max
   1.4); and pod set (max 0.2).
-- **Bud activation (daily):** `p = a · L · min(1, C_node / C_ref) · (1 − exp(−(n − r)/d))`
-  for dormant main-stem buds at `r ≤ N − 2` before flowering.
+- **Bud activation (daily):** `p = a · L · min(1, C_node / C_ref) · (1 − exp(−max(0, n − r − h)/d))`
+  for dormant main-stem buds at `r ≤ N − 2` before flowering. The buds of the top `h`
+  nodes under a growing apex stay dormant (WP25, decision 0024). The dominance term is 1
+  once the main stem has terminated or its apex has been cut, so topping releases them.
 - **Light index (daily):** `L = 0.5 · (mean over sun-up hours of P_sunlit + T_diffuse)`.
 - **Pod set (decision 0018):** a flower closing after `n` open days sets with
   `p = p₀ · mean(F_C) · H · mean(F_L) · min(1, FTSW_min / 0.5)`, where
@@ -71,7 +73,7 @@ All values, units and sources are in `data/species/bush_bean.ron`. The main ones
 | internode_length_potential | 4.5 | cm | "~" Kumar 2025 |
 | branch_nodes, branch_angle | 3, 45 | -, ° | "~" |
 | bud_activation | 0.6 | per day | "~" |
-| apical_dominance_nodes | 2 | nodes | "~" |
+| apical_dominance_nodes, apical_hold_nodes | 0.7, 1.5 | nodes | "~" (decision 0024; Cline 1991 for the bean decapitation response) |
 | flowers_per_raceme, raceme_flowering_days | 6, 10 | -, day | "~" §3.11 |
 | pod_set_base | 0.42 | - | Binnie and Clifford 1981 (0.2 to 0.55) |
 | pod_set_reserve_reference | 0.22 | g C / g DM | "~" (decision 0018) |

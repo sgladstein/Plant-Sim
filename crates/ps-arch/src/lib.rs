@@ -66,6 +66,20 @@ pub enum ArchError {
     /// The organ cannot be cut (the collar or hypocotyl: cutting it kills the plant).
     #[error("organ {0:?} cannot be pruned")]
     NotPrunable(OrganId),
+    /// Only a pod or an ear can be harvested.
+    #[error("organ {0:?} is not a pod or an ear")]
+    NotHarvestable(OrganId),
+}
+
+/// What a harvest took off a plant (WP25): the seeds of one pod or ear.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Harvested {
+    /// Seeds (grains) the pod or ear carried.
+    pub seeds: u32,
+    /// Their structural dry mass.
+    pub seed_mass: GramsDM,
+    /// Whether the plant had reached maturity: seeds from an earlier harvest are green.
+    pub mature: bool,
 }
 
 /// What an organ is in the architecture (finer than [`OrganKind`]).
@@ -495,6 +509,9 @@ pub struct Plant {
     /// Supports in the plant's soil frame (WP22).
     #[serde(default)]
     pub supports: Vec<Support>,
+    /// Obstacles that shade the plant, in its soil frame (WP25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub obstacles: Vec<ps_light::Obstacle>,
     /// A grass has started stem elongation (WP23).
     #[serde(default)]
     pub jointed: bool,
@@ -694,6 +711,7 @@ impl Plant {
             leaves_dropped: false,
             since_flowering: DegreeDays(0.0),
             supports: Vec::new(),
+            obstacles: Vec::new(),
             jointed: false,
             today: DayStats::default(),
             shortfall: KgWater(0.0),
@@ -1181,7 +1199,15 @@ impl Plant {
             c.to_vec()
         } else {
             let extra = self.internode_tips();
-            ps_light::rebuild_daily(&points, &extra, sun_path, &self.sky, hp.g_function).1
+            ps_light::rebuild_daily_with(
+                &points,
+                &extra,
+                &self.obstacles,
+                sun_path,
+                &self.sky,
+                hp.g_function,
+            )
+            .1
         };
         let mut sums: Vec<(LightCoeffs, f64)> = vec![(zero_coeffs(), 0.0); self.arena.len()];
         for (c, &i) in coeffs.iter().zip(&owner) {
@@ -1284,6 +1310,42 @@ impl Plant {
         }
         self.assert_nitrogen();
         Ok(())
+    }
+
+    /// Checks that `id` is a living pod or ear (see [`Plant::harvest`]).
+    ///
+    /// # Errors
+    /// As [`Plant::harvest`].
+    pub fn check_harvest(&self, id: OrganId) -> Result<(), ArchError> {
+        self.check_prune(id)?;
+        if self.arena.kind[id.index()] != OrganKind::Pod {
+            return Err(ArchError::NotHarvestable(id));
+        }
+        Ok(())
+    }
+
+    /// Picks a pod or ear: it leaves the plant with its seeds, as a prune does, and the
+    /// seeds are counted for the seed library (WP25).
+    ///
+    /// # Errors
+    /// [`ArchError::Graph`] for a missing or dead organ, [`ArchError::NotHarvestable`]
+    /// for anything but a pod or an ear.
+    pub fn harvest(&mut self, id: OrganId, now: Hours) -> Result<Harvested, ArchError> {
+        self.check_harvest(id)?;
+        let a = &self.arena;
+        let seeds: Vec<OrganId> = a.children[id.index()]
+            .iter()
+            .copied()
+            .filter(|c| a.alive[c.index()] && a.kind[c.index()] == OrganKind::SeedInPod)
+            .collect();
+        let seed_mass = seeds.iter().map(|&c| a.structural(c).0).sum();
+        let out = Harvested {
+            seeds: u32::try_from(seeds.len()).unwrap_or(u32::MAX),
+            seed_mass: GramsDM(seed_mass),
+            mature: self.phenology.stage >= Stage::Mature,
+        };
+        self.prune(id, now)?;
+        Ok(out)
     }
 
     /// Counts and totals now.
