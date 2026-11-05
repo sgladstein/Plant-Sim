@@ -1,7 +1,7 @@
 # 0021: Pole bean: indeterminate stem, twining on supports, lodging (WP22)
 
 - **Date:** 2026-11-05
-- **Status:** accepted (the height target is the owner's open choice)
+- **Status:** accepted. The owner chose the research target on 2026-11-05 (decision 0023).
 
 ## Context
 WP22 (design plan §7, M2) adds the vine module and the pole bean: the habit locus,
@@ -14,7 +14,7 @@ common bean has no tendrils. It is a stem twiner: the shoot tip circumnutates ev
 to 130 minutes and wraps any support it touches, anticlockwise seen from above (Darwin
 1875; Millet 1988; Hou 1997). It also showed that 2 m by day 60 needs 15 cm internodes
 at a 20 °C mean, the top of the published range, and recommended at least 1.5 m by day
-60 and 2 m by day 75. The owner has not chosen yet; a decision card is open.
+60 and 2 m by day 75. The owner adopted that target (decision 0023).
 
 ## Decision
 1. **Twining, not tendrils.** `OrganKind::Tendril` stays in the enum, unused, until a
@@ -83,7 +83,7 @@ at a 20 °C mean, the top of the published range, and recommended at least 1.5 m
   reached 1.28, 1.63 and 1.71 m. The row on 5 mm strings (m2/pole_row_trellis) reaches
   1.68 m at day 60 and 2.24 m at the end: its steeper coil climbs faster, and the
   internode that passes the string's top overtops it. Both height targets are Info and
-  pass; the owner's choice of target is still open.
+  pass. The owner chose this target (decision 0023); `pole_height_day75` measures its second half.
 - Without strings, the same row (m2/pole_row_no_trellis) falls at about node 5, stays
   under 25 cm, and yields 34% less seed (band −30 to −70%; the isolated pots lose 44%).
   The response is measured on the row because the field trials are rows. With
