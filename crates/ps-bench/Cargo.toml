@@ -1,0 +1,28 @@
+[package]
+name = "ps-bench"
+description = "Benchmarks of sim hot paths against the design plan's performance budgets (docs/performance.md)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-units.workspace = true
+ps-soil.workspace = true
+ps-light.workspace = true
+libm.workspace = true
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false }
+
+[[bench]]
+name = "soil"
+harness = false
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "light"
+harness = false
