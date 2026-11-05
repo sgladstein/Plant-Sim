@@ -929,22 +929,29 @@ fn lateral_exchange<T: Copy>(
         }
     };
     // fx[i + 1] is the flux from i to i + 1; fy[i + nx] the flux from i to i + nx.
-    let mut fx = vec![0.0_f64; n + 1];
-    let mut fy = vec![0.0_f64; n + nx];
-    for ((f, a), w) in fx[1..n]
-        .iter_mut()
-        .zip(active.iter().zip(&active[1..]))
-        .zip(v.iter().zip(&v[1..]))
-    {
-        *f = flux(a, w);
-    }
-    for ((f, a), w) in fy[nx..n]
-        .iter_mut()
-        .zip(active.iter().zip(&active[nx..]))
-        .zip(v.iter().zip(&v[nx..]))
-    {
-        *f = flux(a, w);
-    }
+    // Built by pushing rather than zeroed and then filled: a large zeroed allocation
+    // costs a memset of fresh memory every call (the same values either way).
+    let mut fx = Vec::with_capacity(n + 1);
+    fx.push(0.0_f64);
+    fx.extend(
+        active
+            .iter()
+            .zip(&active[1..])
+            .zip(v.iter().zip(&v[1..]))
+            .map(|(a, w)| flux(a, w)),
+    );
+    fx.push(0.0);
+    let mut fy = Vec::with_capacity(n + nx);
+    fy.resize(nx, 0.0_f64);
+    fy.extend(
+        active
+            .iter()
+            .zip(&active[nx..])
+            .zip(v.iter().zip(&v[nx..]))
+            .map(|(a, w)| flux(a, w)),
+    );
+    fy.resize(n + nx, 0.0);
+    debug_assert_eq!((fx.len(), fy.len()), (n + 1, n + nx));
     // No pairs across the end of a row or of a layer.
     for row in (0..n).step_by(nx) {
         fx[row] = 0.0;
