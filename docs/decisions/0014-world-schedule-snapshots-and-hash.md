@@ -31,13 +31,17 @@ meet.
    hourly step.
 5. **Hash.** A serde serializer feeds every number of the state, as its bit pattern,
    to a splitmix64-based mixer in serialization order, with tags for options,
-   sequence lengths and enum variants. It covers the model version, scenario,
-   catalog (species files and weather text), tick, soils with their ledgers, plants,
-   the applied part of the action log, the daily rows and the earlier hashes. Actions
-   scheduled for later ticks are not state and are left out, so a replay that knows
-   its whole log from the start hashes like the live session. Hourly scratch (a
-   plant's leaf income between its two hourly calls) and the constant sky table are
-   not serialized and are rebuilt.
+   sequence lengths and enum variants. The daily hash is chained: day 0 starts from
+   the hash of the model version, scenario and catalog (species files and weather
+   text), and each day hashes the previous day's hash, the tick, the soils with their
+   ledgers, the plants, the actions applied since the previous daily hash, and the new
+   daily rows. The chain covers the whole history at a cost that does not grow with
+   the run (re-hashing the history every day would make a run quadratic; perf
+   thread). `WorldState::hash` is the full-state hash on demand. Actions scheduled for
+   later ticks are not state and are left out of both, so a replay that knows its
+   whole log from the start hashes like the live session. Hourly scratch (a plant's
+   leaf income between its two hourly calls) and the constant sky table are not
+   serialized and are rebuilt.
 6. **Snapshots** are the same state as RON text. Rust prints `f64` in the shortest
    form that parses back to the same bits, so a snapshot resumes bit for bit; the
    test resumes from text, not from a clone. Snapshots are taken at day boundaries.

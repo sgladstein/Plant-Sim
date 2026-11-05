@@ -183,6 +183,10 @@ pub struct WorldState {
     pub history: Vec<DayRow>,
     /// Full-state hash after each daily step.
     pub hashes: Vec<u64>,
+    /// Log entries already covered by a daily hash.
+    pub hashed_log: usize,
+    /// History rows already covered by a daily hash.
+    pub hashed_rows: usize,
 }
 
 impl WorldState {
@@ -200,6 +204,25 @@ impl WorldState {
             &self.log[..self.applied],
             &self.history,
             &self.hashes,
+        ))
+    }
+
+    /// The daily hash: the previous day's hash (or, on day 0, the model version,
+    /// scenario and catalog) chained with the current soils and plants and what was
+    /// added since the previous daily hash (applied actions and history rows). The
+    /// chain covers the whole history at a cost that does not grow with the day.
+    #[must_use]
+    pub fn day_hash(&self) -> u64 {
+        let prev = self.hashes.last().copied().unwrap_or_else(|| {
+            hash_of(&(&self.model_version, &self.scenario, &self.catalog))
+        });
+        hash_of(&(
+            prev,
+            self.tick,
+            &self.soils,
+            &self.plants,
+            &self.log[self.hashed_log..self.applied],
+            &self.history[self.hashed_rows..],
         ))
     }
 }
@@ -304,6 +327,8 @@ impl World {
                 applied: 0,
                 history: Vec::new(),
                 hashes: Vec::new(),
+                hashed_log: 0,
+                hashed_rows: 0,
             },
             weather,
         };
@@ -678,9 +703,11 @@ impl World {
             let plant = self.state.plants[p].id;
             self.state.history.push(DayRow { plant, report });
         }
-        // 7. Output: the full-state hash after the day.
-        let h = self.state.hash();
+        // 7. Output: the chained daily hash.
+        let h = self.state.day_hash();
         self.state.hashes.push(h);
+        self.state.hashed_log = self.state.applied;
+        self.state.hashed_rows = self.state.history.len();
         Ok(())
     }
 

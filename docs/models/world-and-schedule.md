@@ -19,6 +19,8 @@ replayed exactly.
   is mm).
 - Hash: for each serialized word `w_k` (k = 0, 1, …):
   `h ← s(h ⊕ s(w_k + k))`, final `s(h ⊕ n)`, with `s` the splitmix64 finalizer.
+  Daily hash `H_d = hash(H_{d−1}, tick, soils, plants, actions and rows new since d−1)`,
+  `H_{−1} = hash(model version, scenario, catalog)`.
 
 ## Parameters
 | Name | Value | Unit | Source |
