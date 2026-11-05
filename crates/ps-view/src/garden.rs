@@ -89,6 +89,28 @@ impl SupportView {
     }
 }
 
+/// A box that shades a container's plants: a board wall or a shade cloth (WP25).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ObstacleView {
+    /// Lower corner relative to the pot center and soil surface (sim x, y, z), m.
+    pub min: [f32; 3],
+    /// Upper corner, m.
+    pub max: [f32; 3],
+    /// Share of light passing through, 0 to 1.
+    pub transmittance: f32,
+}
+
+impl ObstacleView {
+    /// At or above this transmittance an obstacle is a cloth or mesh, drawn see-through.
+    pub const CLOTH_MIN_TRANSMITTANCE: f32 = 0.05;
+
+    /// True for a see-through shade cloth.
+    #[must_use]
+    pub fn is_cloth(&self) -> bool {
+        self.transmittance >= Self::CLOTH_MIN_TRANSMITTANCE
+    }
+}
+
 /// One pot with its plant.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PotView {
@@ -112,6 +134,8 @@ pub struct PotView {
     pub container: bool,
     /// Stakes and strings standing in the container (drawn with it).
     pub supports: Vec<SupportView>,
+    /// Walls and cloths shading the container (drawn with it).
+    pub obstacles: Vec<ObstacleView>,
 }
 
 impl PotView {

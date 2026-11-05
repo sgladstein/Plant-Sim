@@ -12,7 +12,7 @@
 use bevy::math::{Vec2, Vec3};
 use ps_mesh::{MeshData, TubeNode};
 
-use crate::garden::{PotShape, PotSize, SoilFace, SupportView};
+use crate::garden::{ObstacleView, PotShape, PotSize, SoilFace, SupportView};
 
 /// Wall thickness, m.
 pub const WALL: f32 = 0.012;
@@ -698,6 +698,73 @@ pub fn supports(supports: &[SupportView]) -> ColoredMesh {
     out
 }
 
+/// Weathered board.
+const BOARD: [f32; 4] = [0.46, 0.38, 0.29, 1.0];
+/// Green-grey shade cloth; its alpha follows how much light it stops.
+const CLOTH: [f32; 3] = [0.16, 0.22, 0.17];
+/// Board width, m.
+const PLANK: f32 = 0.12;
+
+/// Walls and shade cloths (WP25). Opaque obstacles are board walls split into planks
+/// along their longer horizontal side; see-through ones (`cloth == true`) are cloths
+/// whose opacity is the share of light they stop. Only obstacles of the asked kind are
+/// built, so the two kinds can take different materials. The sim measures heights from
+/// the soil surface, which sits on a bench; so that nothing floats, a wall standing on
+/// the soil surface reaches down to `ground` (m, below the surface; it shades nothing
+/// there), and a raised cloth gets four posts down to it.
+#[must_use]
+pub fn obstacles(obstacles: &[ObstacleView], cloth: bool, ground: f32) -> ColoredMesh {
+    let mut out = ColoredMesh::default();
+    for (k, o) in obstacles
+        .iter()
+        .enumerate()
+        .filter(|(_, o)| o.is_cloth() == cloth)
+    {
+        let (mut lo, hi) = (Vec3::from(o.min), Vec3::from(o.max));
+        if cloth {
+            let a = (1.0 - o.transmittance).clamp(0.15, 0.95);
+            out.cuboid(lo, hi, [CLOTH[0], CLOTH[1], CLOTH[2], a]);
+            continue;
+        }
+        if lo.z <= 0.001 {
+            lo.z = lo.z.min(ground);
+        }
+        let s = hi - lo;
+        let along = if s.x >= s.y { Vec3::X } else { Vec3::Y };
+        let length = s.dot(along);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let planks = ((length / PLANK).ceil() as usize).clamp(1, 64);
+        #[allow(clippy::cast_precision_loss)]
+        let step = length / planks as f32;
+        for i in 0..planks {
+            #[allow(clippy::cast_precision_loss)]
+            let (a, b) = (step * i as f32, step * (i as f32 + 1.0) - 0.004);
+            let (p, q) = (lo + along * a, lo + along * b.max(a + 0.001));
+            let q = q + (hi - lo) * (Vec3::ONE - along);
+            out.cuboid(p, q, speckle(BOARD, jitter(k, i, 7)));
+        }
+    }
+    if !cloth {
+        // Posts under raised cloths (built with the opaque pass, in wood).
+        for o in obstacles.iter().filter(|o| o.is_cloth() && o.min[2] > 0.05) {
+            let post = 0.02;
+            for (x, y) in [
+                (o.min[0], o.min[1]),
+                (o.max[0] - post, o.min[1]),
+                (o.min[0], o.max[1] - post),
+                (o.max[0] - post, o.max[1] - post),
+            ] {
+                out.cuboid(
+                    Vec3::new(x, y, ground.min(0.0)),
+                    Vec3::new(x + post, y + post, o.min[2]),
+                    TRELLIS_WOOD,
+                );
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -825,5 +892,37 @@ mod tests {
             hi.x - lo.x < 0.02 && (hi.z - 2.0).abs() < 1e-3,
             "{lo:?} {hi:?}"
         );
+    }
+
+    #[test]
+    fn boards_and_cloths_are_built_apart() {
+        let wall = ObstacleView {
+            min: [-0.5, -0.43, 0.0],
+            max: [0.5, -0.4, 0.8],
+            transmittance: 0.0,
+        };
+        let cloth = ObstacleView {
+            min: [-0.5, -0.5, 1.0],
+            max: [0.5, 0.5, 1.03],
+            transmittance: 0.5,
+        };
+        let both = [wall, cloth];
+        let boards = obstacles(&both, false, 0.0);
+        let cloths = obstacles(&both, true, 0.0);
+        // A 1 m wall is 9 planks of 6 faces plus the cloth's 4 posts; the cloth is one box.
+        assert_eq!(boards.mesh.vertex_count(), (9 + 4) * 6 * 4);
+        assert_eq!(cloths.mesh.vertex_count(), 6 * 4);
+        assert!(cloths.colors.iter().all(|c| (c[3] - 0.5).abs() < 1e-6));
+        let in_box = |v: Vec3| {
+            v.cmpge(Vec3::from(wall.min) - 1e-5).all() && v.cmple(Vec3::from(wall.max) + 1e-5).all()
+        };
+        assert!(
+            boards.mesh.positions[..9 * 24]
+                .iter()
+                .all(|&p| in_box(Vec3::from(p)))
+        );
+        // On a bench, the wall reaches the ground.
+        let low = obstacles(&both, false, -0.8);
+        assert!(low.mesh.positions.iter().any(|p| (p[2] + 0.8).abs() < 1e-6));
     }
 }

@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 
 use bevy::prelude::{Res, ResMut};
 use ps_graph::{OrganId, OrganKind};
-use ps_ui::{Field, Inspector};
+use ps_ui::{Field, Inspector, PlayerAction};
 use ps_view::Selection;
 use ps_world::{DayRow, PlantEntry};
 
@@ -68,12 +68,37 @@ pub fn inspect(src: Res<SimSource>, selection: Res<Selection>, mut inspector: Re
         let row = snap.history.iter().rev().find(|r| r.plant == plant.id);
         whole_plant(plant, row, src.pot_label(picked.pot))
     };
+    let actions = picked
+        .organ
+        .map(|i| actions(plant, picked.pot, i))
+        .unwrap_or_default();
     *inspector = Inspector {
         built_for: Some(key),
         title,
         fields,
         why,
+        actions,
     };
+}
+
+/// What the player can do to organ `i` of the plant in pot `pot` (WP25): pick a living
+/// pod or ear, or cut a living shoot organ (the sim refuses the collar and hypocotyl).
+#[must_use]
+pub fn actions(p: &PlantEntry, pot: usize, i: usize) -> Vec<(String, PlayerAction)> {
+    let id = OrganId(u32::try_from(i).unwrap_or(u32::MAX));
+    let mut out = Vec::new();
+    if p.plant.check_harvest(id).is_ok() {
+        let what = if p.plant.params.grass.is_some() {
+            "Harvest ear"
+        } else {
+            "Harvest pod"
+        };
+        out.push((what.to_owned(), PlayerAction::Harvest { pot, organ: i }));
+    }
+    if p.plant.check_prune(id).is_ok() && p.plant.arena.kind[i] != OrganKind::Root {
+        out.push(("Cut here".to_owned(), PlayerAction::Prune { pot, organ: i }));
+    }
+    out
 }
 
 /// Title, fields and why line for organ `i`.
@@ -401,6 +426,29 @@ mod tests {
             }
             assert!(!f.card.is_empty(), "{} has no model card", f.label);
         }
+    }
+
+    #[test]
+    fn pods_offer_a_harvest_and_the_collar_offers_nothing() {
+        let data = crate::sim_source::find_data_dir(None).unwrap_or_else(|e| unreachable!("{e}"));
+        let (mut w, _) = crate::sim_source::load_world(
+            &data,
+            std::path::Path::new(crate::sim_source::DEFAULT_SCENARIO),
+        )
+        .unwrap_or_else(|e| unreachable!("{e:#}"));
+        w.run_days(70).unwrap_or_else(|e| unreachable!("{e}"));
+        let p = &w.state().plants[0];
+        let a = &p.plant.arena;
+        let pod = (0..a.len())
+            .find(|&i| a.kind[i] == OrganKind::Pod && a.alive[i])
+            .unwrap_or_else(|| unreachable!("no living pod by day 70"));
+        let offered = actions(p, 0, pod);
+        assert!(
+            offered
+                .iter()
+                .any(|(_, x)| *x == PlayerAction::Harvest { pot: 0, organ: pod })
+        );
+        assert!(actions(p, 0, p.plant.collar.index()).is_empty());
     }
 
     #[test]
