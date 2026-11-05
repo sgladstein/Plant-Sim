@@ -29,6 +29,15 @@ outside its bounds.
 | Loci | one per heritable parameter | - | M0 identity mapping |
 | Allele SD | 0 | trait unit | M0 identity mapping |
 
+Root types (WP8, decision 0013) are a list of CRootBox-style entries, each with a name,
+an origin (`Radicle`, `Basal`, `Hypocotyl` or `Lateral`), a branching order, and
+`count`, `emergence` (°C·day after germination), `elongation` (cm per day at the
+optimum temperature), `max_length`, `branch_spacing`, `apical_zone` (cm),
+`insertion_angle` (°), `diameter` (mm) and tropism weights. The loader requires exactly
+one radicle, unique names, order 0 for seed-borne types and order above 0 for laterals,
+and a parent order for every lateral order. Specific root length follows from diameter
+and `root_density`.
+
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
 | --- | --- | --- | --- |
@@ -50,6 +59,7 @@ physiology (§3.12).
 - `ps_species::tests::wrong_unit_is_a_clear_error`, `missing_source_is_a_clear_error` (WP4 done-when 2).
 - `ps_species::tests::identity_mapping`, `nonzero_variance_varies_and_stays_in_bounds`.
 - `ps_species::tests::every_parameter_has_unit_and_source`, `round_trip_through_ron`.
+- `ps_arch::tests::root_types_convert_to_model_units` (root type conversion).
 
 ## References
 - Falconer, D. S., Mackay, T. F. C. (1996). Introduction to Quantitative Genetics, 4th ed. (additive and dominance effects).

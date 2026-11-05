@@ -1,0 +1,546 @@
+//! The determinate herb's shoot (§3.4, §3.10, §3.11): germination, emergence, nodes,
+//! bud fate, racemes, flowers, pods and seeds, and senescence. Daily steps 2 to 4.
+
+use core::f64::consts::{FRAC_PI_2, PI};
+
+use ps_graph::{OrganId, OrganKind, SpecificSize};
+use ps_physio::Stage;
+use ps_physio::allocation;
+use ps_rng::Purpose;
+use ps_units::{DegreeDays, GramsC, GramsDM, Hours, M2PerG};
+
+use crate::geometry::{add, from_azimuth, unit};
+use crate::{ArchError, Bud, BudFate, Flower, Plant, Pod, Raceme, Role, ShootAxis, Spawn, curve};
+
+/// Elevation of a new petiole above the horizontal (~; decision 0013).
+const PETIOLE_ELEVATION: f64 = 0.5;
+/// Potential mass of a raceme's peduncle, g DM (~).
+const PEDUNCLE_MASS: f64 = 0.03;
+/// Peduncle length per gram, m/g (~; 3 cm for 0.03 g).
+const PEDUNCLE_SPECIFIC_LENGTH: f64 = 1.0;
+/// Potential mass of a flower, g DM (~).
+const FLOWER_MASS: f64 = 0.01;
+/// Flower expansion duration, °C·day (~).
+const FLOWER_EXPANSION: f64 = 30.0;
+
+impl Plant {
+    /// Starts the hypocotyl's expansion (germination, §3.10).
+    pub(crate) fn germinate(&mut self) -> Result<(), ArchError> {
+        let hp = &self.params;
+        let length = self.depth.0 + hp.hypocotyl_above.0;
+        let potential = GramsDM(length / hp.hypocotyl_specific_length.0);
+        let h = self.hypocotyl.index();
+        self.arena.curve[h] = curve(hp.internode_expansion, potential)?;
+        self.arena.expansion_age[h] = DegreeDays(0.0);
+        Ok(())
+    }
+
+    /// Emergence (VE): the epicotyl with its two opposite unifoliate leaves and their buds.
+    pub(crate) fn emerge(&mut self, now: Hours) -> Result<(), ArchError> {
+        self.emerged_day = Some(self.day);
+        let az0 = FRAC_PI_2;
+        let n = self.params.main_nodes;
+        let epicotyl = self.internode(self.hypocotyl, [0.0, 0.0, 1.0], az0, 1, n, 0, now)?;
+        let mut first_leaf = None;
+        for k in 0..2u32 {
+            let az = az0 + f64::from(k) * PI;
+            let leaf = self.leaf(epicotyl, az, Role::Unifoliate, 1.0, 0, now)?;
+            first_leaf.get_or_insert(leaf);
+            self.bud(epicotyl, leaf, az, 1, now)?;
+        }
+        self.axes.push(ShootAxis {
+            order: 0,
+            base: epicotyl,
+            apex: epicotyl,
+            nodes: 1,
+            max_nodes: n,
+            since_node: DegreeDays(0.0),
+            terminated: false,
+            raceme: None,
+            azimuth: az0 + FRAC_PI_2,
+            last_leaf: first_leaf,
+        });
+        Ok(())
+    }
+
+    /// A new internode at node `k` of an axis with `n` nodes, on `parent`.
+    #[allow(clippy::too_many_arguments)]
+    fn internode(
+        &mut self,
+        parent: OrganId,
+        direction: [f64; 3],
+        azimuth: f64,
+        k: u32,
+        n: u32,
+        order: u8,
+        now: Hours,
+    ) -> Result<OrganId, ArchError> {
+        let hp = &self.params;
+        let factor = if order == 0 {
+            hp.internode_factor(k, n)
+        } else {
+            hp.internode_profile[2]
+        };
+        let shade = self.shade_rfr(parent);
+        let length = hp.internode_length.0 * factor * hp.shade_factor(shade, hp.shade_internode);
+        let potential = GramsDM(length / hp.stem_specific_length.0);
+        let mut s = Spawn::new(
+            OrganKind::Internode,
+            Role::Stem,
+            parent,
+            curve(hp.internode_expansion, potential)?,
+        );
+        s.order = order;
+        s.specific = SpecificSize::Length(hp.stem_specific_length);
+        s.direction = direction;
+        s.azimuth = azimuth;
+        self.spawn(&s, now)
+    }
+
+    /// A leaf at the tip of internode `node`, facing `azimuth`, with size `factor` of
+    /// the species' potential.
+    fn leaf(
+        &mut self,
+        node: OrganId,
+        azimuth: f64,
+        role: Role,
+        factor: f64,
+        order: u8,
+        now: Hours,
+    ) -> Result<OrganId, ArchError> {
+        let hp = &self.params;
+        let area = if role == Role::Unifoliate {
+            hp.unifoliate_area.0
+        } else {
+            hp.leaf_area.0 * factor
+        };
+        let shade = self.shade_rfr(node);
+        let sla = hp.sla.0 * hp.shade_factor(shade, hp.shade_sla);
+        let mut s = Spawn::new(
+            OrganKind::Leaf,
+            role,
+            node,
+            curve(hp.leaf_expansion, GramsDM(area / sla))?,
+        );
+        s.order = order;
+        s.specific = SpecificSize::Area(M2PerG(sla));
+        s.direction = from_azimuth(azimuth, PETIOLE_ELEVATION);
+        s.azimuth = azimuth;
+        s.potential_area = area;
+        self.spawn(&s, now)
+    }
+
+    fn bud(
+        &mut self,
+        node: OrganId,
+        leaf: OrganId,
+        azimuth: f64,
+        rank: u32,
+        now: Hours,
+    ) -> Result<(), ArchError> {
+        let mut s = Spawn::new(
+            OrganKind::Bud,
+            Role::Bud,
+            node,
+            ps_graph::ExpansionCurve::none(),
+        );
+        s.direction = from_azimuth(azimuth, 1.0);
+        s.azimuth = azimuth;
+        let id = self.spawn(&s, now)?;
+        self.buds.push(Bud {
+            id,
+            rank,
+            leaf,
+            azimuth,
+            fate: BudFate::Dormant,
+        });
+        Ok(())
+    }
+
+    /// Red:far-red at a new node: that of the newest living leaf on the axis below it
+    /// (1.2 in the open).
+    fn shade_rfr(&self, node: OrganId) -> f64 {
+        let a = &self.arena;
+        let mut cur = Some(node);
+        while let Some(id) = cur {
+            let leaf = a.children[id.index()]
+                .iter()
+                .rev()
+                .find(|c| a.alive[c.index()] && a.kind[c.index()] == OrganKind::Leaf);
+            if let Some(l) = leaf {
+                return a.light[l.index()].rfr;
+            }
+            cur = a.parent[id.index()];
+        }
+        1.2
+    }
+
+    /// Reserve concentration of an organ relative to the bud reference, capped at 1.
+    fn carbon_factor(&self, id: OrganId) -> f64 {
+        let i = id.index();
+        let w = self.arena.structural(id).0;
+        if w <= 0.0 || !self.arena.alive[i] {
+            return 0.0;
+        }
+        (self.arena.reserve[i].0 / w / self.params.bud_reserve_reference).clamp(0.0, 1.0)
+    }
+
+    /// Daily step 2: bud fate (§3.4). A dormant bud on the lower main stem activates
+    /// with probability `activation × light × carbon × dominance` and grows a branch.
+    pub(crate) fn bud_fate(&mut self, now: Hours) -> Result<(), ArchError> {
+        // Branching stops at flowering, when the pods become the dominant sinks
+        // (decision 0013); remaining upper buds become racemes.
+        if self.phenology.stage >= Stage::Flowering {
+            return Ok(());
+        }
+        let Some(main) = self.axes.first().cloned() else {
+            return Ok(());
+        };
+        let hp = &self.params;
+        let eligible = main.max_nodes.saturating_sub(2);
+        let mut grow = Vec::new();
+        for (b, bud) in self.buds.iter().enumerate() {
+            if bud.fate != BudFate::Dormant
+                || bud.rank > eligible
+                || !self.arena.alive[bud.id.index()]
+            {
+                continue;
+            }
+            let light = if self.arena.alive[bud.leaf.index()] {
+                self.meta[bud.leaf.index()].light_index.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let node = self.arena.parent[bud.id.index()].unwrap_or(bud.id);
+            let carbon = self.carbon_factor(node);
+            let dominance = if main.terminated {
+                1.0
+            } else {
+                let d = f64::from(main.nodes.saturating_sub(bud.rank));
+                1.0 - libm::exp(-d / hp.dominance_nodes)
+            };
+            let p = hp.bud_activation * light * carbon * dominance;
+            if self.stream(bud.id, now, Purpose::BudFate).bernoulli(p) {
+                grow.push(b);
+            }
+        }
+        for b in grow {
+            self.buds[b].fate = BudFate::Branch;
+            let bud = self.buds[b].clone();
+            let node = self.arena.parent[bud.id.index()].unwrap_or(self.hypocotyl);
+            let up = self.arena.orientation[node.index()].direction;
+            let dir = add(
+                [0.0; 3],
+                from_azimuth(bud.azimuth, FRAC_PI_2 - self.params.branch_angle.0),
+                1.0,
+            );
+            let dir = unit(add(dir, up, 0.0));
+            let n = self.params.branch_nodes;
+            let first = self.internode(bud.id, dir, bud.azimuth, 1, n, 1, now)?;
+            let leaf = self.leaf(
+                first,
+                bud.azimuth,
+                Role::Trifoliate,
+                self.params.leaf_profile[2],
+                1,
+                now,
+            )?;
+            self.axes.push(ShootAxis {
+                order: 1,
+                base: first,
+                apex: first,
+                nodes: 1,
+                max_nodes: n,
+                since_node: DegreeDays(0.0),
+                terminated: false,
+                raceme: None,
+                azimuth: bud.azimuth + self.params.phyllotaxis.0,
+                last_leaf: Some(leaf),
+            });
+        }
+        Ok(())
+    }
+
+    /// Daily step 3, shoot part: each growing axis makes a node every phyllochron of
+    /// air thermal time and ends in a terminal raceme after its last node.
+    pub(crate) fn grow_axes(&mut self, now: Hours) -> Result<(), ArchError> {
+        let thermal = DegreeDays(self.today.thermal);
+        for x in 0..self.axes.len() {
+            let ax = self.axes[x].clone();
+            if ax.terminated {
+                continue;
+            }
+            if !self.arena.alive[ax.apex.index()] {
+                self.axes[x].terminated = true;
+                continue;
+            }
+            let mut ax = ax;
+            ax.since_node += thermal;
+            while ax.since_node.0 >= self.params.phyllochron.0 && !ax.terminated {
+                ax.since_node.0 -= self.params.phyllochron.0;
+                if ax.nodes < ax.max_nodes {
+                    self.add_node(&mut ax, now)?;
+                } else {
+                    let r = self.raceme(ax.apex, ax.azimuth, now)?;
+                    ax.raceme = Some(r);
+                    ax.terminated = true;
+                }
+            }
+            self.axes[x] = ax;
+        }
+        Ok(())
+    }
+
+    fn add_node(&mut self, ax: &mut ShootAxis, now: Hours) -> Result<(), ArchError> {
+        let hp = &self.params;
+        let prev = self.arena.orientation[ax.apex.index()].direction;
+        let dir = unit(add(prev, [0.0, 0.0, 1.0], hp.shoot_gravitropism));
+        let k = ax.nodes + 1;
+        let (factor, rank) = if ax.order == 0 {
+            (hp.leaf_factor(k - 1, ax.max_nodes - 1), Some(k))
+        } else {
+            (hp.leaf_profile[2], None)
+        };
+        let node = self.internode(ax.apex, dir, ax.azimuth, k, ax.max_nodes, ax.order, now)?;
+        let leaf = self.leaf(node, ax.azimuth, Role::Trifoliate, factor, ax.order, now)?;
+        if let Some(r) = rank {
+            self.bud(node, leaf, ax.azimuth, r, now)?;
+        }
+        ax.apex = node;
+        ax.nodes = k;
+        ax.last_leaf = Some(leaf);
+        ax.azimuth += self.params.phyllotaxis.0;
+        Ok(())
+    }
+
+    /// A raceme (its peduncle) on `parent`.
+    fn raceme(&mut self, parent: OrganId, azimuth: f64, now: Hours) -> Result<OrganId, ArchError> {
+        let ie = self.params.internode_expansion;
+        let mut s = Spawn::new(
+            OrganKind::Internode,
+            Role::Raceme,
+            parent,
+            curve(ie, GramsDM(PEDUNCLE_MASS))?,
+        );
+        s.specific = SpecificSize::Length(ps_units::MPerG(PEDUNCLE_SPECIFIC_LENGTH));
+        s.direction = from_azimuth(azimuth, 1.1);
+        s.azimuth = azimuth;
+        s.order = self.arena.axis_order[parent.index()];
+        let id = self.spawn(&s, now)?;
+        self.racemes.push(Raceme {
+            id,
+            opened: 0,
+            due: 0.0,
+        });
+        Ok(id)
+    }
+
+    /// At flowering (R1), dormant buds on the upper main-stem nodes become racemes.
+    pub(crate) fn start_racemes(&mut self, now: Hours) -> Result<(), ArchError> {
+        if self.flowering_started || self.phenology.stage < Stage::Flowering {
+            return Ok(());
+        }
+        self.flowering_started = true;
+        let eligible = self
+            .axes
+            .first()
+            .map_or(0, |m| m.max_nodes.saturating_sub(2));
+        for b in 0..self.buds.len() {
+            let bud = self.buds[b].clone();
+            if bud.fate == BudFate::Dormant
+                && bud.rank > eligible
+                && self.arena.alive[bud.id.index()]
+            {
+                self.buds[b].fate = BudFate::Raceme;
+                self.raceme(bud.id, bud.azimuth, now)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Daily step 3, reproductive part (§3.11): racemes open flowers over their
+    /// flowering period; each flower sets a pod or aborts when it closes; pods make
+    /// their seeds after the seed-fill delay.
+    pub(crate) fn flowering(&mut self, now: Hours) -> Result<(), ArchError> {
+        if self.phenology.stage < Stage::Flowering {
+            return Ok(());
+        }
+        let hp = self.params.clone();
+        let mean_t = if self.today.hours > 0 {
+            self.today.t_sum / f64::from(self.today.hours)
+        } else {
+            20.0
+        };
+        // Open flowers.
+        for r in 0..self.racemes.len() {
+            let rc = self.racemes[r].clone();
+            if !self.arena.alive[rc.id.index()] || rc.opened >= hp.flowers_per_raceme {
+                continue;
+            }
+            let mut rc = rc;
+            rc.due += f64::from(hp.flowers_per_raceme) / hp.raceme_days;
+            while rc.due >= 1.0 && rc.opened < hp.flowers_per_raceme {
+                rc.due -= 1.0;
+                rc.opened += 1;
+                self.flowers_opened += 1;
+                let az = f64::from(rc.opened) * 2.4;
+                let mut s = Spawn::new(
+                    OrganKind::Flower,
+                    Role::Flower,
+                    rc.id,
+                    curve(DegreeDays(FLOWER_EXPANSION), GramsDM(FLOWER_MASS))?,
+                );
+                s.direction = from_azimuth(az, -0.3);
+                s.azimuth = az;
+                let id = self.spawn(&s, now)?;
+                self.flowers.push(Flower {
+                    id,
+                    raceme: rc.id,
+                    days: 0,
+                    temperature: 0.0,
+                    carbon: 0.0,
+                    min_ftsw: 1.0,
+                });
+            }
+            self.racemes[r] = rc;
+        }
+        // Close flowers: set or abort.
+        let mut open = Vec::new();
+        for mut f in std::mem::take(&mut self.flowers) {
+            if !self.arena.alive[f.id.index()] {
+                continue;
+            }
+            f.days += 1;
+            f.temperature += hp.pod_set_temperature(mean_t);
+            let node = self.arena.parent[f.raceme.index()].unwrap_or(f.raceme);
+            f.carbon += self.carbon_factor(node);
+            f.min_ftsw = f.min_ftsw.min(self.today.ftsw_min);
+            if f.days < hp.flower_days {
+                open.push(f);
+                continue;
+            }
+            let days = f64::from(f.days);
+            let drought = (f.min_ftsw / hp.drought_abortion_ftsw.max(1e-9)).clamp(0.0, 1.0);
+            let p = hp.pod_set_base * (f.carbon / days) * (f.temperature / days) * drought;
+            let set = self.stream(f.id, now, Purpose::PodSet).bernoulli(p);
+            self.shed_organ(f.id, now)?;
+            if set && self.arena.alive[f.raceme.index()] {
+                let az = self.arena.orientation[f.id.index()].azimuth.0;
+                let mut s = Spawn::new(
+                    OrganKind::Pod,
+                    Role::Pod,
+                    f.raceme,
+                    curve(hp.pod_expansion, hp.pod_wall)?,
+                );
+                s.direction = from_azimuth(az, -1.2);
+                s.azimuth = az;
+                let id = self.spawn(&s, now)?;
+                self.pods.push(Pod { id, seeds: false });
+            }
+        }
+        self.flowers = open;
+        self.make_seeds(now)
+    }
+
+    /// Pods make their seeds once past the seed-fill delay: each ovule sets with the
+    /// species probability, at least one per pod.
+    fn make_seeds(&mut self, now: Hours) -> Result<(), ArchError> {
+        let hp = self.params.clone();
+        for k in 0..self.pods.len() {
+            let pod = self.pods[k].clone();
+            let i = pod.id.index();
+            if pod.seeds
+                || !self.arena.alive[i]
+                || self.arena.expansion_age[i].0 < hp.seed_fill_delay.0
+            {
+                continue;
+            }
+            self.pods[k].seeds = true;
+            let mut rng = self.stream(pod.id, now, Purpose::SeedNumber);
+            let n = (0..hp.seeds_per_pod)
+                .filter(|_| rng.bernoulli(hp.ovule_set))
+                .count()
+                .max(1);
+            for _ in 0..n {
+                let s = Spawn::new(
+                    OrganKind::SeedInPod,
+                    Role::SeedInPod,
+                    pod.id,
+                    curve(hp.seed_fill, hp.seed_potential)?,
+                );
+                self.spawn(&s, now)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Sheds an organ and what it carries; mobile reserve moves to the parent first.
+    pub(crate) fn shed_organ(&mut self, id: OrganId, now: Hours) -> Result<(), ArchError> {
+        let i = id.index();
+        if !self.arena.alive[i] {
+            return Ok(());
+        }
+        if let Some(p) = self.arena.parent[i] {
+            let r = self.arena.reserve[i].0;
+            if r > 0.0 && self.arena.alive[p.index()] {
+                self.arena.reserve[i] = GramsC(0.0);
+                self.arena.reserve[p.index()] += GramsC(r);
+            }
+        }
+        allocation::shed(
+            &mut self.arena,
+            &self.params.carbon,
+            id,
+            now,
+            &mut self.ledger,
+        )?;
+        Ok(())
+    }
+
+    /// Daily step 4 (§3.9 step 6, §3.10, §3.11): starvation, leaf age, shade, frost,
+    /// cotyledon drop and the end of the annual's life at maturity.
+    pub(crate) fn senescence(&mut self, now: Hours) -> Result<(), ArchError> {
+        let hp = self.params.clone();
+        let mature = self.phenology.stage == Stage::Mature;
+        // At maturity the annual's life ends: tissues dry and stop respiring
+        // (`update_nitrogen`), so the harvest no longer starves (decision 0013).
+        if !mature {
+            allocation::starvation_deaths(
+                &mut self.arena,
+                &self.params.carbon,
+                now,
+                &mut self.ledger,
+            )?;
+        }
+        let frost = self.today.hours > 0 && self.today.t_min < hp.frost.0;
+        let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
+        for id in leaves {
+            let i = id.index();
+            let m = &mut self.meta[i];
+            if m.expanded.is_some() && m.light_index < hp.shade_light {
+                m.shade_days += 1;
+            } else {
+                m.shade_days = 0;
+            }
+            let old = self.arena.thermal_age[i].0 >= hp.leaf_lifespan.0;
+            if old || frost || mature || m.shade_days >= hp.shade_days {
+                self.shed_organ(id, now)?;
+            }
+        }
+        if mature {
+            self.leaves_dropped = true;
+        }
+        // Cotyledons drop when spent or two weeks after emergence.
+        if let Some(e) = self.emerged_day {
+            let cots: Vec<OrganId> = self.arena.alive_of(OrganKind::Cotyledon).collect();
+            let left: f64 = cots.iter().map(|c| self.arena.reserve[c.index()].0).sum();
+            let spent = left < hp.cotyledon_drop_reserve * self.seed_reserve.0;
+            if spent || self.day >= e + hp.cotyledon_days {
+                for c in cots {
+                    self.shed_organ(c, now)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
