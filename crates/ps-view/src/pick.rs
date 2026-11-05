@@ -227,6 +227,7 @@ mod tests {
 
     fn placement(kind: OrganKind, base: Vec3, direction: Vec3, length: f32) -> Placement {
         Placement {
+            hook: None,
             kind,
             parent: None,
             axis_order: 0,
@@ -258,6 +259,7 @@ mod tests {
                 container: None,
             },
             water_stress: 1.0,
+            first_flower: None,
             organ_values: std::collections::BTreeMap::new(),
             soil_water: crate::garden::SoilFace::default(),
             container: true,
