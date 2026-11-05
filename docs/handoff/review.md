@@ -62,7 +62,7 @@ validate); every equation change updates the model card in `docs/models/` and bu
 minor version with regenerated goldens; the step order (plan §3.2) is unchanged; no new
 `HashMap` iteration, `thread_rng`, std transcendentals or raw f64 quantities in the sim crates.
 
-Write-up format (`docs/archive/reviews/<name>-review.md`): Verdict (approve / approve with
+Write-up format (new write-ups go in `docs/reviews/<name>-review.md`; `docs/archive/reviews/` holds the old ones, frozen): Verdict (approve / approve with
 fixes / request changes, with the one or two fixes named in bold), What I checked (table),
 the implementer's questions answered, Findings ranked by weight, For the record (model
 version, schema, validation counts, diagnostic numbers). Then send the implementer the verdict

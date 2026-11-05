@@ -56,7 +56,7 @@ for whatever you pick up.
 | Design plan v3 (complete, kept current with decisions) | [docs/design-plan.md](design-plan.md). §3 model, §3.2 step order, §7 backlog of 36 WPs with done-when, §8 validation, §10 architecture, §11 implementation guide. |
 | Progress, per WP, plus every open follow-up | [docs/STATUS.md](STATUS.md) (read first every session) |
 | Agent rules (non-negotiable sim rules, code style, pre-push checks) | [CLAUDE.md](../CLAUDE.md) |
-| Decision records 0001 to 0028 | [docs/decisions/](decisions/) |
+| Decision records 0001 to 0027 (0028 comes with the lateral-root PR) | [docs/decisions/](decisions/) |
 | Model cards, one per process | [docs/models/](models/) |
 | Bevy pin and idioms | [docs/bevy-notes.md](bevy-notes.md) |
 | CLI | [docs/cli.md](cli.md) |
@@ -68,7 +68,7 @@ for whatever you pick up.
 
 ## 4. State of the project (2026-11-05, main at the handoff merge)
 
-- **Model version 0.11.0** (`ps_world::MODEL_VERSION`, after the lateral-root fix, decision 0028); species schema 7.
+- **Model version 0.10.0** at handoff (`ps_world::MODEL_VERSION`); 0.11.0 once the lateral-root PR (decision 0028) merges. Species schema 7.
 - **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
   a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.
@@ -90,8 +90,8 @@ for whatever you pick up.
   every target now reads the seed mean. Don't tune "~" parameters on one seed. Main
   misses: thermal-time phenology, pole bean height, wheat stand height and yield,
   drought and heat seed size, shade height, nar_early, root_shoot_seed_fill.
-- **Speed (4 cores):** single pot ~2.2 ms per sim-day (budget 2), 30-bean plot ~24.5
-  ms (budget 20), wheat stand ~110 ms (no budget). Viewer on the GTX 1070, real sim,
+- **Speed (4 cores):** single pot ~2.2 ms per sim-day (budget 2), 30-bean plot about 23
+  to 25 ms over 90 days, under 20 over the first 60 (budget 20), wheat stand ~110 ms (no budget). Viewer on the GTX 1070, real sim,
   Vulkan uncapped at 2352x1325: 6.55 ms mean, p99 9.61 ms (f4bec25; budget 16.7).
   It predates the #72 lawn and #78 fuller plants, which are untimed.
 
@@ -99,7 +99,7 @@ for whatever you pick up.
 
 | PR | What | State |
 | --- | --- | --- |
-| (next) | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; follows #81 on `claude/project-thread-ur2udi` |
+| not yet opened | Lateral roots keep tips in the soil (decision 0028, model 0.11.0) | Implementation; follows #81 on `claude/project-thread-ur2udi` |
 | #86 | Viewer root-copy fix from the fuller-plants workstream (overlaps #84; land one) | Fuller plants; merging on green |
 | #84 | Viewer root-copy fix, viewer handoff (`docs/handoff-viewer.md`), STATUS M1 rows | Viewer; merging on green |
 | #82 | Performance handoff doc | Docs only; merge when green |
@@ -256,7 +256,7 @@ needed; each handoff file is written as instructions for a fresh thread.
 | Workstream | What it does | Handoff |
 | --- | --- | --- |
 | **Implementation** | Builds WPs in plan order, one WP per branch and PR, issue "WP<n>" as acceptance criteria, decision records, model bumps, goldens, updates STATUS. Messages Review when a PR is up. | [handoff/implementation.md](handoff/implementation.md) |
-| **Review** | Independent review of every WP PR: re-runs the sim, checks against the plan and research, writes `docs/archive/reviews/wp<n>-review.md`-style write-ups, sends fixes back to Implementation, posts a short verdict to the owner. Ran on a different model from Implementation for independence. | [handoff/review.md](handoff/review.md) |
+| **Review** | Independent review of every WP PR: re-runs the sim, checks against the plan and research, writes write-ups to `docs/reviews/<name>-review.md` (old ones in `docs/archive/reviews/`), sends fixes back to Implementation, posts a short verdict to the owner. Ran on a different model from Implementation for independence. | [handoff/review.md](handoff/review.md) |
 | **Performance** | Benchmarks each WP against the budgets, finds bit-identical speedups, opens small non-conflicting PRs, times the viewer on the owner's GPU. | [perf/handoff.md](perf/handoff.md) |
 | **Research** | Deep literature research before a milestone: parallel topic researchers, one synthesized report with a ranked change table per WP, findings become decision records. | [handoff/research.md](handoff/research.md) |
 | **Viewer** | The Bevy crates (ps-mesh, ps-view, ps-ui, ps-app), M1 WPs and viewer sides of M2 WPs, CI render builds and releases. Never touches sim crates. | [handoff-viewer.md](handoff-viewer.md) |
@@ -280,7 +280,9 @@ a project folder that no longer exists; from now on put them in the repo: review
    1 pole bean in 16 never finds its stake, and the seed-mean pole height partly
    measures those misses. Batch the other variation-review items into the same model
    bump ([handoff/implementation.md](handoff/implementation.md) step 2).
-3. Then re-tune "~" parameters on the four-seed mean; pole_height_day60,
+3. Revisit the transport/priority rule first (STATUS: WP22 and WP23 follow-ups, the
+   WP7 sink-limitation question); re-tuning phloem conductance per species before that
+   gets undone by it. Then re-tune "~" parameters on the four-seed mean; pole_height_day60,
    drought_shoot_mass and others sit at band edges since the leaf-angle fix. Fold
    research items 1 to 4 ([handoff/research.md](handoff/research.md): gm/Vcmax basis,
    a 7/25/33/42 °C development trapezoid, construction cost per organ, Medlyn g1)
@@ -294,7 +296,9 @@ a project folder that no longer exists; from now on put them in the repo: review
    step 3); the UI half is the viewer's. Then WP27 (leaf energy balance), then M2 exit: 30 plants at 60 fps and
    under 20 ms per sim-day, density plateau (still weak: -43% vs -70%).
 5. M3 (WP28 to WP32): genome, pollination, breeding bench, trait discovery,
-   challenges. Research round 2 (decision 0023) has the genetics.
+   challenges. Research round 2 has the genetics. WP28 is bound by decision 0023
+   items 4 to 6 (light linkage, two-tier mutation 1e-3 QTL / 1e-5 named, a seed-colour
+   rule table); the review workstream checks WP28 against them.
 6. Smaller open follow-ups are listed in STATUS "Review follow-ups" (self-shading
    within a light cell, transport vs priority, wheat stand too short, pod set reading
    N, uptake scaling, issue #58).
@@ -320,7 +324,7 @@ Copied from the old project's shared folder, which does not move to the new acco
 | Folder | Contents |
 | --- | --- |
 | `design/` | Earlier design versions (v1, v2, v3 review and expansion, "final", architecture note). Superseded by docs/design-plan.md; kept for the reasoning behind choices. |
-| `reviews/` | Every WP review write-up (WP4 to WP25, WP16 session, light leaf angle, variation, WP7 fixes). Their open findings are already copied into STATUS "Review follow-ups". |
+| `reviews/` | Every review write-up, 19 files: WP4 to WP12 (incl. WP11 data and harness), WP16 session, WP21 to WP25, WP7 fixes, light leaf angle, variation. Their open findings are already copied into STATUS "Review follow-ups". |
 | `research/` | Round 1 `plant-simulation-science-review.md`, round 2 `m2-m3-bean-science.md`, per-topic notes, DSSAT source files (BSD-3), the validation data generator scripts. OpenSimRoot XML (GPLv3) is left out; see `research/source-files/README.md`. |
 | `perf/` | Perf reviews 1 and 2 and the patches (all landed). |
 | `screens/` | Viewer screenshots over time (JPEG, downscaled) and the sun-vs-shade clip (re-encoded). |
