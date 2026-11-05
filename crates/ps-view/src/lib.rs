@@ -20,6 +20,8 @@ pub mod camera;
 pub mod diorama;
 pub mod garden;
 pub mod lens;
+pub mod look;
+pub mod ready;
 pub mod scene;
 pub mod sky;
 
@@ -28,6 +30,7 @@ use bevy::prelude::*;
 pub use camera::CameraRig;
 pub use garden::{Garden, PotSize, PotView, SoilFace};
 pub use lens::{Lens, LensInfo, Origin, Scale};
+pub use ready::Ready;
 pub use sky::SkyState;
 
 /// System sets, in order, so a data source can run before the scene sync.
@@ -46,19 +49,28 @@ pub struct PlantViewPlugin;
 
 impl Plugin for PlantViewPlugin {
     fn build(&self, app: &mut App) {
+        ready::build(app);
         app.init_resource::<Garden>()
             .init_resource::<SkyState>()
             .init_resource::<Lens>()
             .init_resource::<CameraRig>()
             .init_resource::<scene::SceneIndex>()
-            .insert_resource(ClearColor(Color::srgb(0.5, 0.7, 0.9)))
+            .insert_resource(ClearColor(Color::linear_rgb(
+                look::HORIZON[0],
+                look::HORIZON[1],
+                look::HORIZON[2],
+            )))
             .configure_sets(
                 Update,
                 (ViewSet::Source, ViewSet::Sync, ViewSet::Present).chain(),
             )
             .add_systems(
                 Startup,
-                (scene::setup_scene, camera::spawn_camera, sky::spawn_sun),
+                (
+                    scene::setup_scene,
+                    (look::setup_sky_images, camera::spawn_camera).chain(),
+                    sky::spawn_sun,
+                ),
             )
             .add_systems(Update, scene::sync_scene.in_set(ViewSet::Sync))
             .add_systems(

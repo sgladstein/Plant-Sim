@@ -68,30 +68,58 @@ fn colored(m: &ColoredMesh) -> Mesh {
 pub struct SceneAssets {
     templates: BTreeMap<TemplateKey, Handle<Mesh>>,
     vertex_color: Handle<StandardMaterial>,
+    /// Stems and roots while a lens colors them: unlit, so the color reads as the value.
+    vertex_color_lens: Handle<StandardMaterial>,
     soil: Handle<StandardMaterial>,
     glass: Handle<StandardMaterial>,
+    haze: Handle<StandardMaterial>,
     overlay: Handle<StandardMaterial>,
-    palette: HashMap<[u8; 3], Handle<StandardMaterial>>,
+    palette: HashMap<([u8; 3], bool), Handle<StandardMaterial>>,
+}
+
+/// Quantizes a linear color with a square-root curve, so dark greens do not band.
+fn quantize(rgb: [f32; 3]) -> [u8; 3] {
+    rgb.map(|v| (v.clamp(0.0, 1.0).sqrt() * 255.0).round() as u8)
 }
 
 impl SceneAssets {
+    /// A shared material for a templated organ. `glow` is set when the color is a lens
+    /// value: most of it is then emitted, so shadows cannot move it along the scale.
     fn material(
         &mut self,
         materials: &mut Assets<StandardMaterial>,
         rgb: [f32; 3],
-    ) -> (Handle<StandardMaterial>, [u8; 3]) {
-        let key = rgb.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
+        glow: bool,
+    ) -> (Handle<StandardMaterial>, ([u8; 3], bool)) {
+        let key = (quantize(rgb), glow);
         let handle = self
             .palette
             .entry(key)
             .or_insert_with(|| {
-                let c = key.map(|v| f32::from(v) / 255.0);
-                materials.add(StandardMaterial {
-                    base_color: Color::linear_rgb(c[0], c[1], c[2]),
-                    perceptual_roughness: 0.65,
-                    reflectance: 0.3,
-                    ..default()
-                })
+                let c = key.0.map(|v| (f32::from(v) / 255.0).powi(2));
+                if glow {
+                    let lit = 1.0 - crate::look::LENS_GLOW;
+                    // Emissive ignores camera exposure (emissive_exposure_weight 0), so this is
+                    // the displayed share directly.
+                    let e = crate::look::LENS_GLOW;
+                    materials.add(StandardMaterial {
+                        base_color: Color::linear_rgb(c[0] * lit, c[1] * lit, c[2] * lit),
+                        emissive: LinearRgba::rgb(c[0] * e, c[1] * e, c[2] * e),
+                        perceptual_roughness: 0.9,
+                        reflectance: 0.1,
+                        ..default()
+                    })
+                } else {
+                    materials.add(StandardMaterial {
+                        base_color: Color::linear_rgb(c[0], c[1], c[2]),
+                        // Leaves are matte with a little waxy sheen, and let some light
+                        // through, so backlit leaves glow instead of going black.
+                        perceptual_roughness: 0.8,
+                        reflectance: 0.22,
+                        diffuse_transmission: 0.35,
+                        ..default()
+                    })
+                }
             })
             .clone();
         (handle, key)
@@ -114,11 +142,12 @@ struct AxisEntity {
 struct InstanceEntity {
     entity: Entity,
     key: TemplateKey,
-    color: [u8; 3],
+    color: ([u8; 3], bool),
 }
 
 struct PotScene {
     entity: Entity,
+    haze: Entity,
     size: PotSize,
     axes: BTreeMap<OrganId, AxisEntity>,
     instances: BTreeMap<OrganId, InstanceEntity>,
@@ -147,8 +176,13 @@ pub(crate) fn setup_scene(
         .collect();
     let vertex_color = materials.add(StandardMaterial {
         base_color: Color::WHITE,
-        perceptual_roughness: 0.75,
-        reflectance: 0.25,
+        perceptual_roughness: 0.8,
+        reflectance: 0.2,
+        ..default()
+    });
+    let vertex_color_lens = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        unlit: true,
         ..default()
     });
     let soil = materials.add(StandardMaterial {
@@ -158,12 +192,20 @@ pub(crate) fn setup_scene(
         ..default()
     });
     let glass = materials.add(StandardMaterial {
-        base_color: Color::linear_rgba(0.85, 0.95, 1.0, 0.05),
+        // Nearly invisible: a faint sky reflection says "glass" without greying the soil.
+        base_color: Color::linear_rgba(0.9, 0.95, 1.0, 0.0),
         alpha_mode: AlphaMode::Blend,
-        perceptual_roughness: 0.1,
-        reflectance: 0.15,
+        perceptual_roughness: 0.15,
+        reflectance: 0.06,
         double_sided: true,
         cull_mode: None,
+        ..default()
+    });
+    let haze = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        alpha_mode: AlphaMode::Blend,
+        perceptual_roughness: 1.0,
+        reflectance: 0.1,
         ..default()
     });
     let overlay = materials.add(StandardMaterial {
@@ -175,8 +217,10 @@ pub(crate) fn setup_scene(
     commands.insert_resource(SceneAssets {
         templates,
         vertex_color,
+        vertex_color_lens,
         soil,
         glass,
+        haze,
         overlay,
         palette: HashMap::new(),
     });
@@ -187,16 +231,31 @@ pub(crate) fn setup_scene(
             Visibility::default(),
         ))
         .id();
-    // A table under the pots.
-    let table = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.55, 0.5, 0.42),
-        perceptual_roughness: 0.9,
+    // A low wooden deck under the pots, on gravel that fades into the horizon haze
+    // (the fog), so there is no hard table edge against the sky.
+    let floor = -PotSize::RHIZOBOX.soil_depth - 0.042;
+    let deck = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.40, 0.31, 0.24),
+        perceptual_roughness: 0.85,
+        reflectance: 0.2,
         ..default()
     });
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(3.0, 2.0))),
-        MeshMaterial3d(table),
-        Transform::from_xyz(0.0, -PotSize::RHIZOBOX.soil_depth - 0.042, 0.0),
+        Mesh3d(meshes.add(Cuboid::new(0.95, 0.03, 0.42))),
+        MeshMaterial3d(deck),
+        Transform::from_xyz(0.0, floor - 0.015, 0.0),
+    ));
+    let g = crate::look::GROUND;
+    let ground = materials.add(StandardMaterial {
+        base_color: Color::linear_rgb(g[0], g[1], g[2]),
+        perceptual_roughness: 1.0,
+        reflectance: 0.1,
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(80.0, 80.0))),
+        MeshMaterial3d(ground),
+        Transform::from_xyz(0.0, floor - 0.03, 0.0),
     ));
     index.root = Some(root);
 }
@@ -234,6 +293,14 @@ fn spawn_pot(
         Transform::default(),
         ChildOf(entity),
     ));
+    let haze = commands
+        .spawn((
+            Mesh3d(meshes.add(colored(&diorama::soil_haze(size, 0.42)))),
+            MeshMaterial3d(assets.haze.clone()),
+            Transform::default(),
+            ChildOf(entity),
+        ))
+        .id();
     let overlay_mesh = meshes.add(colored(&ColoredMesh::default()));
     let overlay = commands
         .spawn((
@@ -246,6 +313,7 @@ fn spawn_pot(
         .id();
     PotScene {
         entity,
+        haze,
         size,
         axes: BTreeMap::new(),
         instances: BTreeMap::new(),
@@ -255,25 +323,28 @@ fn spawn_pot(
     }
 }
 
-/// The color of organ `i` of `pot` under `lens`.
-fn organ_color(pot: &PotView, lens: Lens, i: usize, p: &Placement) -> [f32; 3] {
+/// The color of organ `i` of `pot` under `lens`, and whether it is a lens value.
+fn organ_color(pot: &PotView, lens: Lens, i: usize, p: &Placement) -> ([f32; 3], bool) {
     let natural = natural_color(p);
     let Some(info) = lens.info() else {
-        return natural;
+        return (natural, false);
     };
     if !lens.colors_organs() {
-        return natural;
+        return (natural, false);
     }
     if lens == Lens::RootsXray && p.kind != OrganKind::Root {
-        return natural;
+        return (natural, false);
     }
     // Organs the lens says nothing about fade to gray so the colored ones read.
     pot.organ_value(lens, i)
         .and_then(|v| info.color(v))
-        .unwrap_or_else(|| {
-            let g = 0.3 * natural[0] + 0.6 * natural[1] + 0.1 * natural[2];
-            [0.5 * g + 0.12; 3]
-        })
+        .map_or_else(
+            || {
+                let g = 0.3 * natural[0] + 0.6 * natural[1] + 0.1 * natural[2];
+                ([0.5 * g + 0.12; 3], false)
+            },
+            |c| (c, true),
+        )
 }
 
 fn axis_colors(pot: &PotView, lens: Lens, organs: &[OrganId], style: AxisStyle) -> Vec<[f32; 4]> {
@@ -284,7 +355,7 @@ fn axis_colors(pot: &PotView, lens: Lens, organs: &[OrganId], style: AxisStyle) 
         let c = pot
             .skeleton
             .get(id)
-            .map_or([1.0; 3], |p| organ_color(pot, lens, id.index(), p));
+            .map_or([1.0; 3], |p| organ_color(pot, lens, id.index(), p).0);
         out.extend(std::iter::repeat_n([c[0], c[1], c[2], 1.0], ring));
     }
     out
@@ -327,8 +398,28 @@ pub(crate) fn sync_scene(
         }
     }
 
+    // Stems and roots go unlit while a lens colors them.
+    let axis_material = if lens.info().is_some() && lens.colors_organs() {
+        assets.vertex_color_lens.clone()
+    } else {
+        assets.vertex_color.clone()
+    };
     // Soil opacity follows the lens.
     if index.lens != Some(lens) {
+        for scene in &index.pots {
+            commands
+                .entity(scene.haze)
+                .insert(if lens.soil_opacity() < 1.0 {
+                    Visibility::Hidden
+                } else {
+                    Visibility::Inherited
+                });
+            for a in scene.axes.values() {
+                commands
+                    .entity(a.entity)
+                    .insert(MeshMaterial3d(axis_material.clone()));
+            }
+        }
         if let Some(mut m) = materials.get_mut(&assets.soil) {
             let a = lens.soil_opacity();
             m.base_color = Color::linear_rgba(1.0, 1.0, 1.0, a);
@@ -367,7 +458,11 @@ pub(crate) fn sync_scene(
         for axis in &current {
             let style = match axis.kind {
                 AxisKind::Shoot => AxisStyle::STEM,
-                AxisKind::Root => AxisStyle::ROOT,
+                // A little thicker than ps-mesh's default so fine roots read against soil.
+                AxisKind::Root => AxisStyle {
+                    min_radius: 0.000_5,
+                    ..AxisStyle::ROOT
+                },
             };
             let key = axis.key();
             seen.push(key);
@@ -399,7 +494,7 @@ pub(crate) fn sync_scene(
                     let entity = commands
                         .spawn((
                             Mesh3d(handle.clone()),
-                            MeshMaterial3d(assets.vertex_color.clone()),
+                            MeshMaterial3d(axis_material.clone()),
                             Transform::default(),
                             ChildOf(scene.entity),
                         ))
@@ -438,8 +533,8 @@ pub(crate) fn sync_scene(
             let Some(p) = pot.skeleton.get(inst.organ) else {
                 continue;
             };
-            let rgb = organ_color(pot, lens, inst.organ.index(), p);
-            let (material, color) = assets.material(&mut materials, rgb);
+            let (rgb, glow) = organ_color(pot, lens, inst.organ.index(), p);
+            let (material, color) = assets.material(&mut materials, rgb, glow);
             let transform = Transform {
                 translation: inst.translation,
                 rotation: inst.rotation,

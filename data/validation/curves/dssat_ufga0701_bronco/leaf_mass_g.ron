@@ -1,0 +1,25 @@
+// Measured leaf_mass_g against days after sowing; DSSAT Drybean experiment UFGA0701.
+Curve(
+  schema: 1,
+  id: "dssat_ufga0701_bronco_leaf_mass_g",
+  source: "dssat_ufga0701",
+  conditions: "Gainesville FL, spring 2007; snap bean Bronco (Habit 1 determinate), high N, optimal irrigation, grown to dry seed (treatment 5); field, 34 plants/m2, rows 61 cm; planted 2007-03-15",
+  x: Axis(variable: "days_since_sowing", unit: "d"),
+  y: Axis(variable: "leaf_mass_g", unit: "g/plant"),
+  basis: Some("Days after planting; planting date taken as sowing day 0. Field crop at stand density, so per-plant values are smaller than for a lone pot plant; compare shape and timing, not absolute size. Per-plant values = kg/ha / 10 / plants per m2."),
+  method: "Measured time series, DSSAT UFGA0701 .BNT/.GBT file, column LWAD (green leaf, abscised leaves excluded); read from the file",
+  gate: Info,
+  points: [
+    Point(x: 14.0, y: 0.106, sd: None),
+    Point(x: 20.0, y: 0.394, sd: None),
+    Point(x: 27.0, y: 0.576, sd: None),
+    Point(x: 34.0, y: 1.176, sd: None),
+    Point(x: 41.0, y: 2.05, sd: None),
+    Point(x: 50.0, y: 3.041, sd: None),
+    Point(x: 55.0, y: 3.006, sd: None),
+    Point(x: 62.0, y: 2.865, sd: None),
+    Point(x: 69.0, y: 2.609, sd: None),
+    Point(x: 76.0, y: 1.826, sd: None),
+    Point(x: 83.0, y: 0.832, sd: None),
+  ],
+)

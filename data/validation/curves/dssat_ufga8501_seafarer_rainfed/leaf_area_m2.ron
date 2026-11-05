@@ -1,0 +1,20 @@
+// Measured leaf_area_m2 against days after sowing; DSSAT Drybean experiment UFGA8501.
+Curve(
+  schema: 1,
+  id: "dssat_ufga8501_seafarer_rainfed_leaf_area_m2",
+  source: "dssat_ufga8501",
+  conditions: "Gainesville FL, 1985; Seafarer (Mesoamerican Type I); as treatment 5 but only 20 mm establishment irrigation (treatment 6); 561 mm rain, so a mild drought",
+  x: Axis(variable: "days_since_sowing", unit: "d"),
+  y: Axis(variable: "leaf_area_m2", unit: "m2/plant"),
+  basis: Some("Days after planting; planting date taken as sowing day 0. Field crop at stand density, so per-plant values are smaller than for a lone pot plant; compare shape and timing, not absolute size. Per-plant values = kg/ha / 10 / plants per m2."),
+  method: "Measured time series, DSSAT UFGA8501 .BNT/.GBT file, column LAID / plants per m2; read from the file",
+  gate: Info,
+  points: [
+    Point(x: 32.0, y: 0.02534, sd: None),
+    Point(x: 44.0, y: 0.05764, sd: None),
+    Point(x: 56.0, y: 0.06209, sd: None),
+    Point(x: 67.0, y: 0.03656, sd: None),
+    Point(x: 78.0, y: 0.0, sd: None),
+    Point(x: 88.0, y: 0.0, sd: None),
+  ],
+)

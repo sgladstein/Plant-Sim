@@ -1,0 +1,20 @@
+// Measured shoot_mass_g against days after sowing; DSSAT Drybean experiment UFGA8501.
+Curve(
+  schema: 1,
+  id: "dssat_ufga8501_seafarer_rainfed_shoot_mass_g",
+  source: "dssat_ufga8501",
+  conditions: "Gainesville FL, 1985; Seafarer (Mesoamerican Type I); as treatment 5 but only 20 mm establishment irrigation (treatment 6); 561 mm rain, so a mild drought",
+  x: Axis(variable: "days_since_sowing", unit: "d"),
+  y: Axis(variable: "shoot_mass_g", unit: "g/plant"),
+  basis: Some("Days after planting; planting date taken as sowing day 0. Field crop at stand density, so per-plant values are smaller than for a lone pot plant; compare shape and timing, not absolute size. Per-plant values = kg/ha / 10 / plants per m2."),
+  method: "Measured time series, DSSAT UFGA8501 .BNT/.GBT file, column CWAD (all above-ground living dry mass); read from the file",
+  gate: Info,
+  points: [
+    Point(x: 32.0, y: 1.464, sd: None),
+    Point(x: 44.0, y: 3.534, sd: None),
+    Point(x: 56.0, y: 6.075, sd: None),
+    Point(x: 67.0, y: 6.408, sd: None),
+    Point(x: 78.0, y: 6.48, sd: None),
+    Point(x: 88.0, y: 6.48, sd: None),
+  ],
+)

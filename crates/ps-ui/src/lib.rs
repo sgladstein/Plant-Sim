@@ -97,15 +97,23 @@ fn block_camera_under_panels(wants: Option<Res<EguiWantsInput>>, mut rig: ResMut
     rig.input_blocked = wants.is_some_and(|w| w.wants_pointer_input() || w.is_pointer_over_area());
 }
 
-/// Muted, rounded panels.
+/// Warm charcoal panels with a sage accent, opaque so the scene never shows through text
+/// (visual design review, 2026-11-05).
 fn theme(ctx: &egui::Context) {
     let mut v = egui::Visuals::dark();
-    let panel = egui::Color32::from_rgba_unmultiplied(28, 32, 30, 236);
+    let panel = egui::Color32::from_rgb(34, 31, 28);
+    let sage = egui::Color32::from_rgb(122, 150, 112);
     v.panel_fill = panel;
     v.window_fill = panel;
+    v.extreme_bg_color = egui::Color32::from_rgb(24, 22, 20);
+    v.faint_bg_color = egui::Color32::from_rgb(42, 39, 35);
     v.window_corner_radius = egui::CornerRadius::same(8);
-    v.selection.bg_fill = egui::Color32::from_rgb(70, 110, 70);
-    v.hyperlink_color = egui::Color32::from_rgb(150, 200, 140);
+    v.selection.bg_fill = egui::Color32::from_rgb(78, 98, 70);
+    v.selection.stroke.color = egui::Color32::from_rgb(236, 240, 228);
+    v.hyperlink_color = sage;
+    v.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(52, 48, 43);
+    v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(66, 62, 55);
+    v.widgets.active.weak_bg_fill = egui::Color32::from_rgb(78, 98, 70);
     ctx.set_visuals(v);
 }
 

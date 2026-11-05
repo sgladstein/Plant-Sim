@@ -1,0 +1,22 @@
+// Measured main_nodes against days after sowing; DSSAT Drybean experiment CCPO9002.
+Curve(
+  schema: 1,
+  id: "dssat_ccpo9002_redkloud_main_nodes",
+  source: "dssat_ccpo9002",
+  conditions: "CIAT Popayan, Colombia (cooler, higher altitude), 1990; Redkloud (Andean Type I); field, 25 plants/m2, rows 50 cm; planted 1990-04-25",
+  x: Axis(variable: "days_since_sowing", unit: "d"),
+  y: Axis(variable: "main_nodes", unit: "nodes"),
+  basis: Some("Days after planting; planting date taken as sowing day 0. Field crop at stand density, so per-plant values are smaller than for a lone pot plant; compare shape and timing, not absolute size. Per-plant values = kg/ha / 10 / plants per m2."),
+  method: "Measured time series, DSSAT CCPO9002 .BNT/.GBT file, column L#SD (leaf number on the main stem; DSSAT counts the unifoliate node); read from the file",
+  gate: Info,
+  points: [
+    Point(x: 14.0, y: 2.04, sd: None),
+    Point(x: 20.0, y: 3.86, sd: None),
+    Point(x: 28.0, y: 5.166, sd: None),
+    Point(x: 41.0, y: 5.75, sd: None),
+    Point(x: 57.0, y: 6.333, sd: None),
+    Point(x: 64.0, y: 6.0, sd: None),
+    Point(x: 70.0, y: 6.833, sd: None),
+    Point(x: 83.0, y: 5.555, sd: None),
+  ],
+)
