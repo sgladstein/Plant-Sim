@@ -1,0 +1,55 @@
+name: plantecophys
+
+# Proves the committed gas-exchange fixture (generated without R by
+# validation/fixtures/photosyn_reference.py) against plantecophys itself.
+#
+# The Rust code is tested against the committed fixture by `cargo test` in every PR
+# (crates/ps-physio). This job only checks the fixture against R, so it runs when the
+# fixture or its scripts change, weekly (to catch a new plantecophys release), and by
+# hand, so a slow R install never holds up an unrelated PR.
+on:
+  pull_request:
+    paths:
+      - crates/ps-physio/tests/fixtures/photosyn.csv
+      - validation/fixtures/photosyn_*
+      - validation/fixtures/compare_photosyn.py
+      - .github/workflows/plantecophys.yml
+  push:
+    branches: [main]
+    paths:
+      - crates/ps-physio/tests/fixtures/photosyn.csv
+      - validation/fixtures/photosyn_*
+      - validation/fixtures/compare_photosyn.py
+      - .github/workflows/plantecophys.yml
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+# A newer push to the same branch cancels a run still in progress.
+concurrency:
+  group: plantecophys-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plantecophys:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # R from the Ubuntu archive (the runner's own apt mirror). setup-r downloads R
+      # from Posit's CDN, which took 20 minutes or more on some runs.
+      - name: install R
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends r-base-core
+          R --version | head -1
+      # plantecophys is plain R; install it into a user library from CRAN.
+      - name: install plantecophys
+        run: |
+          mkdir -p "$RUNNER_TEMP/rlib"
+          echo "R_LIBS_USER=$RUNNER_TEMP/rlib" >> "$GITHUB_ENV"
+          R_LIBS_USER="$RUNNER_TEMP/rlib" Rscript -e 'install.packages("plantecophys", repos = "https://cloud.r-project.org", lib = Sys.getenv("R_LIBS_USER")); library(plantecophys); cat("plantecophys", format(packageVersion("plantecophys")), "\n")'
+      - name: run plantecophys on the test grid
+        run: Rscript validation/fixtures/photosyn_plantecophys.R "$RUNNER_TEMP/photosyn_r.csv"
+      - name: compare with the committed fixture
+        run: python3 validation/fixtures/compare_photosyn.py crates/ps-physio/tests/fixtures/photosyn.csv "$RUNNER_TEMP/photosyn_r.csv"
