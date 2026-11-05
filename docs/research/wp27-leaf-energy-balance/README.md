@@ -160,6 +160,8 @@ cooler. Fix the leaf horizontal in these tests until research item 7 (sun tracki
 
 ## 5. Owner decision
 
+**Decided 2026-11-05 by the owner: yes, leaves only.** Leaf frost reads leaf temperature once WP27 lands; flowers and pods stay on air temperature.
+
 **Should leaf frost read leaf temperature?** On clear, calm nights, exposed leaves run 2 to 3 K
 below air [I, proto; F, night data]. If frost reads leaf temperature, a +2 °C air night can
 frost-kill top leaves (radiation frost), while leaves under cover survive.
