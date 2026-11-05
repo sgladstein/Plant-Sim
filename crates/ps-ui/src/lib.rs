@@ -130,12 +130,19 @@ fn panels(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::Panel::top("time").show(&mut root, |ui| top_bar(ui, &mut time, &garden));
-    egui::Panel::right("lenses")
+    let top = egui::Panel::top("time")
+        .show(&mut root, |ui| top_bar(ui, &mut time, &garden))
+        .response
+        .rect
+        .height();
+    let right = egui::Panel::right("lenses")
         .resizable(false)
         .exact_size(300.0)
-        .show(&mut root, |ui| lens_panel(ui, &mut lens, &garden));
-    egui::Panel::bottom("help").show(&mut root, |ui| {
+        .show(&mut root, |ui| lens_panel(ui, &mut lens, &garden))
+        .response
+        .rect
+        .width();
+    let bottom = egui::Panel::bottom("help").show(&mut root, |ui| {
         ui.horizontal(|ui| {
             ui.weak("Drag to orbit · right-drag to pan · wheel to zoom · F to reframe");
             if !rig.auto_frame && ui.button("Reframe").clicked() {
@@ -143,6 +150,15 @@ fn panels(
             }
         });
     });
+    let insets = [0.0, top, right, bottom.response.rect.height()];
+    if rig
+        .insets
+        .iter()
+        .zip(insets)
+        .any(|(a, b)| (a - b).abs() > 0.5)
+    {
+        rig.insets = insets;
+    }
     Ok(())
 }
 

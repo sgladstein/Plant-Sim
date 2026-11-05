@@ -63,7 +63,12 @@ impl Plugin for PlantViewPlugin {
             .add_systems(Update, scene::sync_scene.in_set(ViewSet::Sync))
             .add_systems(
                 Update,
-                (camera::orbit_input, camera::apply_rig, sky::update_sky)
+                (
+                    camera::orbit_input,
+                    camera::apply_rig,
+                    camera::apply_insets,
+                    sky::update_sky,
+                )
                     .chain()
                     .in_set(ViewSet::Present),
             );

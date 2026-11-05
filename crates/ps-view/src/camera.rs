@@ -5,6 +5,7 @@
 //! about a thousandfold); any manual move switches auto-framing off until reset (F key
 //! or the UI's reset button).
 
+use bevy::camera::SubCameraView;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 
@@ -27,6 +28,9 @@ pub struct CameraRig {
     pub input_blocked: bool,
     /// Request to return to auto-framing.
     pub reset_requested: bool,
+    /// Screen space covered by UI panels, logical pixels: (left, top, right, bottom).
+    /// The view is shifted off-center so the scene centers in the uncovered area.
+    pub insets: [f32; 4],
 }
 
 impl Default for CameraRig {
@@ -40,6 +44,7 @@ impl Default for CameraRig {
             frame_bounds: None,
             input_blocked: false,
             reset_requested: false,
+            insets: [0.0; 4],
         }
     }
 }
@@ -86,6 +91,7 @@ pub(crate) fn spawn_camera(mut commands: Commands, rig: Res<CameraRig>) {
             ..default()
         }),
         Transform::from_translation(rig.eye()).looking_at(rig.target, Vec3::Y),
+        Msaa::Sample4,
         OrbitCamera,
     ));
 }
@@ -156,6 +162,45 @@ pub(crate) fn apply_rig(
     }
 }
 
+/// The off-center view that puts the center of the uncovered area at the image center:
+/// `(full size, offset)` for a window of `size` with panel `insets` (left, top, right,
+/// bottom), all in the same pixel units.
+#[must_use]
+pub fn off_center(size: Vec2, insets: [f32; 4]) -> (Vec2, Vec2) {
+    let [l, t, r, b] = insets.map(|v| v.max(0.0));
+    let c = Vec2::new((l + (size.x - r)) * 0.5, (t + (size.y - b)) * 0.5).clamp(Vec2::ZERO, size);
+    let full = Vec2::new(2.0 * c.x.max(size.x - c.x), 2.0 * c.y.max(size.y - c.y));
+    (full, full * 0.5 - c)
+}
+
+/// Shifts the projection so the scene centers between the UI panels.
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn apply_insets(
+    rig: Res<CameraRig>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    mut cameras: Query<&mut Camera, With<OrbitCamera>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let scale = window.scale_factor();
+    let size = Vec2::new(window.width(), window.height()) * scale;
+    if size.x < 1.0 || size.y < 1.0 {
+        return;
+    }
+    let (full, offset) = off_center(size, rig.insets.map(|v| v * scale));
+    let view = (full.x > size.x + 0.5 || full.y > size.y + 0.5).then(|| SubCameraView {
+        full_size: full.round().as_uvec2(),
+        offset: offset.round(),
+        size: size.round().as_uvec2(),
+    });
+    for mut camera in &mut cameras {
+        if camera.sub_camera_view != view {
+            camera.sub_camera_view = view;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +217,19 @@ mod tests {
         // The bounding sphere fits inside the vertical field of view.
         let radius = 0.5 * Vec3::ONE.length();
         assert!(radius / rig.distance < (0.5 * FOV_Y).sin());
+    }
+
+    #[test]
+    fn off_center_centers_the_free_area() {
+        let size = Vec2::new(1600.0, 900.0);
+        let (full, offset) = off_center(size, [0.0, 80.0, 300.0, 20.0]);
+        // The free area's center (650, 480) lands at the center of the full view.
+        let center_in_full = Vec2::new(650.0, 480.0) + offset;
+        assert!((center_in_full - full * 0.5).length() < 1e-3);
+        assert!(offset.x >= 0.0 && offset.y >= 0.0);
+        assert!(offset.x + size.x <= full.x + 1e-3 && offset.y + size.y <= full.y + 1e-3);
+        let (f0, o0) = off_center(size, [0.0; 4]);
+        assert_eq!((f0, o0), (size, Vec2::ZERO));
     }
 
     #[test]
