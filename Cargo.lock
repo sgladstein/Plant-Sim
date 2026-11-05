@@ -478,6 +478,7 @@ dependencies = [
  "ps-soil",
  "ps-species",
  "ps-units",
+ "ps-world",
 ]
 
 [[package]]
