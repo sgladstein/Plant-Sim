@@ -10,8 +10,11 @@
 //!   work package, so the build fails only on new misses.
 //!
 //! Variables are the `daily.csv` columns (ps-export) or the derived names in
-//! [`derived`]. A value is the mean over the scenario's plants, its replicates; the
-//! logistic shape check and the curves use the first plant.
+//! [`derived`]. Each scenario runs once per seed offset in `targets.ron`. A value is the
+//! mean over the runs of each run's mean over its plants, its replicates; the report
+//! gives the range over the runs too. A response compares the treatment's mean with the
+//! baseline's. The logistic shape check reads the first plant of each run; the curves
+//! read the mean of the runs' first plants.
 
 pub mod derived;
 pub mod files;
@@ -94,6 +97,8 @@ pub struct Outcome {
     pub source: String,
     /// Note, or why it was not evaluated.
     pub note: String,
+    /// Over the seed runs, when more than one has a value.
+    pub spread: Option<Spread>,
 }
 
 impl Outcome {
@@ -105,8 +110,113 @@ impl Outcome {
     }
 }
 
-/// The runs a validation needs: scenario name to final world state.
-pub type Runs = BTreeMap<String, WorldState>;
+/// The runs a validation needs: scenario name to the final world state of each seed run,
+/// the scenario as written first.
+pub type Runs = BTreeMap<String, Vec<WorldState>>;
+
+/// How the seed runs of one check differ.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Spread {
+    /// Lowest run.
+    pub min: f64,
+    /// Highest run.
+    pub max: f64,
+    /// Sample standard deviation over the runs.
+    pub sd: f64,
+    /// Runs with a value.
+    pub n: usize,
+}
+
+/// A mean over seed runs.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SeedMean {
+    /// Mean over the runs that have the value.
+    pub value: f64,
+    /// Each run's value, `None` where it has none.
+    pub per_seed: Vec<Option<f64>>,
+    /// A note from the runs (replicate counts), and how many runs have the value when
+    /// not all do.
+    pub note: String,
+}
+
+impl SeedMean {
+    /// The runs' range and standard deviation, when more than one run has the value.
+    #[must_use]
+    pub fn spread(&self) -> Option<Spread> {
+        let v: Vec<f64> = self.per_seed.iter().flatten().copied().collect();
+        if v.len() < 2 {
+            return None;
+        }
+        #[allow(clippy::cast_precision_loss)] // a handful of runs
+        let n = v.len() as f64;
+        let mean = v.iter().sum::<f64>() / n;
+        let var = v.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (n - 1.0);
+        let (min, max) = v
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &x| {
+                (lo.min(x), hi.max(x))
+            });
+        Some(Spread {
+            min,
+            max,
+            sd: libm::sqrt(var),
+            n: v.len(),
+        })
+    }
+}
+
+/// The mean of `f` over the seed runs `states`, of which at least half must have a
+/// value. `f` gives a run's value and a note.
+///
+/// # Errors
+/// The first run's reason when too few runs have a value.
+pub fn seed_mean<S>(
+    states: &[S],
+    f: impl Fn(&S) -> Result<(f64, String), String>,
+) -> Result<SeedMean, String> {
+    if states.is_empty() {
+        return Err("no runs".into());
+    }
+    let mut per_seed = Vec::with_capacity(states.len());
+    let mut note = String::new();
+    let mut first_error = None;
+    for s in states {
+        match f(s) {
+            Ok((v, n)) => {
+                if note.is_empty() {
+                    note = n;
+                }
+                per_seed.push(Some(v));
+            }
+            Err(e) => {
+                first_error.get_or_insert(e);
+                per_seed.push(None);
+            }
+        }
+    }
+    let have: Vec<f64> = per_seed.iter().flatten().copied().collect();
+    if have.is_empty() || 2 * have.len() < states.len() {
+        return Err(format!(
+            "{} ({} of {} seed runs have a value)",
+            first_error.unwrap_or_default(),
+            have.len(),
+            states.len()
+        ));
+    }
+    if have.len() < states.len() {
+        note = with_note(
+            &note,
+            &format!("mean of {} of {} seed runs", have.len(), states.len()),
+        );
+    }
+    #[allow(clippy::cast_precision_loss)] // a handful of runs
+    let value = have.iter().sum::<f64>() / have.len() as f64;
+    Ok(SeedMean {
+        value,
+        per_seed,
+        note,
+    })
+}
 
 /// The rows of one plant, in day order.
 #[must_use]
@@ -294,8 +404,9 @@ pub fn evaluate_targets(file: &TargetFile, runs: &Runs, known: &KnownMisses) -> 
         .iter()
         .map(|t| {
             let mut note = t.note.clone();
+            let mut spread = None;
             let expected = t.expect.describe(&t.unit);
-            let base = |got, verdict, note| Outcome {
+            let base = |got, verdict, note, spread| Outcome {
                 id: t.id.clone(),
                 kind: "target",
                 scenario: t.scenario.clone(),
@@ -307,35 +418,43 @@ pub fn evaluate_targets(file: &TargetFile, runs: &Runs, known: &KnownMisses) -> 
                 gate: t.gate,
                 source: t.sources.join(" "),
                 note,
+                spread,
             };
             if t.gate == Gate::Later {
                 return base(
                     None,
                     Verdict::NotEvaluated,
                     "later: scenario not written yet".into(),
+                    None,
                 );
             }
-            let Some(state) = runs.get(&t.scenario) else {
+            let Some(states) = runs.get(&t.scenario) else {
                 return base(
                     None,
                     Verdict::NotEvaluated,
                     format!("no run for scenario {}", t.scenario),
+                    None,
                 );
             };
-            let got = if let Expect::LogisticR2 { .. } = t.expect {
-                logistic::series(state, "day", &t.variable).map(|(x, y)| logistic::fit(&x, &y).r2)
-            } else {
-                replicate_mean(state, &t.variable, &t.at).map(|m| {
-                    note = with_note(&note, &m.note());
-                    m.value
-                })
-            };
+            let got = seed_mean(states, |state| {
+                if let Expect::LogisticR2 { .. } = t.expect {
+                    logistic::series(state, "day", &t.variable)
+                        .map(|(x, y)| (logistic::fit(&x, &y).r2, String::new()))
+                } else {
+                    replicate_mean(state, &t.variable, &t.at).map(|m| (m.value, m.note()))
+                }
+            })
+            .map(|m| {
+                note = with_note(&note, &m.note);
+                spread = m.spread();
+                m.value
+            });
             match got {
                 Ok(v) => {
                     let verdict = settle(t.expect.holds(v), &t.id, known, &mut note);
-                    base(Some(v), verdict, note)
+                    base(Some(v), verdict, note, spread)
                 }
-                Err(why) => base(None, Verdict::NotEvaluated, why),
+                Err(why) => base(None, Verdict::NotEvaluated, why, None),
             }
         })
         .collect()
@@ -349,7 +468,7 @@ pub fn evaluate_responses(file: &ResponseFile, runs: &Runs, known: &KnownMisses)
         .iter()
         .map(|r| {
             let mut note = r.note.clone();
-            let base = |got, verdict, note| Outcome {
+            let base = |got, verdict, note, spread| Outcome {
                 id: r.id.clone(),
                 kind: "response",
                 scenario: format!("{} vs {}", r.scenario, r.baseline),
@@ -361,46 +480,71 @@ pub fn evaluate_responses(file: &ResponseFile, runs: &Runs, known: &KnownMisses)
                 gate: r.gate,
                 source: r.sources.join(" "),
                 note,
+                spread,
             };
             if r.gate == Gate::Later {
                 return base(
                     None,
                     Verdict::NotEvaluated,
                     "later: scenario not written yet".into(),
+                    None,
                 );
             }
             let (Some(t), Some(b)) = (runs.get(&r.scenario), runs.get(&r.baseline)) else {
-                return base(None, Verdict::NotEvaluated, "a scenario has no run".into());
+                return base(
+                    None,
+                    Verdict::NotEvaluated,
+                    "a scenario has no run".into(),
+                    None,
+                );
             };
             let mut counts = String::new();
-            let mut change = |var: &str| -> Result<f64, String> {
-                let mt = replicate_mean(t, var, &r.at)?;
-                let mb = replicate_mean(b, var, &r.at)?;
-                for (m, which) in [(mt, "treatment"), (mb, "baseline")] {
-                    if !m.note().is_empty() {
-                        counts = with_note(&counts, &format!("{which} {var}: {}", m.note()));
+            // The change of the treatment's seed mean against the baseline's, and the
+            // range of the per-seed changes (seed k of the treatment against seed k of
+            // the baseline).
+            let mut change = |var: &str| -> Result<(f64, Option<Spread>), String> {
+                let per =
+                    |s: &WorldState| replicate_mean(s, var, &r.at).map(|m| (m.value, m.note()));
+                let mt = seed_mean(t, per)?;
+                let mb = seed_mean(b, per)?;
+                for (m, which) in [(&mt, "treatment"), (&mb, "baseline")] {
+                    if !m.note.is_empty() {
+                        counts = with_note(&counts, &format!("{which} {var}: {}", m.note));
                     }
                 }
                 if mb.value == 0.0 {
                     return Err(format!("{var} is zero in the baseline"));
                 }
-                Ok((mt.value - mb.value) / mb.value.abs())
+                let paired = SeedMean {
+                    value: 0.0,
+                    per_seed: mt
+                        .per_seed
+                        .iter()
+                        .zip(&mb.per_seed)
+                        .map(|(a, b)| match (a, b) {
+                            (Some(a), Some(b)) if *b != 0.0 => Some((a - b) / b.abs()),
+                            _ => None,
+                        })
+                        .collect(),
+                    note: String::new(),
+                };
+                Ok(((mt.value - mb.value) / mb.value.abs(), paired.spread()))
             };
-            let got = match change(&r.variable) {
+            let (got, spread) = match change(&r.variable) {
                 Ok(c) => c,
-                Err(why) => return base(None, Verdict::NotEvaluated, why),
+                Err(why) => return base(None, Verdict::NotEvaluated, why, None),
             };
             let pass = if let ResponseExpect::FallsMoreThan(other) = &r.expect {
                 match change(other) {
-                    Ok(o) => got < 0.0 && got < o,
-                    Err(why) => return base(Some(got), Verdict::NotEvaluated, why),
+                    Ok((o, _)) => got < 0.0 && got < o,
+                    Err(why) => return base(Some(got), Verdict::NotEvaluated, why, spread),
                 }
             } else {
                 r.expect.holds(got)
             };
             note = with_note(&note, &counts);
             let verdict = settle(pass, &r.id, known, &mut note);
-            base(Some(got), verdict, note)
+            base(Some(got), verdict, note, spread)
         })
         .collect()
 }
@@ -433,6 +577,7 @@ pub fn evaluate_parameters(
                 gate: c.gate,
                 source: c.sources.join(" "),
                 note,
+                spread: None,
             };
             if c.gate == Gate::Later {
                 return base(None, Verdict::NotEvaluated, "later".into());
@@ -480,7 +625,7 @@ pub fn compare_curves(curves: &[Curve], runs: &Runs) -> Vec<CurveComparison> {
         .filter(|c| c.gate != Gate::Later)
         .map(|c| {
             let scenario = c.scenario.clone().unwrap_or_else(|| "single_pot".into());
-            let Some(state) = runs.get(&scenario) else {
+            let Some(states) = runs.get(&scenario).filter(|s| !s.is_empty()) else {
                 return CurveComparison {
                     curve: c.clone(),
                     sim: vec![None; c.points.len()],
@@ -495,13 +640,29 @@ pub fn compare_curves(curves: &[Curve], runs: &Runs) -> Vec<CurveComparison> {
                 } else {
                     c.x.variable.as_str()
                 };
-            let series = logistic::series(state, x_var, &c.y.variable);
-            let (sim, note) = match &series {
-                Ok((x, y)) => (
-                    c.points.iter().map(|p| interpolate(x, y, p.x)).collect(),
-                    String::new(),
-                ),
-                Err(e) => (vec![None; c.points.len()], e.clone()),
+            // Each point is the mean of the runs that reach it.
+            let series: Vec<_> = states
+                .iter()
+                .map(|s| logistic::series(s, x_var, &c.y.variable))
+                .collect();
+            let (sim, note) = if let Some(Err(e)) = series.iter().find(|s| s.is_err()) {
+                (vec![None; c.points.len()], e.clone())
+            } else {
+                let sim = c
+                    .points
+                    .iter()
+                    .map(|p| {
+                        let v: Vec<f64> = series
+                            .iter()
+                            .flatten()
+                            .filter_map(|(x, y)| interpolate(x, y, p.x))
+                            .collect();
+                        #[allow(clippy::cast_precision_loss)] // a handful of runs
+                        let n = v.len() as f64;
+                        (!v.is_empty()).then(|| v.iter().sum::<f64>() / n)
+                    })
+                    .collect();
+                (sim, String::new())
             };
             let pairs: Vec<(f64, f64)> = c
                 .points
@@ -558,13 +719,25 @@ fn interpolate(x: &[f64], y: &[f64], at: f64) -> Option<f64> {
 #[must_use]
 pub fn outcomes_csv(outcomes: &[Outcome]) -> String {
     let q = |s: &str| format!("\"{}\"", s.replace('"', "'"));
-    let mut out =
-        String::from("id,kind,scenario,variable,at,expected,got,verdict,gate,source,note\n");
+    let mut out = String::from(
+        "id,kind,scenario,variable,at,expected,got,verdict,gate,source,note,seed_min,seed_max,seed_sd,seed_n\n",
+    );
     for o in outcomes {
         let got = o.got.map_or_else(String::new, |v| format!("{v}"));
+        let (lo, hi, sd, n) = o.spread.map_or_else(
+            || (String::new(), String::new(), String::new(), String::new()),
+            |s| {
+                (
+                    format!("{}", s.min),
+                    format!("{}", s.max),
+                    format!("{}", s.sd),
+                    format!("{}", s.n),
+                )
+            },
+        );
         let _ = writeln!(
             out,
-            "{},{},{},{},{},{},{},{},{:?},{},{}",
+            "{},{},{},{},{},{},{},{},{:?},{},{},{},{},{},{}",
             q(&o.id),
             o.kind,
             q(&o.scenario),
@@ -576,6 +749,10 @@ pub fn outcomes_csv(outcomes: &[Outcome]) -> String {
             o.gate,
             q(&o.source),
             q(&o.note),
+            lo,
+            hi,
+            sd,
+            n,
         );
     }
     out
@@ -631,14 +808,31 @@ pub fn report_markdown(outcomes: &[Outcome], curves: &[CurveComparison]) -> Stri
             }
         );
         for o in rows {
+            let show = |v: f64| {
+                if kind == "response" {
+                    format!("{:+.0}%", v * 100.0)
+                } else {
+                    fmt_num(v)
+                }
+            };
             let got = o.got.map_or_else(
                 || "-".into(),
-                |v| {
-                    if kind == "response" {
-                        format!("{:+.0}%", v * 100.0)
-                    } else {
-                        fmt_num(v)
+                |v| match o.spread {
+                    Some(sp) => {
+                        let sd = if kind == "response" {
+                            format!("{:.0}%", sp.sd * 100.0)
+                        } else {
+                            fmt_num(sp.sd)
+                        };
+                        format!(
+                            "{} ± {sd} ({} to {}, n {})",
+                            show(v),
+                            show(sp.min),
+                            show(sp.max),
+                            sp.n
+                        )
                     }
+                    None => show(v),
                 },
             );
             let _ = writeln!(
@@ -695,7 +889,25 @@ mod tests {
             gate: Gate::Info,
             source: "s".into(),
             note: String::new(),
+            spread: None,
         }
+    }
+
+    #[test]
+    fn a_seed_mean_needs_half_the_runs_and_reports_the_range() {
+        let states = [Some(1.0), Some(3.0), None, Some(2.0)];
+        let m = seed_mean(&states, |v: &Option<f64>| {
+            v.map(|v| (v, String::new()))
+                .ok_or_else(|| "none".to_string())
+        })
+        .unwrap();
+        assert!((m.value - 2.0).abs() < 1e-15);
+        let sp = m.spread().unwrap();
+        assert_eq!((sp.min, sp.max, sp.n), (1.0, 3.0, 3));
+        assert!((sp.sd - 1.0).abs() < 1e-15);
+        assert!(m.note.contains("3 of 4 seed runs"), "{}", m.note);
+        let none = seed_mean(&states, |_: &Option<f64>| Err("no pods".into())).unwrap_err();
+        assert!(none.contains("0 of 4"), "{none}");
     }
 
     #[test]

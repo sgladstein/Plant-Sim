@@ -3,6 +3,9 @@
 ValidationTargets(
   schema: 1,
   species: "bush_bean",
+  // Every scenario runs at its world seed plus each offset, and every check reads the
+  // mean of those runs (review of WP25: one bean spans 21 to 39 g with the seed alone).
+  seed_offsets: [0, 1, 2, 3],
   targets: [
     Target(
       id: "flowering_day",

@@ -129,6 +129,11 @@ pub struct TargetFile {
     pub schema: u32,
     /// Species id.
     pub species: String,
+    /// Offsets added to every scenario's world seed: each scenario runs once per offset,
+    /// and every target, response and curve reads the mean over those runs (review of
+    /// WP25). Offset 0 is the scenario as written. Empty means one run.
+    #[serde(default)]
+    pub seed_offsets: Vec<u64>,
     /// Targets.
     pub targets: Vec<Target>,
 }
@@ -402,6 +407,16 @@ impl Data {
             parameters: read_opt(&dir.join("parameters.ron"))?,
             curves,
         })
+    }
+
+    /// The seed offsets every scenario runs with (see [`TargetFile::seed_offsets`]):
+    /// `[0]` when none are listed.
+    #[must_use]
+    pub fn seed_offsets(&self) -> Vec<u64> {
+        match &self.targets {
+            Some(t) if !t.seed_offsets.is_empty() => t.seed_offsets.clone(),
+            _ => vec![0],
+        }
     }
 
     /// Every scenario the data refers to, sorted, without repeats.
