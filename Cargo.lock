@@ -534,6 +534,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps-session"
+version = "0.1.0"
+dependencies = [
+ "ps-weather",
+ "ps-world",
+ "thiserror",
+]
+
+[[package]]
 name = "ps-soil"
 version = "0.1.0"
 dependencies = [

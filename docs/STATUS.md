@@ -26,6 +26,7 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | --- | --- |
 | 13 Lock the engine | in progress: Bevy 0.20.1 + bevy_egui 0.43 chosen (needs Rust 1.97.1, toolchain bumped) |
 | 14 Mesh generation (ps-mesh) | done (this PR); driven by `ps_mesh::demo` until ps-world snapshots exist |
+| 16 Sim thread (ps-session) | sim side done (this PR; decision 0015): `Session` thread, double-buffered `Snapshot`, time commands, seek by midnight copies, session hash equals replay hash. ps-app side (Session resource, Garden from snapshot plants) is the viewer thread's |
 
 ## Last validation report
 None yet (WP11).

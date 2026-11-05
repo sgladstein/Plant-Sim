@@ -28,6 +28,7 @@ proptest = "1"
 ron = "0.10"
 rayon = "1"
 ps-mesh = { path = "crates/ps-mesh" }
+ps-session = { path = "crates/ps-session" }
 glam = "0.33"
 
 [workspace.lints.rust]
