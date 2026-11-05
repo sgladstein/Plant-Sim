@@ -27,8 +27,12 @@ failed on every miss would keep CI red until then.
    - leaf area per leaf, height in cm, mean internode length
    - stage dates (`day_of_<Stage>`)
 
-   Values come from plant 0. `at` is Final, Day(n), Max or Stage(s). Days count from
-   sowing on day 0.
+   A value is the mean over the scenario's plants, which act as replicates: one plant's
+   pod count moves in steps of one pod (about 7%), so a response scenario with one
+   plant mostly measures sampling noise. Each plant has its own random streams (keyed
+   by its id), so replicate pots differ the way seeds of one line do. The logistic
+   shape check and the curves use the first plant. `at` is Final, Day(n), Max or
+   Stage(s). Days count from sowing on day 0.
 3. **Checks.**
    - Targets: Range, Approx, or LogisticR2 (the §8.3 shape rule, fitted by grid search
      with closed-form K).
@@ -50,5 +54,5 @@ failed on every miss would keep CI red until then.
 - A new reference value is a data change only, with no code change, unless it needs a
   new derived variable.
 - Python 3.12 and matplotlib are the only extra CI dependencies.
-- The harness reads plant 0 only. Multi-plant targets (density, M2) will need an
-  aggregate.
+- Per-plant targets average over replicates. Stand-level targets (density, M2) will
+  need a per-area aggregate.

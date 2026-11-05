@@ -82,13 +82,14 @@ pub fn fit(x: &[f64], y: &[f64]) -> Logistic {
     }
 }
 
-/// The time course of `y` against `x` for plant 0, skipping days where either is
+/// The time course of `y` against `x` for the first plant, skipping days where either is
 /// undefined (a zero denominator). `x` is `day` or any variable.
 ///
 /// # Errors
 /// If a variable is unknown, or no day has both values.
 pub fn series(state: &WorldState, x: &str, y: &str) -> Result<(Vec<f64>, Vec<f64>), String> {
-    let rows = plant_rows(state);
+    let first = state.plants.first().map_or(0, |p| p.id);
+    let rows = plant_rows(state, first);
     let mut xs = Vec::with_capacity(rows.len());
     let mut ys = Vec::with_capacity(rows.len());
     for i in 0..rows.len() {

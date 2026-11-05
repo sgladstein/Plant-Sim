@@ -63,13 +63,16 @@ def plot_responses(out: Path) -> Path | None:
     fig, axes = plt.subplots(4, 2, figsize=(11, 13), constrained_layout=True)
     for ax, (col, label) in zip(axes.flat, SERIES):
         for name, rows in runs.items():
-            rows0 = [r for r in rows if r["plant"] == "0"]
-            ax.plot([num(r["day"]) for r in rows0], [num(r[col]) for r in rows0], label=name.split("/")[-1], lw=1.6)
+            days: dict[float, list[float]] = {}
+            for r in rows:
+                days.setdefault(num(r["day"]), []).append(num(r[col]))
+            xs = sorted(days)
+            ax.plot(xs, [sum(days[d]) / len(days[d]) for d in xs], label=name.split("/")[-1], lw=1.6)
         ax.set_title(label, fontsize=10)
         ax.set_xlabel("days after sowing", fontsize=8)
         ax.grid(alpha=0.3)
     axes.flat[0].legend(fontsize=8)
-    fig.suptitle("§8.3 response scenarios, plant 0", fontsize=12)
+    fig.suptitle("§8.3 response scenarios, mean over the replicate plants", fontsize=12)
     path = out / "responses.png"
     fig.savefig(path, dpi=110)
     plt.close(fig)

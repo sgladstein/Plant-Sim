@@ -203,12 +203,16 @@ pub fn species_parameter(species: &ron::Value, name: &str) -> Result<f64, String
     number(at).ok_or_else(|| format!("{name} has no value"))
 }
 
-/// Mean length of the living stem internodes of plant 0 now, cm.
+/// Mean length of the living stem internodes of `plant` now, cm.
 ///
 /// # Errors
-/// If the plant has no living stem internodes.
-pub fn mean_internode_cm(state: &WorldState) -> Result<f64, String> {
-    let p = state.plants.first().ok_or("no plant")?;
+/// If the plant is missing or has no living stem internodes.
+pub fn mean_internode_cm(state: &WorldState, plant: u32) -> Result<f64, String> {
+    let p = state
+        .plants
+        .iter()
+        .find(|p| p.id == plant)
+        .ok_or_else(|| format!("no plant {plant}"))?;
     let a = &p.plant.arena;
     let lengths: Vec<f64> = (0..a.len())
         .filter(|&i| a.alive[i] && p.plant.meta.get(i).is_some_and(|m| m.role == Role::Stem))

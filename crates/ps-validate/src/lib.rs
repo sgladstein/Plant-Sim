@@ -10,7 +10,8 @@
 //!   work package, so the build fails only on new misses.
 //!
 //! Variables are the `daily.csv` columns (ps-export) or the derived names in
-//! [`derived`]. Values are taken from plant 0 of the scenario.
+//! [`derived`]. A value is the mean over the scenario's plants, its replicates; the
+//! logistic shape check and the curves use the first plant.
 
 pub mod derived;
 pub mod files;
@@ -107,18 +108,36 @@ impl Outcome {
 /// The runs a validation needs: scenario name to final world state.
 pub type Runs = BTreeMap<String, WorldState>;
 
-/// The rows of plant 0, in day order.
+/// The rows of one plant, in day order.
 #[must_use]
-pub fn plant_rows(state: &WorldState) -> Vec<&DayRow> {
-    state.history.iter().filter(|r| r.plant == 0).collect()
+pub fn plant_rows(state: &WorldState, plant: u32) -> Vec<&DayRow> {
+    state.history.iter().filter(|r| r.plant == plant).collect()
 }
 
-/// The value of `variable` at `at` in a run, or why there is none.
+/// The value of `variable` at `at` in a run, or why there is none: the mean over the
+/// run's plants, which a scenario uses as replicates (decision 0017).
+///
+/// # Errors
+/// A sentence saying why the value is not available for some plant.
+pub fn value(state: &WorldState, variable: &str, at: &At) -> Result<f64, String> {
+    let ids: Vec<u32> = state.plants.iter().map(|p| p.id).collect();
+    if ids.is_empty() {
+        return Err("the run has no plants".into());
+    }
+    let mut sum = 0.0;
+    for &id in &ids {
+        sum += plant_value(state, id, variable, at)?;
+    }
+    #[allow(clippy::cast_precision_loss)] // a handful of plants
+    Ok(sum / ids.len() as f64)
+}
+
+/// The value of `variable` at `at` for one plant.
 ///
 /// # Errors
 /// A sentence saying why the value is not available.
-pub fn value(state: &WorldState, variable: &str, at: &At) -> Result<f64, String> {
-    let rows = plant_rows(state);
+pub fn plant_value(state: &WorldState, plant: u32, variable: &str, at: &At) -> Result<f64, String> {
+    let rows = plant_rows(state, plant);
     if rows.is_empty() {
         return Err("the run has no daily rows".into());
     }
@@ -129,7 +148,7 @@ pub fn value(state: &WorldState, variable: &str, at: &At) -> Result<f64, String>
         if !matches!(at, At::Final) {
             return Err("mean_internode_cm is only available at Final".into());
         }
-        return derived::mean_internode_cm(state);
+        return derived::mean_internode_cm(state, plant);
     }
     let one = |i: usize| derived::row_value(state, &rows, i, variable);
     match at {
