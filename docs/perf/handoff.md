@@ -11,7 +11,7 @@ in docs/performance.md, and the STATUS perf line says where each budget stands.
 | --- | --- | --- |
 | One bush bean in a pot (M0) | under 2 ms per sim-day | 2.2 to 2.3 ms, slightly over |
 | 30-bean plot (M2) | under 20 ms per sim-day | 24.5 to 24.9 ms, over |
-| Viewer frame (M1) | under 16.7 ms on the owner's GTX 1070 at 2560 × 1440 | 4.0 ms (Vulkan, Mailbox) before the fuller-plants look; re-time after #78 |
+| Viewer frame (M1) | under 16.7 ms on the owner's GTX 1070 at 2560 × 1440 | 6.55 ms mean, p99 9.61 (Vulkan uncapped, 2352 × 1325, real sim, f4bec25); re-time after #72 and #78 |
 
 There are no budgets for the pole beans (about 4 ms per plant per sim-day) or the
 wheat stand (about 110 ms per sim-day for about 200 plants on 1 m²). The wheat
@@ -129,9 +129,11 @@ docs/performance.md has the details of each, including measured floors.
 
 - Stand-in plants, two pots at 2560 × 1440, vsync off, 1,200 frames: Vulkan mean
   2.70 ms (p99 2.94), GPU about 51% busy; DX12 mean 5.78 ms, GPU about 98%.
-- After the new look (main 58807c6): Vulkan Mailbox mean 4.0 ms, p99 4.4 ms, no
-  spikes. Vulkan Fifo shows 31 ms spikes about every 14 frames from present
+- After the new look (main 58807c6), still stand-in plants: Vulkan Mailbox mean
+  4.0 ms, p99 4.4 ms, no spikes. Vulkan Fifo shows 31 ms spikes about every 14 frames from present
   cadence. DX12 Fifo p99 is 32.7 ms.
+- Real sim (f4bec25, Vulkan uncapped, 2352 × 1325): mean 6.55 ms, p99 9.61 ms.
+  This is the number to compare against the 16.7 ms budget.
 - Cold start: Vulkan about 5 s, DX12 about 180 s (pipeline compilation).
   Recommended default: Vulkan with Mailbox, falling back to Fifo, and DX12 only
   without Vulkan.
