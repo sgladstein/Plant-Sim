@@ -208,6 +208,7 @@ Turbid-medium voxel model (Beer's law with a leaf-angle G-function, RATP and Sin
 - **Per light class, not per leaf.** Each hour each plant bins its leaves' absorbed PAR into 16 log-spaced classes from 1 to 2,000 µmol m⁻² s⁻¹, separately for sunlit and shaded fractions. Leaf temperature equals air temperature in M0; a leaf energy balance is an M2 upgrade. The solver runs once per class; each leaf multiplies the class rate by its area and fraction. Cost: 30 plants × 32 classes × 24 hours ≈ 23,000 solves per sim-day, well under the M2 budget.
 - **Leaf aging.** Capacity declines linearly with thermal age after full expansion to 40% at the end of lifespan; stands in for nitrogen remobilization until M2, when leaf nitrogen takes over.
 - **Starting parameters for bean** (§3.16): Vcmax 89, Jmax 160, dark respiration 0.9 µmol m⁻² s⁻¹ at 25 °C, Medlyn g1 \~4 kPa^0.5, CO2 420 ppm adjustable.
+- **Sink feedback (provisional, decision 0013)**: gross assimilation falls linearly to zero as the leaf's reserve concentration rises from 0.10 to 0.30 g C per g DM; the daily report logs the share lost so missing sinks show up.
 - **Maintenance respiration**: 0.218 g C per g N per day at 20 °C (Ryan 1991; amended from 0.015, a per-dry-mass value, by decision 0011) with Q10 = 2, per organ, paid from the organ reserve. **Growth respiration**: 20% of carbon allocated to growth (construction cost 1.25).
 
 ### 3.9 Carbon allocation
@@ -229,7 +230,7 @@ Emergent consequences this is designed to give: shaded lower leaves and branches
 
 ### 3.10 Seed reserves and germination
 
-- The plant starts as a seed organ. A bean seed is \~0.3 to 0.5 g dry mass, \~0.45 carbon, \~70% of it mobilizable. The two cotyledons hold that reserve and are the only carbon source until leaves export.
+- The plant starts as a seed of four organs (decision 0013): the collar where roots attach, a hypocotyl that starts expanding at germination, and two cotyledons holding the reserve. A bean seed is \~0.3 to 0.5 g dry mass, \~0.45 carbon, \~70% of it mobilizable. The two cotyledons hold that reserve and are the only carbon source until leaves export.
 - Germination requires the seed's soil cell above 30% FTSW and soil temperature above base temperature for 24 consecutive hours. Emergence follows at \~60 to 80 °C·day (about a week at 20 °C); the hypocotyl grows on cotyledon carbon until it reaches the surface.
 - Cotyledons export carbon down the concentration gradient like any organ, senesce when their reserve falls below 10% of the start, and drop about two weeks after emergence. Unifoliate leaves open at emergence.
 

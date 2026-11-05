@@ -49,7 +49,7 @@ Species(
     drought_abortion_ftsw: (value: 0.3, unit: "-", source: "~ (design plan §3.11; CROPGRO SWFAC below 0.5)"),
     raceme_flowering_days: (value: 10.0, unit: "day", source: "~ (design plan §3.11)"),
     flower_lifespan: (value: 3.0, unit: "day", source: "~ (decision 0013)"),
-    pod_set_base: (value: 0.4, unit: "-", source: "Binnie and Clifford 1981: 45 to 80% of flowers and young pods drop, so 0.2 to 0.55 (research review item 20)"),
+    pod_set_base: (value: 0.45, unit: "-", source: "Binnie and Clifford 1981: 45 to 80% of flowers and young pods drop, so 0.2 to 0.55 (research review item 20)"),
     ovule_set: (value: 0.75, unit: "-", source: "~ (5 ovules, realized 3.7 seeds per pod, Kumar 2025)"),
     pod_wall_mass: (value: 0.6, unit: "g DM", source: "~ (pod wall about a third of pod mass at 4 seeds of 0.3 g)"),
     pod_expansion: (value: 145.0, unit: "Cd", source: "CROPGRO LNGSH 8 photothermal days (research review item 18)"),

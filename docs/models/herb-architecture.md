@@ -16,8 +16,8 @@ Thermal time `τ` is the species three-point response (°C·day; see
 thermal-time-and-phenology). Daily steps run in §3.2 order: phenology, bud fate,
 initiation, senescence, root elongation, then light and root-cell rebuild.
 
-- **Primordium:** a new organ starts with `m₀ = min(0.02 · m_pot, 0.5 · R_parent / 0.45)`
-  g DM taken from its parent's reserve.
+- **Primordium:** a new organ starts with `m₀ = min(0.02 · m_pot, 0.5 · R_parent / (0.45 · 1.25))`
+  g DM built from its parent's reserve at the construction cost 1.25.
 - **Nodes:** an axis adds a node each phyllochron `φ` of air thermal time. Main-stem
   trifoliate at rank `r` of `n`: potential area `A = A_pot · min(f₁ + (1 − f₁) min(1, (r − 1)/2), f_n + (1 − f_n) min(1, (n − r)/2))`.
   Main-stem internode `k` of `N` (k ≥ 2): length `ℓ = ℓ_pot · (g₁ + (g_N − g₁)(k − 2)/(N − 2))`; the epicotyl has `ℓ_pot`.
@@ -40,8 +40,10 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   per component.
 - **Lateral cohort:** one per 2 cm of parent past its apical zone, multiplicity
   `m = 2 cm / spacing`, length `ℓ_max` of the lateral type.
-- **Sink feedback on leaf capacity:** `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (see
-  gas-exchange).
+- **Sink feedback on gross assimilation:** `A' = f(C) (A + Rd) − Rd`,
+  `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (provisional; see gas-exchange).
+- **Leaf death:** at thermal age `expanded + lifespan`, after 5 days below light index
+  0.1, at frost, at starvation, or at maturity.
 
 ## Parameters
 All values, units and sources are in `data/species/bush_bean.ron`. The main ones:
@@ -57,7 +59,7 @@ All values, units and sources are in `data/species/bush_bean.ron`. The main ones
 | bud_activation | 0.6 | per day | "~" |
 | apical_dominance_nodes | 2 | nodes | "~" |
 | flowers_per_raceme, raceme_flowering_days | 6, 10 | -, day | "~" §3.11 |
-| pod_set_base | 0.4 | - | Binnie and Clifford 1981 |
+| pod_set_base | 0.45 | - | Binnie and Clifford 1981 (0.2 to 0.55) |
 | pod_set_t (min, opt, opt, max) | 7, 22, 25, 36 | °C | CROPGRO bean |
 | seeds_per_pod, ovule_set | 5, 0.75 | -, - | "~" Kumar 2025 |
 | Root types | tap, two basal whorls of 4, 10 hypocotyl-borne, laterals | see file | OpenSimRoot bean (values only) |
@@ -83,7 +85,9 @@ organ sizes (carbon shortfall), which leaves die in shade, and where roots end u
 
 ## Known limits
 - No secondary thickening of stems yet, so stems are light; the root system is about
-  4% of dry mass, low for bean (WP12).
+  4% of dry mass, low for bean (WP12). The sink feedback discards about 60% of
+  potential gross assimilation from flowering on in the standard scenario, so the
+  plant is short of sinks or its leaves are too productive (WP12).
 - No phototropism or hydrotropism yet; roots bend only by gravity and noise.
 - Laterals are lumped into cohorts and have no laterals of their own.
 - Leaves do not senesce from the base during seed fill (§3.11; M2 with nitrogen).

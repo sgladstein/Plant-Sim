@@ -6,7 +6,7 @@ use ps_units::{Celsius, DegreeDays, GramsC, GramsDM, Hours};
 use serde::{Deserialize, Serialize};
 
 use crate::PhysioError;
-use crate::respiration::{growth_split, maintenance_hourly};
+use crate::respiration::{growth_split, maintenance_with_factor, q10_factor};
 use crate::thermal::{Cardinal, GrowthTemperature};
 
 /// Smallest structural mass used for a reserve concentration, g DM.
@@ -180,7 +180,7 @@ pub struct HourInputs<'a> {
 }
 
 /// Temperature responses used by growth.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Temperature {
     /// Thermal time.
     pub cardinal: Cardinal,
@@ -244,18 +244,25 @@ pub fn hourly(
     let ids: Vec<OrganId> = arena.alive_ids().collect();
     let t_of = |id: OrganId| inp.temperature[id.index()];
 
+    let mut q10_cache: Option<(u64, f64)> = None;
     // 8. Maintenance from each organ's own reserve (leaves pay it as day respiration).
     for &id in &ids {
         let i = id.index();
         if arena.kind[i] == OrganKind::Leaf {
             continue;
         }
-        let m = maintenance_hourly(
-            p.maintenance_rate_20c,
-            p.maintenance_q10,
-            arena.nitrogen[i],
-            t_of(id),
-        );
+        // Organs at one temperature (the shoot in air, roots in one soil layer) share
+        // one Q10 factor: cache the last one instead of calling pow per organ.
+        let t = t_of(id);
+        let factor = match q10_cache {
+            Some((bits, f)) if bits == t.0.to_bits() => f,
+            _ => {
+                let f = q10_factor(p.maintenance_q10, t);
+                q10_cache = Some((t.0.to_bits(), f));
+                f
+            }
+        };
+        let m = maintenance_with_factor(p.maintenance_rate_20c, arena.nitrogen[i], factor);
         arena.reserve[i] -= m;
         rep.maintenance += m;
     }

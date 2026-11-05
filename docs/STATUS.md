@@ -15,9 +15,9 @@ M0: headless core. Backlog: docs/design-plan.md §7; one GitHub issue per WP (#1
 | 5 Soil and water | #6 | done (PR #16) |
 | 6 Light | #7 | done (PRs #17, #18); owner accepted 95% of leaves within 10% for M0, re-check in WP12 (decision 0008) |
 | 7 Physiology | #8 | done (PR #20) |
-| 8 Herb architecture and roots | #9 | done (this PR; decision 0013) |
-| 9 World | #10 | next |
-| 10 Export and CLI | #11 | not started |
+| 8 Herb architecture and roots | #9 | done (PR #27; decision 0013) |
+| 9 World | #10 | done (this PR; decision 0014) |
+| 10 Export and CLI | #11 | next |
 | 11 Validation harness | #12 | not started |
 | 12 Tuning and lock | #13 | not started |
 
@@ -50,10 +50,13 @@ None yet (WP11).
 - Performance: the light speedups and 32 cells per axis landed (decision 0010), and class-table lookups cache their node PAR values. Sparse root lists and one joint uptake call per hour landed (decision 0012). Before WP21: reusable scratch buffers in `allocation::hourly`, one class table per distinct (params, stress) at plot scale, and a look at `ExpansionCurve::increment`. Optional: cache the footprints `LightGrid::fit` computes.
 
 - WP7 review and research findings: done in decision 0011 (expansion clock, implicit phloem transport, phenology from germination, debt charged to the ancestor, maintenance 0.218 g C/g N/day). Open for WP12: phloem conductance K now sets how far carbon reaches per hour; mature leaves import like any organ; priority is a weak lever; Vcmax/Jmax (Pimentel 2011) are chloroplast-based, so without gm Rubisco-limited A is about 20% high (add gm or use Ci-based Vcmax near 70).
+- WP8 review, folded into WP9 (decision 0013 items 2, 7, 12, 13): primordia are built at construction cost with growth respiration in the ledger; the sink feedback acts on gross assimilation only; leaf lifespan counts from full expansion; the daily report carries total dry mass and the feedback loss. With these, `pod_set_base` is 0.45 (inside Binnie and Clifford's 0.2 to 0.55) and world seeds 1 to 8 give 10 to 18 pods. **For WP12:** from flowering on the feedback discards about 60% of potential gross assimilation, so the plant is sink-limited (no stem thickening, roots about 4% of DM, Vcmax about 20% high without gm).
+- WP8 performance (perf thread): the Q10 cache patch landed with WP9. Light rebuild is about two thirds of the daily cost: 2.72 ms per day single-threaded against a 2 ms budget, 1.94 ms on 4 cores. Owner options if it matters: fewer sky sample points, or rebuild light every other day. Smaller items: zeroed scratch Vecs, footprint caching. WP9 world: 1.96 ms/day for one pot and 3.40 ms/day for two, on 4 cores. The daily hash is chained, so it costs the same every day. Free speedup for later: step pots with separate soils and light grids in parallel (rayon over pots, ordered collect).
 - WP8 for WP12 (decision 0013): stems have no secondary thickening (§3.4) and roots are about 4% of dry mass, low for bean; the leaf sink feedback (0.10 to 0.30 g C/g DM) keeps reserves physical and should be checked against bean leaf starch; no phototropism or hydrotropism yet; branches have no axillary racemes; all leaves drop at maturity; the research review says shade avoidance changes internode length only, while §3.4 also raises SLA up to 1.3×.
 
 ## Notes for the next session
-- WP9: `ps_arch::Plant` runs one plant's §3.2 steps. Per hour: `water_demand` for every plant, `SoilGrid::step_hour`, one `take_up` over every plant's `uptake_request`, then `grow_hour` with each plant's `Uptake`. Per day: `day(soil, next day's sun path, tick)`. `tests/ninety_days.rs::run_watered` is a one-plant version of that loop. The snapshot should carry `Plant::positions` (base, tip per organ, soil-grid frame) and `Meta` (role, attach, multiplicity) for the viewer (agreed with the viewer thread).
+- WP9 (decision 0014, model card world-and-schedule): `ps_world::World` steps scenarios from `data/scenarios/`, keeps the action log, writes RON snapshots and a full-state hash per day. For the viewer: `WorldState.plants[i].plant` carries `positions` (base, tip per organ, soil-grid frame) and `meta` (role, attach, multiplicity); `World::snapshot_ron`/`from_snapshot_ron` round-trip bit for bit.
+- WP10: golden hash files under `tests/golden/<platform>/` are not committed yet; the CLI should print them, and the Windows file has to come from a Windows run (CI job or the owner).
 - WP12: regenerate the light ray tracer fixture from a sim-exported 60-day plant and re-run `single_plant_matches_ray_tracer`; tighten its bounds if every leaf passes (decision 0008).
 - Local checks: see CLAUDE.md "Session start".
 - `cargo nextest` runs in CI; locally `cargo test --workspace` is equivalent.

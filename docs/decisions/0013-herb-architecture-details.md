@@ -25,10 +25,10 @@ concentration of about 1.4 g C per g DM, which no plant tissue can hold.
    potential length sowing depth plus `hypocotyl_above`), which lifts the cotyledons to
    the surface. Cotyledons and the collar carry no nitrogen, so no maintenance.
 2. **Primordia.** A new organ starts with 2% of its potential mass (`PRIMORDIUM`, "~"),
-   moved from its parent's reserve to its structure (at most half the parent's
-   reserve). Without it a new organ of near-zero mass holds almost no reserve and
-   needs days to start growing, because growth is a share of the organ's own reserve
-   (decision 0009). The move leaves the carbon stock unchanged.
+   built from its parent's reserve at the usual construction cost (growth
+   respiration to the ledger), using at most half the parent's reserve. Without it a
+   new organ of near-zero mass holds almost no reserve and needs days to start
+   growing, because growth is a share of the organ's own reserve (decision 0009).
 3. **Main stem and branches.** Node 1 is the epicotyl with two opposite unifoliate
    leaves and two buds; each later node is an internode, a trifoliate leaf and (on the
    main stem) a bud, one per phyllochron of air thermal time. The main stem makes
@@ -54,12 +54,14 @@ concentration of about 1.4 g C per g DM, which no plant tissue can hold.
    `0.5 × (mean direct sunlit probability over the day's sun-up hours + diffuse
    transmittance)` from the daily light coefficients; a fully expanded leaf below
    `shade_light_threshold` for `shade_senescence_days` days senesces.
-7. **Sink feedback on photosynthesis.** A leaf's capacity is multiplied by
-   `clamp(1 − (C − 0.10)/(0.30 − 0.10), 0, 1)` with `C` its reserve concentration in
-   g C per g DM (end-product inhibition, as in L-PEACH; both thresholds "~" and species
-   constants). Below the class table's lowest capacity node every flux is scaled in
-   proportion. After this the same run holds 0.2 g C per g DM in its leaves at peak
-   and spends its reserve by maturity.
+7. **Sink feedback on photosynthesis (provisional).** A leaf's gross assimilation is
+   multiplied by `f = clamp(1 − (C − 0.10)/(0.30 − 0.10), 0, 1)` with `C` its reserve
+   concentration in g C per g DM (end-product inhibition, as in L-PEACH; both
+   thresholds "~" and species constants): `A' = f (A + Rd) − Rd`. (Amended after the
+   WP8 review, in WP9: the first version scaled capacity, which also scaled Rd, so a
+   sugar-filled leaf cost nothing.) The daily report's `feedback_loss` is the share of
+   potential gross assimilation lost; on the standard scenario it is about 0.6 from
+   flowering on, so the plant lacks sinks (item 12 and WP12).
 8. **Roots.** Each seed-borne root type makes `count` axes once thermal time since
    germination passes its emergence time: the radicle down from the collar, basal
    whorls from the collar at `insertion_angle` from vertical (the second whorl offset
@@ -81,10 +83,19 @@ concentration of about 1.4 g C per g DM, which no plant tissue can hold.
 11. **Maturity.** At R9 every leaf is shed, starvation is no longer checked, and all
     organ nitrogen is set to zero, so the harvest no longer respires. Development stops.
 
+12. **Diagnostics.** The daily report also carries `total_dry_mass` (living plus shed
+    structure, the plant's production, comparable to harvested totals) and
+    `feedback_loss`.
+13. **Leaf lifespan** counts from full expansion (species schema), for senescence and
+    for the capacity decline (amended after the WP8 review, in WP9).
+
 ## Consequences
 
 - WP8's done-when holds across eight weather years (seeds 1 to 8): 7 main-stem nodes,
   3 to 5 branches, 11 to 16 pods, 3.5 to 3.9 seeds per pod, 19 to 27 g dry mass, 39 cm.
+  After the WP9 amendments (items 2, 7, 13) and `pod_set_base` 0.45 (inside the
+  0.2 to 0.55 source range): 10 to 18 pods, 3 to 5 branches, 26 to 36 g total dry
+  mass.
 - The sink feedback is a model change outside §3.8's text; it is the smallest rule
   that keeps reserves physical when sinks are full. WP12 should check it against
   measured bean leaf starch and decide whether larger sinks (stem thickening, §3.4

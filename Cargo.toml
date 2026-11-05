@@ -20,6 +20,7 @@ ps-soil = { path = "crates/ps-soil" }
 ps-light = { path = "crates/ps-light" }
 ps-physio = { path = "crates/ps-physio" }
 ps-arch = { path = "crates/ps-arch" }
+ps-world = { path = "crates/ps-world" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 libm = "0.2"
