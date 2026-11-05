@@ -473,6 +473,7 @@ dependencies = [
  "libm",
  "ps-graph",
  "ps-light",
+ "ps-mesh",
  "ps-physio",
  "ps-soil",
  "ps-species",
