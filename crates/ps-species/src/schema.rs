@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 10;
+pub const SCHEMA: u32 = 11;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -203,6 +203,15 @@ param_group!(
         cotyledon_lifespan: "day",
         /// Absorptance of leaves for PAR.
         leaf_absorptance: "-",
+        /// Width of a leaflet or blade across the wind, for its boundary layer (schema
+        /// 11, WP27, decision 0034).
+        leaf_width: "m",
+        /// Absorptance of leaves for near-infrared solar radiation.
+        leaf_nir_absorptance: "-",
+        /// Longwave emissivity of leaves.
+        leaf_emissivity: "-",
+        /// Share of a leaf's stomatal conductance on its lower (abaxial) face.
+        abaxial_conductance_share: "-",
         /// Length of one root segment, and of parent root covered by one cohort of laterals.
         root_segment_length: "cm",
         /// Share of the way to vertical a new internode turns per node (shoot gravitropism).

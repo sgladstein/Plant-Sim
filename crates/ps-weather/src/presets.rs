@@ -8,7 +8,7 @@
 //! card docs/models/weather-and-sun.md.
 
 use ps_rng::{Purpose, RngKey};
-use ps_units::{Celsius, Degrees, JPerM2, Millimeters};
+use ps_units::{Celsius, Degrees, JPerM2, MetersPerSecond, Millimeters};
 use serde::{Deserialize, Serialize};
 
 use crate::calendar::{DateHour, civil_from_days, day_of_year, days_from_civil};
@@ -36,6 +36,10 @@ pub struct DailyWeather {
     pub global: JPerM2,
     /// Rain, daily total.
     pub rain: Millimeters,
+    /// Daily mean wind speed at 2 m (WP27). Older files without it read the FAO-56
+    /// default, 2 m s⁻¹.
+    #[serde(default = "crate::radiation::default_wind")]
+    pub wind: MetersPerSecond,
 }
 
 /// Named presets (design plan §2.4, WP2).
@@ -304,6 +308,8 @@ pub fn generate_daily(
             rh_mean_pct: rh,
             global: JPerM2(kt * h0),
             rain: Millimeters(rain),
+            // The presets' sources give no wind: FAO-56's default (WP27).
+            wind: MetersPerSecond(crate::radiation::DEFAULT_WIND_M_S),
         });
     }
     out

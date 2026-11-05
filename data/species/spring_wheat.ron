@@ -2,7 +2,7 @@
 // Every number has a unit and a source; "~" means a guess to validate. Bean-only
 // constants the grass module does not read say so in their source.
 Species(
-  schema: 10,
+  schema: 11,
   id: "spring_wheat",
   name: "Spring wheat",
   growth_form: Grass,
@@ -43,7 +43,7 @@ Species(
     shade_internode_factor: (value: 1.3, unit: "-", source: "~ wheat stems lengthen less in shade than bean internodes"),
     shade_pod_set_factor: (value: 0.2, unit: "-", source: "unused by the grass"),
     shade_sla_factor: (value: 1.3, unit: "-", source: "~ thinner leaves in shade, as for the bean"),
-    leaf_frost_kill: (value: -8.0, unit: "C", source: "~ spring wheat seedlings survive frosts of -6 to -10 C"),
+    leaf_frost_kill: (value: -8.0, unit: "C", source: "~ spring wheat seedlings survive frosts of -6 to -10 C; read against the leaf's own temperature since WP27 (decision 0034), the growing points against air"),
     growth_t_min: (value: 0.0, unit: "C", source: "~ wheat expansion stops near 0 C (APSIM-Wheat [K, to verify])"),
     growth_t_opt_low: (value: 15.0, unit: "C", source: "~ APSIM-Wheat [K, to verify]"),
     growth_t_opt_high: (value: 25.0, unit: "C", source: "~ APSIM-Wheat [K, to verify]"),
@@ -81,6 +81,10 @@ Species(
     apical_hold_nodes: (value: 0.0, unit: "-", source: "unused by the grass"),
     cotyledon_lifespan: (value: 21.0, unit: "day", source: "~ the endosperm feeds the seedling for about three weeks"),
     leaf_absorptance: (value: 0.85, unit: "-", source: "typical green leaf PAR absorptance"),
+    leaf_width: (value: 0.015, unit: "m", source: "~ spring wheat flag and upper blades, 12 to 22 mm (research notes/boundary_layer_wind.md); one value for every blade (decision 0034)"),
+    leaf_nir_absorptance: (value: 0.20, unit: "-", source: "~ PROSPECT-D runs and Goudriaan's NIR scattering 0.8 (range 0.15 to 0.22; research notes/leaf_optics.md)"),
+    leaf_emissivity: (value: 0.97, unit: "-", source: "Chen 2015 review; tealeaves default 0.97 (range 0.95 to 0.99; research notes/leaf_optics.md)"),
+    abaxial_conductance_share: (value: 0.5, unit: "-", source: "~ wheat is amphistomatous with about equal stomatal densities on both faces [K, to verify] (research notes/boundary_layer_wind.md)"),
     root_segment_length: (value: 2.0, unit: "cm", source: "model resolution (decision 0013)"),
     shoot_gravitropism: (value: 0.3, unit: "-", source: "~ (decision 0013)"),
     shade_senescence_days: (value: 5.0, unit: "day", source: "design plan §3.11"),
