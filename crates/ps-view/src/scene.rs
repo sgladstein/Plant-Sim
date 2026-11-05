@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use ps_graph::{OrganId, OrganKind};
 use ps_mesh::{
     AxisKind, AxisSignature, AxisStyle, InstanceOptions, MeshData, Placement, TemplateKey, axes,
-    axis_mesh, build_template, instances,
+    axis_mesh, build_template, instances, nodes_after_base,
 };
 
 use crate::camera::CameraRig;
@@ -336,6 +336,14 @@ fn spawn_pot(
         Transform::default(),
         ChildOf(entity),
     ));
+    if !pot.supports.is_empty() {
+        commands.spawn((
+            Mesh3d(meshes.add(colored(&diorama::supports(&pot.supports)))),
+            MeshMaterial3d(assets.vertex_color.clone()),
+            Transform::default(),
+            ChildOf(entity),
+        ));
+    }
     commands.spawn((
         Mesh3d(meshes.add(to_bevy_mesh(&diorama::glass(size), None))),
         MeshMaterial3d(assets.glass.clone()),
@@ -405,13 +413,18 @@ fn axis_colors(
 ) -> Vec<[f32; 4]> {
     let ring = style.sides as usize + 1;
     let mut out = Vec::with_capacity((organs.len() + 1) * ring * usize::from(copies));
+    // One ring for the base node (the first organ's color), then each organ's rings
+    // (several along a twining internode's coil), matching `axis_nodes`.
     for k in 0..=organs.len() {
         let id = organs[k.saturating_sub(1).min(organs.len() - 1)];
-        let c = pot
-            .skeleton
-            .get(id)
-            .map_or([1.0; 3], |p| organ_color(pot, lens, id.index(), p).0);
-        out.extend(std::iter::repeat_n([c[0], c[1], c[2], 1.0], ring));
+        let p = pot.skeleton.get(id);
+        let c = p.map_or([1.0; 3], |p| organ_color(pot, lens, id.index(), p).0);
+        let rings = if k == 0 {
+            1
+        } else {
+            p.map_or(1, nodes_after_base)
+        };
+        out.extend(std::iter::repeat_n([c[0], c[1], c[2], 1.0], ring * rings));
     }
     // Copies of a root cohort share their organs' colors.
     let one = out.len();
@@ -522,6 +535,9 @@ pub(crate) fn sync_scene(
             // Frame the shoot; roots are framed by the pot.
             grow(c + lo.max(Vec3::new(lo.x, lo.y, 0.0)));
             grow(c + hi);
+        }
+        for s in &pot.supports {
+            grow(c + Vec3::new(s.base[0], s.base[1], s.height + 0.05));
         }
 
         // Axes.

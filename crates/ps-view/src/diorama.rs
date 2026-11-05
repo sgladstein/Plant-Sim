@@ -10,9 +10,9 @@
 //! a GPU.
 
 use bevy::math::{Vec2, Vec3};
-use ps_mesh::MeshData;
+use ps_mesh::{MeshData, TubeNode};
 
-use crate::garden::{PotShape, PotSize, SoilFace};
+use crate::garden::{PotShape, PotSize, SoilFace, SupportView};
 
 /// Wall thickness, m.
 pub const WALL: f32 = 0.012;
@@ -625,6 +625,79 @@ mod round {
     }
 }
 
+/// Bamboo for stakes.
+const STAKE: [f32; 4] = [0.42, 0.33, 0.16, 1.0];
+/// Jute for trellis strings.
+const STRING: [f32; 4] = [0.62, 0.52, 0.34, 1.0];
+/// Weathered timber for the frame strings hang from.
+const TRELLIS_WOOD: [f32; 4] = [0.3, 0.2, 0.11, 1.0];
+
+/// Stakes and trellis strings (sim frame, relative to the pot center). Strings hang from
+/// a top rail carried by two posts just beyond the outermost strings, so they do not
+/// float; stakes stand on their own.
+#[must_use]
+pub fn supports(supports: &[SupportView]) -> ColoredMesh {
+    let mut out = ColoredMesh::default();
+    for s in supports {
+        let foot = Vec3::new(s.base[0], s.base[1], -0.05);
+        let top = Vec3::new(s.base[0], s.base[1], s.height);
+        let (radius, color, sides) = if s.is_string() {
+            (s.diameter.max(0.002) * 0.5, STRING, 5)
+        } else {
+            (s.diameter * 0.5, STAKE, 8)
+        };
+        let nodes = [
+            TubeNode {
+                position: foot,
+                radius,
+            },
+            TubeNode {
+                position: top,
+                radius,
+            },
+        ];
+        let before = out.mesh.vertex_count();
+        ps_mesh::tube(&nodes, sides, true, Vec3::Z, &mut out.mesh);
+        out.colors
+            .extend(std::iter::repeat_n(color, out.mesh.vertex_count() - before));
+    }
+    let strings: Vec<&SupportView> = supports.iter().filter(|s| s.is_string()).collect();
+    if let Some(first) = strings.first() {
+        let (mut lo, mut hi) = (Vec2::from(first.base), Vec2::from(first.base));
+        let mut height = 0.0_f32;
+        for s in &strings {
+            lo = lo.min(Vec2::from(s.base));
+            hi = hi.max(Vec2::from(s.base));
+            height = height.max(s.height);
+        }
+        // Posts 6 cm beyond the end strings, along the row's longer side.
+        let along = if hi.x - lo.x >= hi.y - lo.y {
+            Vec2::X
+        } else {
+            Vec2::Y
+        };
+        let mid = 0.5 * (lo + hi);
+        let half = 0.5 * (hi - lo).dot(along) + 0.06;
+        let ends = [mid - along * half, mid + along * half];
+        let post = 0.02;
+        for e in ends {
+            out.cuboid(
+                Vec3::new(e.x - post, e.y - post, -0.05),
+                Vec3::new(e.x + post, e.y + post, height + 0.03),
+                TRELLIS_WOOD,
+            );
+        }
+        let rail = 0.015;
+        let (a, b) = (ends[0].min(ends[1]), ends[0].max(ends[1]));
+        out.cuboid(
+            Vec3::new(a.x - rail, a.y - rail, height),
+            Vec3::new(b.x + rail, b.y + rail, height + 2.0 * rail),
+            TRELLIS_WOOD,
+        );
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -727,5 +800,30 @@ mod tests {
         assert_eq!(o.mesh.triangle_count(), 11 * 2);
         let (lo, hi) = o.mesh.bounds().unwrap();
         assert!(lo.z >= -PotSize::RHIZOBOX.soil_depth - 1e-6 && hi.z <= 1e-6);
+    }
+
+    #[test]
+    fn strings_hang_from_a_frame_and_stakes_stand_alone() {
+        let string = |x: f32| SupportView {
+            base: [x, 0.0],
+            height: 2.0,
+            diameter: 0.005,
+        };
+        let row = supports(&[string(-0.3), string(0.0), string(0.3)]);
+        assert_eq!(row.colors.len(), row.mesh.vertex_count());
+        assert!(row.mesh.is_well_formed());
+        let (lo, hi) = row.mesh.bounds().unwrap_or_default();
+        // Posts beyond the end strings and a rail above them.
+        assert!(lo.x < -0.35 && hi.x > 0.35 && hi.z > 2.0, "{lo:?} {hi:?}");
+        let stake = supports(&[SupportView {
+            base: [0.05, 0.0],
+            height: 2.0,
+            diameter: 0.015,
+        }]);
+        let (lo, hi) = stake.mesh.bounds().unwrap_or_default();
+        assert!(
+            hi.x - lo.x < 0.02 && (hi.z - 2.0).abs() < 1e-3,
+            "{lo:?} {hi:?}"
+        );
     }
 }

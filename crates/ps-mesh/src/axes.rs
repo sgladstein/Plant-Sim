@@ -8,7 +8,7 @@ use glam::Vec3;
 use ps_graph::{OrganId, OrganKind};
 
 use crate::skeleton::is_axis_kind;
-use crate::{MeshData, Skeleton, TubeNode, tube};
+use crate::{MeshData, Placement, Skeleton, TubeNode, tube};
 
 /// Shoot or root.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -116,7 +116,21 @@ impl AxisStyle {
     };
 }
 
-/// The centerline of an axis: its base, then each organ's tip. The radius at a joint is
+/// Tube nodes per turn of a twining stem: enough to read as a smooth coil.
+pub const COIL_POINTS_PER_TURN: u32 = 12;
+
+/// How many centerline nodes organ `p` adds to its axis after the base: one (its tip),
+/// or a point per twelfth of a turn along its coil.
+#[must_use]
+pub fn nodes_after_base(p: &Placement) -> usize {
+    match p.coil.filter(|_| p.length > 0.0) {
+        Some(coil) => coil.sample_count(p.length, COIL_POINTS_PER_TURN),
+        None => 1,
+    }
+}
+
+/// The centerline of an axis: its base, then each organ's tip (a twining internode adds
+/// points along its coil). The radius at a joint is
 /// the mean of the two segments meeting there, so the taper is continuous.
 #[must_use]
 pub fn axis_nodes(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> Vec<TubeNode> {
@@ -139,10 +153,26 @@ pub fn axis_nodes(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> Vec<Tub
             Some(next) => 0.5 * (p.radius + next.radius),
             None => p.radius * style.tip_taper,
         };
-        nodes.push(TubeNode {
-            position: p.tip(),
-            radius: visible(r, p.length > 0.0),
-        });
+        let r = visible(r, p.length > 0.0);
+        match p.coil.filter(|_| p.length > 0.0) {
+            // A twining internode: follow its helix, tapering from the joint below.
+            Some(coil) => {
+                let r0 = nodes.last().map_or(r, |n: &TubeNode| n.radius);
+                let points = coil.samples(p.base, p.tip(), p.length, COIL_POINTS_PER_TURN);
+                let n = points.len() as f32;
+                for (j, position) in points.into_iter().enumerate() {
+                    let f = (j + 1) as f32 / n;
+                    nodes.push(TubeNode {
+                        position,
+                        radius: r0 + (r - r0) * f,
+                    });
+                }
+            }
+            None => nodes.push(TubeNode {
+                position: p.tip(),
+                radius: r,
+            }),
+        }
     }
     nodes
 }

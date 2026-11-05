@@ -52,6 +52,70 @@ pub struct Placement {
     /// How many identical roots this organ is drawn as (a lateral root cohort), at most
     /// [`MAX_COPIES`]; 1 for everything else.
     pub copies: u16,
+    /// The helix a twining internode coils along, if any. The placement itself is the
+    /// chord from base to tip; the coil is drawn by sampling [`Coil::point`].
+    pub coil: Option<Coil>,
+}
+
+/// A stem coiled around a vertical support (the sim's `Twine`), in the skeleton frame.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Coil {
+    /// The support's axis, x and y, m.
+    pub center: glam::Vec2,
+    /// Radius of the stem's centerline around it, m.
+    pub radius: f32,
+    /// Helix angle above the horizontal, rad.
+    pub inclination: f32,
+}
+
+impl Coil {
+    /// How many points [`Coil::samples`] returns for a coil of arc length `length`.
+    #[must_use]
+    #[allow(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss
+    )]
+    pub fn sample_count(&self, length: f32, per_turn: u32) -> usize {
+        let r = self.radius.max(1e-6);
+        let turns = length.max(0.0) * self.inclination.cos().abs() / (std::f32::consts::TAU * r);
+        let n = (turns * per_turn as f32).ceil();
+        if n.is_finite() {
+            (n as usize).clamp(1, 512)
+        } else {
+            1
+        }
+    }
+
+    /// The point `s` metres along the coil from `base`, anticlockwise seen from above.
+    #[must_use]
+    pub fn point(&self, base: Vec3, s: f32) -> Vec3 {
+        let phase0 = (base.y - self.center.y).atan2(base.x - self.center.x);
+        let r = self.radius.max(1e-6);
+        let phase = phase0 + s * self.inclination.cos() / r;
+        Vec3::new(
+            self.center.x + r * phase.cos(),
+            self.center.y + r * phase.sin(),
+            base.z + s * self.inclination.sin(),
+        )
+    }
+
+    /// Points along an organ coiled from `base` to `tip` over arc length `length`,
+    /// excluding `base` and ending exactly at `tip`: about `per_turn` points a turn. Any
+    /// gap between the helix's end and the chord's tip (from blending two hours) is
+    /// spread along the coil so the stem stays joined.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
+    pub fn samples(&self, base: Vec3, tip: Vec3, length: f32, per_turn: u32) -> Vec<Vec3> {
+        let n = self.sample_count(length, per_turn);
+        let gap = tip - self.point(base, length);
+        (1..=n)
+            .map(|k| {
+                let f = k as f32 / n as f32;
+                self.point(base, length * f) + gap * f
+            })
+            .collect()
+    }
 }
 
 /// Most copies drawn for one root cohort: enough to read as a cluster in the cutaway
@@ -65,10 +129,13 @@ impl Placement {
         is_axis_kind(self.kind)
     }
 
-    /// The far end of an axis organ; the base for point organs.
+    /// The far end of an axis organ (on its coil for a twining internode); the base for
+    /// point organs.
     #[must_use]
     pub fn tip(&self) -> Vec3 {
-        if self.is_axis_organ() {
+        if let Some(coil) = self.coil.filter(|_| self.kind == OrganKind::Internode) {
+            coil.point(self.base, self.length)
+        } else if self.is_axis_organ() {
             self.base + self.direction * self.length
         } else {
             self.base
@@ -170,6 +237,7 @@ impl Skeleton {
                     size.length.0
                 };
                 Placement {
+                    coil: None,
                     kind,
                     parent: arena.parent[i],
                     axis_order: arena.axis_order[i],
