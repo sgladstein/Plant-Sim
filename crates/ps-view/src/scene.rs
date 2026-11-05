@@ -3,6 +3,9 @@
 //! - One entity per stem or root axis, keyed by its basal organ id. Its tube mesh is
 //!   rebuilt only when [`AxisSignature::needs_rebuild`] says it changed by more than 2%
 //!   (§4); lens and age colors are vertex colors, rewritten without touching geometry.
+//! - One entity per plant for all its leaves' petioles (see `PetioleGroup`).
+//! - Nothing is rebuilt on a frame where the garden, the lens and the camera focus are
+//!   all unchanged (paused, or between sim frames at low speed).
 //! - One entity per templated organ (leaf, flower, pod...), keyed by organ id, drawing a
 //!   shared template mesh with a shared material per quantized color, so Bevy batches
 //!   identical mesh-material pairs (§11.9).
@@ -143,6 +146,49 @@ struct InstanceEntity {
     entity: Entity,
     key: TemplateKey,
     color: ([u8; 3], bool),
+    transform: Transform,
+}
+
+/// One leaf's petiole inside its plant's merged petiole mesh.
+struct PetiolePart {
+    signature: AxisSignature,
+    organs: Vec<OrganId>,
+    mesh: MeshData,
+    colors: Vec<[f32; 4]>,
+}
+
+/// All of a plant's petioles in one mesh and one entity: a bean has a petiole per leaf,
+/// and one entity each multiplied the entity count of a 30-plant plot by about 1.3.
+/// Each part keeps its own tube, rebuilt by the 2% rule; the merged mesh is
+/// re-concatenated only when a part's geometry changed or a petiole came or went, and
+/// only its colors are rewritten when only colors changed.
+struct PetioleGroup {
+    entity: Entity,
+    mesh: Handle<Mesh>,
+    parts: BTreeMap<OrganId, PetiolePart>,
+}
+
+impl PetioleGroup {
+    fn merged(&self) -> (MeshData, Vec<[f32; 4]>) {
+        concat(self.parts.values().map(|p| (&p.mesh, p.colors.as_slice())))
+    }
+}
+
+/// Concatenates meshes already in one frame, with their vertex colors.
+fn concat<'a>(
+    parts: impl Iterator<Item = (&'a MeshData, &'a [[f32; 4]])>,
+) -> (MeshData, Vec<[f32; 4]>) {
+    let mut mesh = MeshData::new();
+    let mut colors = Vec::new();
+    for (part, c) in parts {
+        let base = u32::try_from(mesh.positions.len()).unwrap_or(u32::MAX);
+        mesh.positions.extend_from_slice(&part.positions);
+        mesh.normals.extend_from_slice(&part.normals);
+        mesh.uvs.extend_from_slice(&part.uvs);
+        mesh.indices.extend(part.indices.iter().map(|i| i + base));
+        colors.extend_from_slice(c);
+    }
+    (mesh, colors)
 }
 
 struct PotScene {
@@ -155,6 +201,7 @@ struct PotScene {
     supports: Vec<SupportView>,
     obstacles: Vec<ObstacleView>,
     axes: BTreeMap<OrganId, AxisEntity>,
+    petioles: Option<PetioleGroup>,
     instances: BTreeMap<OrganId, InstanceEntity>,
     overlay: Entity,
     overlay_mesh: Handle<Mesh>,
@@ -167,6 +214,9 @@ pub struct SceneIndex {
     root: Option<Entity>,
     pots: Vec<PotScene>,
     lens: Option<Lens>,
+    /// Whether the scene has been synced once, and the camera focus it was synced for.
+    synced: bool,
+    synced_focus: Option<usize>,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -383,6 +433,7 @@ fn spawn_pot(
             supports: Vec::new(),
             obstacles: Vec::new(),
             axes: BTreeMap::new(),
+            petioles: None,
             instances: BTreeMap::new(),
             overlay,
             // Never shown: only the container's view draws the soil overlay.
@@ -452,6 +503,7 @@ fn spawn_pot(
         supports: pot.supports.clone(),
         obstacles: pot.obstacles.clone(),
         axes: BTreeMap::new(),
+        petioles: None,
         instances: BTreeMap::new(),
         overlay,
         overlay_mesh,
@@ -534,6 +586,18 @@ pub(crate) fn sync_scene(
     let Some(root) = index.root else {
         return;
     };
+    // Nothing moved: keep every entity and the camera bounds as they are.
+    let focus = rig.focus;
+    // The lens resource is written by the UI every frame, so compare its value.
+    if !garden.is_changed()
+        && index.lens == Some(*lens)
+        && index.synced
+        && index.synced_focus == focus
+    {
+        return;
+    }
+    index.synced = true;
+    index.synced_focus = focus;
     let lens = *lens;
     // Pots are static; respawn everything if their number or sizes change.
     let layout_changed = index.pots.len() != garden.pots.len()
@@ -585,9 +649,14 @@ pub(crate) fn sync_scene(
                 } else {
                     Visibility::Inherited
                 });
-            for a in scene.axes.values() {
+            for e in scene
+                .axes
+                .values()
+                .map(|a| a.entity)
+                .chain(scene.petioles.as_ref().map(|g| g.entity))
+            {
                 commands
-                    .entity(a.entity)
+                    .entity(e)
                     .insert(MeshMaterial3d(axis_material.clone()));
             }
         }
@@ -612,7 +681,6 @@ pub(crate) fn sync_scene(
         });
     };
 
-    let focus = rig.focus;
     for (k, (scene, pot)) in index.pots.iter_mut().zip(&garden.pots).enumerate() {
         let c = Vec3::new(pot.center[0], pot.center[1], 0.0);
         let half = Vec3::new(pot.size.width / 2.0, pot.size.depth / 2.0, 0.0);
@@ -647,6 +715,25 @@ pub(crate) fn sync_scene(
         // Axes.
         let current = axes(&pot.skeleton, true);
         let mut seen = Vec::with_capacity(current.len());
+        let mut petioles = scene.petioles.take().unwrap_or_else(|| {
+            let mesh = meshes.add(to_bevy_mesh(&MeshData::new(), Some(&[])));
+            let entity = commands
+                .spawn((
+                    Mesh3d(mesh.clone()),
+                    MeshMaterial3d(axis_material.clone()),
+                    Transform::default(),
+                    ChildOf(scene.entity),
+                ))
+                .id();
+            PetioleGroup {
+                entity,
+                mesh,
+                parts: BTreeMap::new(),
+            }
+        });
+        let mut petioles_seen = Vec::new();
+        let mut petiole_geometry_changed = false;
+        let mut petiole_colors_changed = false;
         for axis in &current {
             let style = match axis.kind {
                 // A little thicker than ps-mesh's default so fine roots read against soil.
@@ -657,9 +744,36 @@ pub(crate) fn sync_scene(
                 kind => AxisStyle::for_kind(kind),
             };
             let key = axis.key();
-            seen.push(key);
             let signature = AxisSignature::of(&pot.skeleton, axis, style);
             let colors = axis_colors(pot, lens, &axis.organs, style, axis.copies);
+            if axis.kind == AxisKind::Petiole {
+                petioles_seen.push(key);
+                match petioles.parts.get_mut(&key) {
+                    Some(part)
+                        if !signature.needs_rebuild(&part.signature, REBUILD_THRESHOLD)
+                            && part.organs == axis.organs =>
+                    {
+                        if part.colors != colors {
+                            part.colors = colors;
+                            petiole_colors_changed = true;
+                        }
+                    }
+                    _ => {
+                        petioles.parts.insert(
+                            key,
+                            PetiolePart {
+                                signature,
+                                organs: axis.organs.clone(),
+                                mesh: axis_mesh(&pot.skeleton, axis, style),
+                                colors,
+                            },
+                        );
+                        petiole_geometry_changed = true;
+                    }
+                }
+                continue;
+            }
+            seen.push(key);
             match scene.axes.get_mut(&key) {
                 Some(existing)
                     if !signature.needs_rebuild(&existing.signature, REBUILD_THRESHOLD)
@@ -706,12 +820,29 @@ pub(crate) fn sync_scene(
             }
         }
         scene.axes.retain(|k, a| {
-            let keep = seen.contains(k);
+            let keep = seen.binary_search(k).is_ok();
             if !keep {
                 commands.entity(a.entity).despawn();
             }
             keep
         });
+        let before = petioles.parts.len();
+        petioles
+            .parts
+            .retain(|k, _| petioles_seen.binary_search(k).is_ok());
+        petiole_geometry_changed |= petioles.parts.len() != before;
+        if petiole_geometry_changed {
+            let (mesh, colors) = petioles.merged();
+            let _ = meshes.insert(&petioles.mesh, to_bevy_mesh(&mesh, Some(&colors)));
+        } else if petiole_colors_changed && let Some(mut m) = meshes.get_mut(&petioles.mesh) {
+            let colors: Vec<[f32; 4]> = petioles
+                .parts
+                .values()
+                .flat_map(|p| p.colors.iter().copied())
+                .collect();
+            m.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+        }
+        scene.petioles = Some(petioles);
 
         // Templated organs.
         let options = InstanceOptions {
@@ -735,7 +866,10 @@ pub(crate) fn sync_scene(
             let mesh = assets.templates.get(&inst.key).cloned().unwrap_or_default();
             if let Some(e) = scene.instances.get_mut(&inst.organ) {
                 let mut ec = commands.entity(e.entity);
-                ec.insert(transform);
+                if e.transform != transform {
+                    ec.insert(transform);
+                    e.transform = transform;
+                }
                 if e.key != inst.key {
                     ec.insert(Mesh3d(mesh));
                     e.key = inst.key;
@@ -759,6 +893,7 @@ pub(crate) fn sync_scene(
                         entity,
                         key: inst.key,
                         color,
+                        transform,
                     },
                 );
             }
@@ -788,4 +923,31 @@ pub(crate) fn sync_scene(
         }
     }
     rig.frame_bounds = bounds;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tri(z: f32) -> MeshData {
+        let mut m = MeshData::new();
+        let a = m.push_vertex(Vec3::new(0.0, 0.0, z), Vec3::Z, Vec2::ZERO);
+        let b = m.push_vertex(Vec3::new(1.0, 0.0, z), Vec3::Z, Vec2::X);
+        let c = m.push_vertex(Vec3::new(0.0, 1.0, z), Vec3::Z, Vec2::Y);
+        m.push_triangle(a, b, c);
+        m
+    }
+
+    #[test]
+    fn merged_petioles_keep_each_part_and_its_colors() {
+        let (a, b) = (tri(0.0), tri(1.0));
+        let (ca, cb) = ([[0.3, 0.3, 0.3, 1.0]; 3], [[0.7, 0.7, 0.7, 1.0]; 3]);
+        let (mesh, colors) = concat([(&a, &ca[..]), (&b, &cb[..])].into_iter());
+        assert_eq!(mesh.positions.len(), 6);
+        assert_eq!(colors.len(), 6);
+        // The second part's indices are offset past the first's vertices.
+        assert_eq!(mesh.indices, [0, 1, 2, 3, 4, 5]);
+        assert!((mesh.positions[3][2] - 1.0).abs() < 1e-6);
+        assert!((colors[0][0] - 0.3).abs() < 1e-6 && (colors[5][0] - 0.7).abs() < 1e-6);
+    }
 }

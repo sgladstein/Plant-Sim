@@ -97,7 +97,7 @@ Written 2026-11-05 by the viewer thread. Main at the time of writing: 2392f58 (#
 2. Done: `Plant::individual` in the whole-plant inspector.
 3. WP20, the moments, then render the sun-versus-shade clip with `--timelapse` and `--clean` for sign-off.
 4. The rest of WP17: assimilation and transpiration charts once the sim adds them to the daily rows. Experiment mode varies only what one world can (per-pot light, water, pot size); latitude, sowing date or weather sweeps would need one world per pot.
-5. Performance with many plants: wheat_stand (200 plants) is slow to step in debug. Profile the release build's per-frame skeleton rebuild and instance upload.
+5. Performance with many plants. Done: a frame where the snapshot, the interpolation fraction, the high-speed flag, the lens and the camera focus are all unchanged rebuilds nothing (`SimSource.shown`, `SceneIndex.synced`); on the 30-bean plot paused at day 50 the CPU cost of drive plus scene sync fell from about 10 ms to about 0.25 ms a frame (release, lavapipe container). Each plant's petioles are one merged mesh and entity (`PetioleGroup`, 25 fewer entities per bean at day 50), instance transforms are written only when they change, and lens values are computed once per snapshot (`SimSource.lens_values`), not per frame. Open: while running, every frame still re-lerps every skeleton, recomputes every axis signature and color and moves every instance; roots (about 65 axes per bean) could be merged the same way.
 6. If a look option is chosen, rebase that branch onto main and gate it behind `--look`.
 
 ## 8. Gotchas
