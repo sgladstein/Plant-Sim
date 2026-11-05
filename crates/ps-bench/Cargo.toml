@@ -13,6 +13,7 @@ ps-soil.workspace = true
 ps-light.workspace = true
 ps-physio = { path = "../ps-physio" }
 ps-mesh = { path = "../ps-mesh" }
+ps-world = { path = "../ps-world" }
 ps-graph.workspace = true
 ps-species.workspace = true
 libm.workspace = true
@@ -37,4 +38,8 @@ harness = false
 
 [[bench]]
 name = "mesh"
+harness = false
+
+[[bench]]
+name = "world"
 harness = false

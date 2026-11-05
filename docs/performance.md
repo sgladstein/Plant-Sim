@@ -17,7 +17,7 @@ measures against them. Update the table when a work package changes a hot path.
 
 ```
 cargo bench -p ps-bench            # criterion, wall time
-cargo bench -p ps-bench --bench soil    # one file (soil, light, physio, mesh)
+cargo bench -p ps-bench --bench soil    # one file (soil, light, physio, mesh, world)
 ```
 
 Scenes are fixed and deterministic (`crates/ps-bench/src/lib.rs`), so numbers compare
@@ -42,6 +42,16 @@ leaves in parallel (rayon); single-thread numbers are in brackets.
 | physio, class table build (24 × 68 solves) | 0.32 ms | fine for one plant; 9.7 ms for 30 per-plant tables |
 | physio, 600 class lookups × 24 h | 0.39 ms (was 1.26) | fine |
 | physio, allocation with implicit transport, 191 organs × 24 h | 0.65 ms | fine for one plant; 19 ms for 30 plants |
+
+Whole sim through `World` (`benches/world.rs`, committed scenarios, 90 days):
+
+| Scenario | Per sim-day, 4 cores [1 thread] | Against budget |
+| --- | --- | --- |
+| single_pot | 1.90 ms [2.80] | M0 2 ms: met on 4 cores, not single-thread (light is about 2/3) |
+| two_pot_sun_shade | 3.41 ms [5.07] | M1 sim-week per second needs 24 ms of sim per wall second: fine |
+
+Full state hash at day 90: 0.25 ms (the daily hash is chained, so it no longer grows
+with run length). RON snapshot at day 90: 3.3 ms, 740 KB, on demand only.
 
 Viewer CPU work per frame, one 90-day demo bean (257 organs, `benches/mesh.rs`): clone
 the hourly arena and skeleton 8 µs, skeleton blend 1.6 µs, leaf instances 0.9 µs, a
