@@ -53,6 +53,13 @@ Whole sim through `World` (`benches/world.rs`, committed scenarios, 90 days):
 Full state hash at day 90: 0.25 ms (the daily hash is chained, so it no longer grows
 with run length). RON snapshot at day 90: 3.3 ms, 740 KB, on demand only.
 
+Owner's machine (i5-6600K, 4 cores, 8 GB RAM, GTX 1070), viewer from PR #26 at
+ee586b1 with stand-in plants, two plants, 2560 × 1440, vsync off, 1,200 frames, single
+run: Vulkan mean 2.70 ms per frame (p99 2.94), GPU about 51% busy; DX12 mean 5.78 ms
+(p99 6.05), GPU about 98%. Both are well inside the 16.7 ms M1 budget; Vulkan is the
+better default. With vsync on, pacing was uneven (p95 and p99 about 30 ms, missed
+vblanks), and cold-start pipeline compilation is slow: both are open.
+
 Viewer CPU work per frame, one 90-day demo bean (257 organs, `benches/mesh.rs`): clone
 the hourly arena and skeleton 8 µs, skeleton blend 1.6 µs, leaf instances 0.9 µs, a
 full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis every frame
