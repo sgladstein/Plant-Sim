@@ -1,0 +1,356 @@
+From 886f61ac4be70e34f32ea32f3c05732c7caec9de Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 5 Nov 2026 14:35:22 +0000
+Subject: [PATCH] Mockups for the plant-visuals research (not for merge)
+
+PS_MOCK=frame,pose,value,plate turns on each experiment in ps-view:
+frame (narrower FOV, canopy-aimed framing, muted lawn and ground, no
+treeline), pose (age-dependent leaf elevation plus per-leaf jitter,
+render-only), value (leaf shade from the sim's shade signal plus
+per-leaf hue offsets) and plate (a paper sweep instead of the garden).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PYHSStmW8euWTFw9V2T41C
+---
+ crates/ps-view/src/camera.rs   | 17 ++++++-
+ crates/ps-view/src/dressing.rs | 25 ++++++++---
+ crates/ps-view/src/lib.rs      |  1 +
+ crates/ps-view/src/look.rs     |  6 ++-
+ crates/ps-view/src/mock.rs     | 37 +++++++++++++++
+ crates/ps-view/src/scene.rs    | 82 +++++++++++++++++++++++++++++++---
+ crates/ps-view/src/sky.rs      | 10 +++++
+ 7 files changed, 165 insertions(+), 13 deletions(-)
+ create mode 100644 crates/ps-view/src/mock.rs
+
+diff --git a/crates/ps-view/src/camera.rs b/crates/ps-view/src/camera.rs
+index 1963efd..e4fc1ce 100644
+--- a/crates/ps-view/src/camera.rs
++++ b/crates/ps-view/src/camera.rs
+@@ -38,7 +38,7 @@ impl Default for CameraRig {
+         Self {
+             target: Vec3::new(0.0, 0.0, 0.0),
+             yaw: 0.0,
+-            pitch: 0.28,
++            pitch: if crate::mock::on("frame") { 0.16 } else { 0.28 },
+             distance: 1.2,
+             auto_frame: true,
+             frame_bounds: None,
+@@ -52,6 +52,14 @@ impl Default for CameraRig {
+ /// Vertical field of view, rad.
+ pub const FOV_Y: f32 = 0.7;
+ 
++fn fov() -> f32 {
++    if crate::mock::on("frame") {
++        0.42
++    } else {
++        FOV_Y
++    }
++}
++
+ impl CameraRig {
+     /// Camera position for the current yaw, pitch and distance.
+     #[must_use]
+@@ -71,6 +79,11 @@ impl CameraRig {
+         let (lo, hi) = bounds;
+         let center = 0.5 * (lo + hi);
+         let radius = 0.5 * (hi - lo).length().max(0.05);
++        if crate::mock::on("frame") {
++            // Aim at the canopy (upper part of the bounds) and frame a little tighter.
++            let target = Vec3::new(center.x, lo.y + 0.56 * (hi.y - lo.y), center.z);
++            return (target, 1.04 * radius / (0.5 * fov()).sin());
++        }
+         let distance = 1.15 * radius / (0.5 * FOV_Y).sin();
+         (center, distance)
+     }
+@@ -89,7 +102,7 @@ pub(crate) fn spawn_camera(
+     commands.spawn((
+         Camera3d::default(),
+         Projection::Perspective(PerspectiveProjection {
+-            fov: FOV_Y,
++            fov: fov(),
+             near: 0.005,
+             far: 100.0,
+             ..default()
+diff --git a/crates/ps-view/src/dressing.rs b/crates/ps-view/src/dressing.rs
+index 33aca8e..a7a3d42 100644
+--- a/crates/ps-view/src/dressing.rs
++++ b/crates/ps-view/src/dressing.rs
+@@ -124,9 +124,16 @@ fn blade(
+ #[must_use]
+ pub fn lawn(keep_out: Vec2, radius: f32) -> ColoredMesh {
+     let mut m = ColoredMesh::default();
+-    let fresh = [0.16, 0.30, 0.06];
+-    let deep = [0.08, 0.17, 0.035];
+-    let straw = [0.34, 0.32, 0.14];
++    let mut fresh = [0.16, 0.30, 0.06];
++    let mut deep = [0.08, 0.17, 0.035];
++    let mut straw = [0.34, 0.32, 0.14];
++    if crate::mock::on("frame") {
++        // Figure and ground: a muted, warmer, lower-contrast lawn so the plant leads.
++        let ground = [0.30, 0.29, 0.20];
++        fresh = crate::mock::mix(fresh, ground, 0.55);
++        deep = crate::mock::mix(deep, ground, 0.45);
++        straw = crate::mock::mix(straw, ground, 0.5);
++    }
+     // About 340 blades per m² of disc, capped so very wide plots stay cheap.
+     let count = (340.0 * core::f32::consts::PI * radius * radius).min(60_000.0) as u32;
+     for i in 0..count {
+@@ -210,8 +217,16 @@ pub fn pebbles(around: Vec2) -> ColoredMesh {
+ #[must_use]
+ pub fn treeline(ring: f32) -> ColoredMesh {
+     let mut m = ColoredMesh::default();
+-    let foliage = [[0.05, 0.13, 0.04], [0.07, 0.16, 0.05], [0.10, 0.17, 0.06]];
+-    let trunk = [0.12, 0.08, 0.05];
++    let mut foliage = [[0.05, 0.13, 0.04], [0.07, 0.16, 0.05], [0.10, 0.17, 0.06]];
++    let mut trunk = [0.12, 0.08, 0.05];
++    if crate::mock::on("frame") {
++        // Background as flat, pale, cool value shapes.
++        let haze = [0.17, 0.20, 0.17];
++        for f in &mut foliage {
++            *f = crate::mock::mix(*f, haze, 0.6);
++        }
++        trunk = crate::mock::mix(trunk, haze, 0.6);
++    }
+     // Skip the arc in front of the default camera (south, +z in Bevy) so it never blocks.
+     for i in 0..46_u32 {
+         let a = core::f32::consts::TAU * (i as f32 + 0.5 * hash01(i, 20)) / 46.0;
+diff --git a/crates/ps-view/src/lib.rs b/crates/ps-view/src/lib.rs
+index 794d639..640b34f 100644
+--- a/crates/ps-view/src/lib.rs
++++ b/crates/ps-view/src/lib.rs
+@@ -22,6 +22,7 @@ pub mod dressing;
+ pub mod garden;
+ pub mod lens;
+ pub mod look;
++pub mod mock;
+ pub mod pick;
+ pub mod ready;
+ pub mod scene;
+diff --git a/crates/ps-view/src/look.rs b/crates/ps-view/src/look.rs
+index eee600c..670afe6 100644
+--- a/crates/ps-view/src/look.rs
++++ b/crates/ps-view/src/look.rs
+@@ -112,7 +112,11 @@ fn sky_texels(tint: [f32; 3]) -> Vec<u8> {
+                     (x as f32 + 0.5) / n as f32,
+                     (y as f32 + 0.5) / n as f32,
+                 );
+-                let c = sky_gradient(d, tint);
++                let c = if crate::mock::on("plate") {
++                    crate::mock::PAPER
++                } else {
++                    sky_gradient(d, tint)
++                };
+                 for ch in [c[0], c[1], c[2], 1.0] {
+                     data.extend_from_slice(&f16_bits(ch).to_le_bytes());
+                 }
+diff --git a/crates/ps-view/src/mock.rs b/crates/ps-view/src/mock.rs
+new file mode 100644
+index 0000000..622ab86
+--- /dev/null
++++ b/crates/ps-view/src/mock.rs
+@@ -0,0 +1,37 @@
++//! Look mockups for the plant-visuals research (not for merge). `PS_MOCK=frame,pose,value`
++//! turns on each experiment.
++
++use std::sync::OnceLock;
++
++fn flags() -> &'static str {
++    static F: OnceLock<String> = OnceLock::new();
++    F.get_or_init(|| std::env::var("PS_MOCK").unwrap_or_default())
++}
++
++/// True if mockup `name` is on.
++pub fn on(name: &str) -> bool {
++    flags().split(',').any(|f| f.trim() == name)
++}
++
++/// A deterministic value in [-1, 1] for (id, salt).
++pub fn hash(id: u32, salt: u32) -> f32 {
++    let mut x = id.wrapping_mul(0x9E37_79B9) ^ salt.wrapping_mul(0x85EB_CA6B);
++    x ^= x >> 16;
++    x = x.wrapping_mul(0x7FEB_352D);
++    x ^= x >> 15;
++    x = x.wrapping_mul(0x846C_A68B);
++    x ^= x >> 16;
++    (x as f32 / u32::MAX as f32) * 2.0 - 1.0
++}
++
++/// Mix `c` toward `to` by `t`.
++pub fn mix(c: [f32; 3], to: [f32; 3], t: f32) -> [f32; 3] {
++    [
++        c[0] + (to[0] - c[0]) * t,
++        c[1] + (to[1] - c[1]) * t,
++        c[2] + (to[2] - c[2]) * t,
++    ]
++}
++
++/// Paper color for the botanical-plate mockup, linear RGB.
++pub const PAPER: [f32; 3] = [0.80, 0.74, 0.60];
+diff --git a/crates/ps-view/src/scene.rs b/crates/ps-view/src/scene.rs
+index 619d962..74ecfa2 100644
+--- a/crates/ps-view/src/scene.rs
++++ b/crates/ps-view/src/scene.rs
+@@ -261,6 +261,11 @@ pub(crate) fn setup_scene(
+         MeshMaterial3d(dressing_material.clone()),
+         Transform::from_xyz(0.0, floor, 0.0),
+         Floor::Deck,
++        if crate::mock::on("plate") {
++            Visibility::Hidden
++        } else {
++            Visibility::Inherited
++        },
+     ));
+     let garden_mesh = meshes.add(colored(&ColoredMesh::default()));
+     commands.spawn((
+@@ -268,6 +273,11 @@ pub(crate) fn setup_scene(
+         MeshMaterial3d(dressing_material),
+         Transform::from_xyz(0.0, floor - crate::dressing::BENCH_HEIGHT, 0.0),
+         Floor::Dressing,
++        if crate::mock::on("plate") {
++            Visibility::Hidden
++        } else {
++            Visibility::Inherited
++        },
+         // 20k grass blades in the shadow map cost time and speckle the lawn.
+         bevy::light::NotShadowCaster,
+     ));
+@@ -275,7 +285,13 @@ pub(crate) fn setup_scene(
+         bench: bench_mesh,
+         garden: garden_mesh,
+     });
+-    let g = crate::look::GROUND;
++    let mut g = crate::look::GROUND;
++    if crate::mock::on("frame") {
++        g = crate::mock::mix(g, [0.30, 0.29, 0.20], 0.55);
++    }
++    if crate::mock::on("plate") {
++        g = crate::mock::PAPER;
++    }
+     let ground = materials.add(StandardMaterial {
+         base_color: Color::linear_rgb(g[0], g[1], g[2]),
+         perceptual_roughness: 1.0,
+@@ -317,7 +333,11 @@ fn garden_dressing(size: Vec2) -> ColoredMesh {
+     let mut m = crate::dressing::lawn(half, lawn_radius);
+     for part in [
+         crate::dressing::pebbles(half),
+-        crate::dressing::treeline(ring),
++        if crate::mock::on("frame") {
++            ColoredMesh::default()
++        } else {
++            crate::dressing::treeline(ring)
++        },
+     ] {
+         let base = m.mesh.vertex_count() as u32;
+         m.mesh.positions.extend_from_slice(&part.mesh.positions);
+@@ -538,7 +558,11 @@ pub(crate) fn sync_scene(
+                 let _ = meshes.insert(&d.garden, colored(&garden_dressing(size)));
+             }
+             for (floor, mut t) in &mut floors {
+-                let ground = top.y - crate::dressing::BENCH_HEIGHT;
++                let ground = if crate::mock::on("plate") {
++                    top.y - 0.002
++                } else {
++                    top.y - crate::dressing::BENCH_HEIGHT
++                };
+                 match floor {
+                     Floor::Deck => t.translation = top,
+                     Floor::Ground => t.translation.y = ground,
+@@ -680,17 +704,65 @@ pub(crate) fn sync_scene(
+             ..InstanceOptions::default()
+         };
+         let list = instances(&pot.skeleton, options);
++        // Mockup inputs: the oldest leaf's age and the plant's shade-signal range.
++        let mut age_max = 1e-3_f32;
++        let (mut rfr_lo, mut rfr_hi) = (f32::INFINITY, f32::NEG_INFINITY);
++        for (i, p) in pot.skeleton.organs.iter().enumerate() {
++            if p.kind == OrganKind::Leaf && p.alive {
++                age_max = age_max.max(p.thermal_age);
++                if let Some(v) = pot.organ_value(Lens::ShadeSignal, i) {
++                    rfr_lo = rfr_lo.min(v);
++                    rfr_hi = rfr_hi.max(v);
++                }
++            }
++        }
+         let mut alive = Vec::with_capacity(list.len());
+         for inst in &list {
+             alive.push(inst.organ);
+             let Some(p) = pot.skeleton.get(inst.organ) else {
+                 continue;
+             };
+-            let (rgb, glow) = organ_color(pot, lens, inst.organ.index(), p);
++            let (mut rgb, glow) = organ_color(pot, lens, inst.organ.index(), p);
++            let id = inst.organ.0;
++            let is_leaf = p.kind == OrganKind::Leaf;
++            if is_leaf && !glow && crate::mock::on("value") {
++                // Canopy depth from the sim's own shade signal: deep leaves darker and
++                // cooler, outer leaves lighter and warmer; plus a small per-leaf offset.
++                let t = pot
++                    .organ_value(Lens::ShadeSignal, inst.organ.index())
++                    .filter(|_| rfr_hi > rfr_lo + 1e-4)
++                    .map_or(0.7, |v| (v - rfr_lo) / (rfr_hi - rfr_lo));
++                let k = 0.5 + 0.62 * t;
++                rgb = rgb.map(|c| c * k);
++                rgb = crate::mock::mix(rgb, [0.02, 0.07, 0.07], 0.25 * (1.0 - t));
++                rgb = crate::mock::mix(rgb, [0.42, 0.50, 0.12], 0.18 * t);
++                let j = 1.0 + 0.07 * crate::mock::hash(id, 7);
++                rgb = [
++                    rgb[0] * j * (1.0 + 0.05 * crate::mock::hash(id, 8)),
++                    rgb[1] * j,
++                    rgb[2] * j,
++                ];
++            }
+             let (material, color) = assets.material(&mut materials, rgb, glow);
++            let mut rotation = inst.rotation;
++            if is_leaf && crate::mock::on("pose") {
++                // Age-dependent leaf elevation (render-only stand-in for a sim change):
++                // young leaves stand up, mature ones spread, old ones droop below level.
++                // The sim holds every petiole at 0.5 rad.
++                let a = (p.thermal_age / age_max).clamp(0.0, 1.0);
++                let s = a * a * (3.0 - 2.0 * a);
++                let elevation = 1.15 - 1.5 * s;
++                let pitch = -(elevation - 0.5) + 0.14 * crate::mock::hash(id, 1);
++                let roll = 0.22 * crate::mock::hash(id, 2);
++                let yaw = 0.55 * crate::mock::hash(id, 3);
++                rotation = rotation
++                    * Quat::from_rotation_z(yaw)
++                    * Quat::from_rotation_y(pitch)
++                    * Quat::from_rotation_x(roll);
++            }
+             let transform = Transform {
+                 translation: inst.translation,
+-                rotation: inst.rotation,
++                rotation,
+                 scale: inst.scale.max(Vec3::splat(1e-5)),
+             };
+             let mesh = assets.templates.get(&inst.key).cloned().unwrap_or_default();
+diff --git a/crates/ps-view/src/sky.rs b/crates/ps-view/src/sky.rs
+index 83a5022..16042a4 100644
+--- a/crates/ps-view/src/sky.rs
++++ b/crates/ps-view/src/sky.rs
+@@ -106,6 +106,10 @@ pub(crate) fn update_sky(
+     let sin_e = dir.z;
+     let c = sky_color(sin_e, sky.cloud_fraction);
+     clear.0 = Color::linear_rgb(c[0], c[1], c[2]);
++    if crate::mock::on("plate") {
++        let p = crate::mock::PAPER;
++        clear.0 = Color::linear_rgb(p[0], p[1], p[2]);
++    }
+     let daylight = (sky.global / 800.0).clamp(0.0, 1.2);
+     ambient.color = Color::linear_rgb(0.55 + 0.4 * c[0], 0.6 + 0.3 * c[1], 0.7 + 0.3 * c[2]);
+     // The sky cubemap does the fill now; a little flat ambient keeps night readable.
+@@ -130,6 +134,12 @@ pub(crate) fn update_sky(
+         let h = crate::look::sky_gradient(Vec3::X, tint);
+         let k = backdrop * crate::look::EXPOSURE;
+         fog.color = Color::linear_rgb(h[0] * k, h[1] * k, h[2] * k);
++        if crate::mock::on("plate") {
++            // A paper sweep: no sky, the ground and fog are the paper color.
++            skybox.brightness = 1.22 / crate::look::EXPOSURE;
++            let p = crate::mock::PAPER;
++            fog.color = Color::linear_rgb(1.22 * p[0], 1.22 * p[1], 1.22 * p[2]);
++        }
+     }
+     for (mut light, mut t) in &mut suns {
+         // Direct light only; clouds turn it into ambient.
+-- 
+2.43.0
+

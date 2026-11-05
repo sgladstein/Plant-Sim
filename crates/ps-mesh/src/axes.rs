@@ -295,23 +295,57 @@ pub fn axis_nodes(skeleton: &Skeleton, axis: &Axis, style: AxisStyle) -> Vec<Tub
 /// The golden angle, rad: successive copies never line up.
 pub const GOLDEN_ANGLE: f32 = 2.399_963;
 
-/// Rotations that place the copies of a cohort axis: copy `k` turns `k` golden angles
-/// about the parent organ's direction, through the axis base (identity for copy 0).
+/// Transforms that place the copies of a cohort axis. Copy `k` turns `k` golden angles
+/// about the vertical through the axis base (identity for copy 0), so every copy keeps
+/// the representative's dip: the sim mirrors a cohort's representative downward
+/// (decision 0013), and turning about a near-horizontal parent would tip half the copies
+/// up out of the soil. When the skeleton knows its container, a copy whose organs would
+/// leave the soil is turned half a turn more, and if that still leaves it, shrunk about
+/// its base until it fits.
 #[must_use]
 pub fn copy_transforms(skeleton: &Skeleton, axis: &Axis) -> Vec<glam::Affine3A> {
     let first = skeleton.get(axis.key());
     let pivot = first.map_or(Vec3::ZERO, |p| p.base);
-    let about = first
-        .and_then(|p| p.parent)
-        .and_then(|pid| skeleton.get(pid))
-        .map_or(Vec3::Z, |p| p.direction)
-        .normalize_or(Vec3::Z);
+    let tips: Vec<Vec3> = axis
+        .organs
+        .iter()
+        .filter_map(|&id| skeleton.get(id))
+        .map(Placement::tip)
+        .collect();
+    let about = |angle: f32| {
+        glam::Affine3A::from_translation(pivot)
+            * glam::Affine3A::from_quat(glam::Quat::from_rotation_z(angle))
+            * glam::Affine3A::from_translation(-pivot)
+    };
+    let fits = |t: &glam::Affine3A| {
+        skeleton
+            .container
+            .is_none_or(|c| tips.iter().all(|&p| c.contains(t.transform_point3(p))))
+    };
     (0..axis.copies.max(1))
         .map(|k| {
-            let r = glam::Quat::from_axis_angle(about, f32::from(k) * GOLDEN_ANGLE);
-            glam::Affine3A::from_translation(pivot)
-                * glam::Affine3A::from_quat(r)
-                * glam::Affine3A::from_translation(-pivot)
+            let angle = f32::from(k) * GOLDEN_ANGLE;
+            let turned = about(angle);
+            if k == 0 || fits(&turned) {
+                return turned;
+            }
+            let flipped = about(angle + std::f32::consts::PI);
+            if fits(&flipped) {
+                return flipped;
+            }
+            let mut scale = 1.0_f32;
+            let mut t = turned;
+            while scale > 0.1 {
+                scale *= 0.8;
+                t = glam::Affine3A::from_translation(pivot)
+                    * glam::Affine3A::from_scale(Vec3::splat(scale))
+                    * glam::Affine3A::from_translation(-pivot)
+                    * turned;
+                if fits(&t) {
+                    break;
+                }
+            }
+            t
         })
         .collect()
 }

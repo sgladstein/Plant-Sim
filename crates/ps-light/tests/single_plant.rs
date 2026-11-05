@@ -219,8 +219,10 @@ fn sim_plant_against_ray_tracer() {
     let r = reference(LEAVES_60, TRACE_60);
     let c = compare(&r);
     println!("{}", c.report);
-    // Measured with each leaf's own projection (decision 0025): +3.8%, 63 of 74
-    // within 0.10, worst 0.258 (+9.9%, 49 of 74 and 0.32 with one G of 0.5).
+    // Regression pins at the measured values, not the decision 0008 gate (95% within
+    // 0.10, which only the synthetic shoot meets). With each leaf's own projection
+    // (decision 0025): +3.8%, 63 of 74 within 0.10, worst 0.258 (+9.9%, 49 of 74 and
+    // 0.32 with one G of 0.5). The rest is the within-cell limit (who is on top).
     assert!(
         (0.0..0.06).contains(&c.total_rel),
         "total {:+.4}",
@@ -243,8 +245,8 @@ fn plot_grid_light_against_ray_tracer() {
         synthetic.total_rel
     );
     assert!(synthetic.within * 100 >= 90 * synthetic.n);
-    // −0.8% and 61 of 74 with each leaf's projection (decision 0025); +5.6% and 51 of
-    // 74 with one G of 0.5.
+    // Regression pins: −0.8% and 61 of 74 with each leaf's projection (decision 0025);
+    // +5.6% and 51 of 74 with one G of 0.5.
     assert!(sim.total_rel.abs() < 0.03, "{:+.4}", sim.total_rel);
     assert!(sim.within * 100 >= 80 * sim.n);
 }

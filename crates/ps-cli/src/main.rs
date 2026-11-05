@@ -151,6 +151,38 @@ fn run_parallel<T: Send>(
     })
 }
 
+/// [`run_parallel`] over `(item, flag)` pairs, on at most as many threads as the machine
+/// has, so a validation's few dozen runs do not all start at once.
+fn run_parallel_pairs<T: Send>(
+    items: &[(Loaded, bool)],
+    f: impl Fn(&Loaded, bool) -> Result<T> + Sync,
+) -> Vec<Result<T>> {
+    let threads = std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut out: Vec<Option<Result<T>>> = (0..items.len()).map(|_| None).collect();
+    let done = std::sync::Mutex::new(&mut out);
+    std::thread::scope(|s| {
+        for _ in 0..threads.min(items.len()) {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some((l, flag)) = items.get(i) else {
+                        break;
+                    };
+                    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(l, *flag)))
+                        .unwrap_or_else(|_| Err(anyhow::anyhow!("a run panicked")));
+                    if let Ok(mut d) = done.lock() {
+                        d[i] = Some(r);
+                    }
+                }
+            });
+        }
+    });
+    out.into_iter()
+        .map(|r| r.unwrap_or_else(|| Err(anyhow::anyhow!("a run did not finish"))))
+        .collect()
+}
+
 fn write_outputs(dir: &Path, w: &World) -> Result<()> {
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let st = w.state();
@@ -380,6 +412,55 @@ fn print_misses(outcomes: &[ps_validate::Outcome], known_path: &Path) -> usize {
     failing.len()
 }
 
+/// Runs every scenario once per seed offset (review of WP25). The scenario as written
+/// (offset 0, listed first) also writes its outputs under `runs_dir` for the plots.
+fn validation_runs(
+    loaded: &[Loaded],
+    offsets: &[u64],
+    runs_dir: &Path,
+) -> Result<ps_validate::Runs> {
+    let jobs: Vec<(Loaded, bool)> = loaded
+        .iter()
+        .flat_map(|l| {
+            offsets.iter().enumerate().map(move |(k, &off)| {
+                let mut l = Loaded {
+                    stem: l.stem.clone(),
+                    scenario: l.scenario.clone(),
+                    catalog: l.catalog.clone(),
+                };
+                l.scenario.world_seed = l.scenario.world_seed.wrapping_add(off);
+                (l, k == 0)
+            })
+        })
+        .collect();
+    let results = run_parallel_pairs(&jobs, |l, primary| {
+        let mut w = World::new(l.scenario.clone(), l.catalog.clone())?;
+        if !primary {
+            w.run_to_end()?;
+            return Ok(w.state().clone());
+        }
+        let dir = runs_dir.join(&l.stem);
+        std::fs::create_dir_all(&dir)?;
+        if SNAPSHOT_DAY < l.scenario.duration_days {
+            w.run_days(SNAPSHOT_DAY)?;
+            std::fs::write(
+                dir.join(format!("organs_day{SNAPSHOT_DAY}.csv")),
+                ps_export::organs_csv(w.state()),
+            )?;
+        }
+        w.run_to_end()?;
+        write_outputs(&dir, &w)?;
+        Ok(w.state().clone())
+    });
+    let mut runs = ps_validate::Runs::new();
+    for ((l, _), r) in jobs.iter().zip(results) {
+        let seed = l.scenario.world_seed;
+        let state = r.with_context(|| format!("{} (world seed {seed})", l.stem))?;
+        runs.entry(l.stem.clone()).or_default().push(state);
+    }
+    Ok(runs)
+}
+
 fn cmd_validate(a: &Args) -> Result<()> {
     a.check_keys(&["data", "validation", "known", "out"])?;
     let data = a.data_dir();
@@ -402,26 +483,7 @@ fn cmd_validate(a: &Args) -> Result<()> {
             Ok(l)
         })
         .collect::<Result<_>>()?;
-    let runs_dir = out.join("runs");
-    let results = run_parallel(&loaded, |l| {
-        let mut w = World::new(l.scenario.clone(), l.catalog.clone())?;
-        let dir = runs_dir.join(&l.stem);
-        std::fs::create_dir_all(&dir)?;
-        if SNAPSHOT_DAY < l.scenario.duration_days {
-            w.run_days(SNAPSHOT_DAY)?;
-            std::fs::write(
-                dir.join(format!("organs_day{SNAPSHOT_DAY}.csv")),
-                ps_export::organs_csv(w.state()),
-            )?;
-        }
-        w.run_to_end()?;
-        write_outputs(&dir, &w)?;
-        Ok(w.state().clone())
-    });
-    let mut runs = ps_validate::Runs::new();
-    for (l, r) in loaded.iter().zip(results) {
-        runs.insert(l.stem.clone(), r.with_context(|| l.stem.clone())?);
-    }
+    let runs = validation_runs(&loaded, &vdata.seed_offsets(), &out.join("runs"))?;
     let mut outcomes = Vec::new();
     if let Some(t) = &vdata.targets {
         outcomes.extend(ps_validate::evaluate_targets(t, &runs, &known));

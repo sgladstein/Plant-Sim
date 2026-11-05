@@ -40,6 +40,7 @@ Sources(
 ValidationTargets(
   schema: 1,
   species: "bush_bean",
+  seed_offsets: [0, 1, 2, 3],       // optional: each scenario runs at world_seed + offset
   targets: [
     Target(
       id: "height_at_maturity",         // unique within the file, snake_case
@@ -118,6 +119,16 @@ A scenario's plants are replicates: a value is the mean over the plants that hav
 least half must have it (a pot that never matures, or a plant with no pods for
 `seeds_per_pod`, drops out; the report notes "mean of k of n plants"). An M0 check that
 cannot be evaluated fails the build like a miss.
+
+Seed runs (decision 0026). `seed_offsets` in `targets.ron` applies to every file: each
+scenario runs once at `world_seed + offset` for each offset, and a target's value is the
+mean over the runs of each run's plant mean (at least half the runs must have one). A
+response compares the treatment's seed mean with the baseline's; the range it reports is
+the per-seed changes, seed k against seed k. Curves read the mean over the runs at each
+point. The report's Sim column shows the mean, the standard deviation over runs, their
+range and their number; `results.csv` adds `seed_min`, `seed_max`, `seed_sd` and
+`seed_n`. Offset 0 is the scenario as written, and
+only that run writes `runs/<scenario>/` for the plots.
 
 ### `expect` for targets and parameters
 

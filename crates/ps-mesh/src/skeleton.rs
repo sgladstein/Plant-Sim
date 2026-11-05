@@ -202,6 +202,48 @@ fn finite_or_zero(v: f64) -> f32 {
     }
 }
 
+/// The soil a skeleton grows in, in the skeleton frame (origin at the soil surface's
+/// center, z up), so drawn root copies can be kept inside it.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Container {
+    /// A cylindrical pot.
+    Cylinder {
+        /// Inner radius, m.
+        radius: f32,
+        /// Soil depth, m.
+        depth: f32,
+    },
+    /// A rectangular bed.
+    Box {
+        /// Half the width (x), m.
+        half_width: f32,
+        /// Half the depth (y), m.
+        half_depth: f32,
+        /// Soil depth, m.
+        depth: f32,
+    },
+}
+
+impl Container {
+    /// True when `p` is in the soil (with a small tolerance).
+    #[must_use]
+    pub fn contains(&self, p: Vec3) -> bool {
+        const EPS: f32 = 1e-4;
+        let (inside, depth) = match *self {
+            Self::Cylinder { radius, depth } => (p.truncate().length() <= radius + EPS, depth),
+            Self::Box {
+                half_width,
+                half_depth,
+                depth,
+            } => (
+                p.x.abs() <= half_width + EPS && p.y.abs() <= half_depth + EPS,
+                depth,
+            ),
+        };
+        inside && p.z <= EPS && p.z >= -depth - EPS
+    }
+}
+
 /// Every organ of one plant, placed, indexed by organ id.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Skeleton {
@@ -212,6 +254,8 @@ pub struct Skeleton {
     /// For a grass: blade length over width, so leaves draw as blades and pods as ears.
     /// `None` for a broadleaf.
     pub blade_aspect: Option<f32>,
+    /// The soil, if known: drawn root-cohort copies stay inside it.
+    pub container: Option<Container>,
 }
 
 impl Skeleton {
@@ -296,6 +340,7 @@ impl Skeleton {
             origin,
             organs,
             blade_aspect: None,
+            container: None,
         };
         s.relayout();
         s
@@ -381,6 +426,7 @@ impl Skeleton {
             origin: a.origin.lerp(b.origin, t),
             organs,
             blade_aspect: b.blade_aspect,
+            container: b.container,
         };
         s.relayout();
         s

@@ -121,8 +121,13 @@ interception as it grows, and shade between neighboring plants.
 - Both effects make the model too bright, not noisy: on the 60-day sim plant the
   plant total is +3.8% against the ray tracer (decision 0025). If tuning needs a
   direction, the model overestimates light inside the canopy.
-- A sector's projection `|n · d'_s|` is taken at one azimuth per 45° sector, and its
-  rays use the irradiance-weighted band elevation.
+- A sector's projection `|n · d'_s|` is taken at one direction per sector, and its rays
+  use the irradiance-weighted band elevation. For an erect blade whose plane crosses a
+  band, `|n · d|` at the sector's mean direction under-reads its mean over the sector,
+  so wheat's diffuse is a few percent low; sub-sample the band if it matters.
+- A leaf of several leaflets keeps one sunlit-weighted beam projection per hour, exact
+  for its mean absorbed beam but averaged before the light response of photosynthesis,
+  which is not linear.
 - Each leaf intercepts by its drawn angle, so the light is only as right as the drawn
   angles: every bean leaflet tilts about 19° and does not track the sun, so
   heliotropism is not modelled yet (decision 0025).
