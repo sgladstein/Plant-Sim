@@ -163,16 +163,19 @@ pub fn solve_tree(nodes: &[NodeTerms], edges: &[Edge]) -> Option<Vec<MPa>> {
         diag[pa] -= k * f;
         rhs[pa] += f * rhs[ch];
     }
-    let mut psi = vec![0.0_f64; n];
-    for i in (0..n).filter(|&i| !is_child[i]) {
-        if scale[i] <= 0.0 && nodes[i].sink.0 == 0.0 {
-            continue;
+    // Pushed rather than zeroed and then filled (a zeroed allocation pays a memset of
+    // fresh memory every hour); children are set below.
+    let mut psi: Vec<f64> = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut v = 0.0_f64;
+        if !(is_child[i] || (scale[i] <= 0.0 && nodes[i].sink.0 == 0.0)) {
+            // A tree with no fixed potential ends with a pivot of rounding size.
+            if diag[i] <= 1e-12 * scale[i] {
+                return None;
+            }
+            v = rhs[i] / diag[i];
         }
-        // A tree with no fixed potential ends with a pivot of rounding size.
-        if diag[i] <= 1e-12 * scale[i] {
-            return None;
-        }
-        psi[i] = rhs[i] / diag[i];
+        psi.push(v);
     }
     for &(ch, pa, k) in &order {
         psi[ch] = (rhs[ch] + k * psi[pa]) / diag[ch];

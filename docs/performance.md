@@ -228,6 +228,36 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+### R3a and R3b cost (model 0.25.0, 2026-11-06)
+
+R3a (#140, soil water potential) and R3b (#141, the plant water network, decision 0044).
+Wall time, 4 cores, interleaved best of 3, one container, 90 days:
+
+| Scenario | 0.24.0 + #139 (a8371d0) | 0.25.0 (d97c5e0) | with this pass |
+| --- | --- | --- | --- |
+| single_pot | 4.0 to 4.6 ms per sim-day | 6.0 to 6.8 | 5.3 to 6.2 |
+| plot_30_beans | 37.1 to 38.5 | 54.8 to 59.9 | 53.0 to 57.3 |
+
+Callgrind (one thread) on 0.25.0: plot_30_beans 104 G instructions (70.0 G at 0.24.0,
++49%), with the water network 26% of them; single_pot 5.32 G, network 27%. Scaled
+from the owner-PC timings, the detailed model is about 6 ms for the pot and about
+45 ms for the plot. R3c's simplified level is the plan for plots and fast-forward.
+
+Decision 0044 suggested two savings. Both were measured and neither pays:
+- Caching each root cell's retention potential while its water is unchanged: a
+  cell's water changes almost every hour (0.3% of lookups repeat, single_pot). The
+  plot's plants share only 19% of their root cells within an hour, so computing each
+  cell's potential once for all plants would save about 0.5%.
+- Keeping the edge list between hours: the edge conductances change every hour as
+  organs grow. Pre-sizing the list saved nothing measurable.
+
+What did pay, with every state hash unchanged:
+- A per-segment memo of a root's axial conductivity: the `pow` of its distance from
+  the axis's tip, which changes only when the axis grows (97% of lookups repeat in
+  the plot). This saves 3.5% of the plot's instructions and 1.8% of the pot's.
+- The hourly phloem step and the water network's tree solve now build their arrays
+  in one pass, instead of allocating them zeroed and then filling them.
+
 ### R1b to R2b cost (models 0.21.0 to 0.24.0, 2026-11-06)
 
 Callgrind, one thread, 90 days, against d88bb3c (0.20.0, the commit timed on the
