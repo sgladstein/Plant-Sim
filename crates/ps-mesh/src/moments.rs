@@ -18,7 +18,7 @@
 use glam::{Quat, Vec2, Vec3};
 use ps_graph::OrganKind;
 
-use crate::{Hook, Skeleton};
+use crate::{Hook, Placement, Skeleton};
 
 /// Height of the hypocotyl's tip above the soil by which its hook has straightened, m.
 pub const HOOK_OPEN_HEIGHT: f32 = 0.015;
@@ -295,6 +295,43 @@ fn lean(skeleton: &mut Skeleton, lean: Vec2) {
     }
 }
 
+/// The lean the sim itself gave the main stem, rad, as a horizontal vector (x east,
+/// y north): the angle from vertical of the line from the stem base to the highest
+/// living main-stem internode tip. Near zero in the open; beside a wall the sim bends
+/// the stem toward the light itself (R1c).
+#[must_use]
+pub fn own_lean(skeleton: &Skeleton) -> Vec2 {
+    let Some(tip) = skeleton
+        .organs
+        .iter()
+        .filter(|p| p.alive && p.kind == OrganKind::Internode && p.axis_order == 0)
+        .map(Placement::tip)
+        .filter(|t| t.is_finite())
+        .max_by(|a, b| a.z.total_cmp(&b.z))
+    else {
+        return Vec2::ZERO;
+    };
+    let rel = tip - skeleton.origin;
+    let horizontal = rel.truncate();
+    if rel.z < 0.02 || horizontal.length() < 1e-6 {
+        return Vec2::ZERO;
+    }
+    horizontal.normalize() * horizontal.length().atan2(rel.z)
+}
+
+/// The lean left to draw when the plant should lean `wanted` toward the light and the
+/// sim has already leaned it by `own`: the part of `own` along `wanted` is taken off, so
+/// a stem the sim bent toward a gap is not bent a second time. Never reverses `wanted`.
+#[must_use]
+pub fn residual_lean(wanted: Vec2, own: Vec2) -> Vec2 {
+    let size = wanted.length();
+    if !size.is_finite() || size <= 1e-6 || !own.is_finite() {
+        return if size.is_finite() { wanted } else { Vec2::ZERO };
+    }
+    let dir = wanted / size;
+    dir * (size - own.dot(dir).max(0.0)).max(0.0)
+}
+
 /// Applies the moments to a placed skeleton: the emerging hook and cotyledons, wilting,
 /// and the lean toward the light, then re-derives the organ positions.
 pub fn pose(skeleton: &mut Skeleton, pose: Pose) {
@@ -307,7 +344,32 @@ pub fn pose(skeleton: &mut Skeleton, pose: Pose) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Placement;
+
+    #[test]
+    fn the_drawn_lean_leaves_out_what_the_sim_already_bent() {
+        let w = Vec2::new(0.2, 0.0);
+        assert!((residual_lean(w, Vec2::ZERO) - w).length() < 1e-6);
+        assert!((residual_lean(w, Vec2::new(0.15, 0.0)) - Vec2::new(0.05, 0.0)).length() < 1e-6);
+        assert!(residual_lean(w, Vec2::new(0.3, 0.0)).length() < 1e-6);
+        // A sim lean away from the light, or across it, takes nothing off.
+        assert!((residual_lean(w, Vec2::new(-0.1, 0.1)) - w).length() < 1e-6);
+        assert!(residual_lean(Vec2::ZERO, Vec2::X).length() < 1e-6);
+    }
+
+    #[test]
+    fn own_lean_reads_the_main_stem_tip() {
+        let mut s = seedling(0.05, 4);
+        assert!(own_lean(&s).length() < 1e-3);
+        let tilt = Quat::from_axis_angle(Vec3::Y, 0.1);
+        for p in &mut s.organs {
+            if p.kind == OrganKind::Internode {
+                p.direction = tilt * p.direction;
+            }
+        }
+        s.relayout();
+        let l = own_lean(&s);
+        assert!(l.x > 0.05 && l.y.abs() < 1e-4, "{l}");
+    }
     use ps_graph::OrganId;
 
     fn organ(kind: OrganKind, parent: Option<u32>, direction: Vec3, length: f32) -> Placement {

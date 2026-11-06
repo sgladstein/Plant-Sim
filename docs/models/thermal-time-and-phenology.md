@@ -28,7 +28,7 @@ fill, maturity) when enough have added up. A warm spring makes beans flower soon
   depth, decision 0027 and plant-variation.md) → FirstTrifoliate (architecture reports an unfolded
   trifoliate) → Flowering (thermal time since germination ≥ flowering) → PodSet (a pod
   has set) → SeedFill (a seed is filling) → Mature (thermal time since germination ≥
-  maturity). All thresholds count from germination, so time a seed waits in dry or
+  maturity; from then nothing grows and seeds stop filling, decision 0042). All thresholds count from germination, so time a seed waits in dry or
   cold soil does not bring flowering forward (decision 0011).
 
 ## Parameters
@@ -40,7 +40,7 @@ fill, maturity) when enough have added up. A warm spring makes beans flower soon
 | flowering (bean) | 480 | °C·day from germination | 440 on base 8 from published sowing-to-flowering sums (decision 0018), restated (×1.09) to keep the flowering day (decision 0032) |
 | maturity (bean) | 965 | °C·day from germination | 900 on base 8 (Cavalcante 2020; Pinzón-Sandoval 2024; decision 0018), restated (×1.07) (decision 0032) |
 | flowering, maturity (pole bean) | 613, 1232 | °C·day | 575, 1150 restated (×1.066, ×1.071) (decision 0032) |
-| organ clocks (bean) | ×1.08 vegetative, ×1.06 reproductive | - | phyllochron 59.5, leaf and internode expansion 162 and 130, nodule 108, root emergences 54/81/130, emergence per depth 13 Cd/cm, leaf lifespan 650; pod expansion 154, seed fill delay 74, seed fill 350 (decision 0032) |
+| organ clocks (bean) | ×1.08 vegetative, ×1.06 reproductive | - | phyllochron 59.5, leaf and internode expansion 162 and 130, nodule 108, root emergences 54/81/130, emergence per depth 13 Cd/cm, leaf lifespan 650; pod expansion 154, seed fill delay 74, seed fill 350 (decision 0032); the bush bean's seed fill is 289, CROPGRO SFDUR 15 photothermal days (decision 0042) |
 | growth_t_min, opt_low, opt_high, max | 5, 25, 30, 40 | °C | "~" design plan §3.11 |
 
 ## Inputs and outputs

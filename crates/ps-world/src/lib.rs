@@ -30,7 +30,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.20.0";
+pub const MODEL_VERSION: &str = "0.23.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -1746,31 +1746,45 @@ impl World {
             };
             let mut leaves = Vec::new();
             let mut extra = Vec::new();
+            let mut apices = Vec::new();
             let mut counts = Vec::with_capacity(members.len());
             for &p in &members {
                 let (l, x) = plants[p].plant.light_inputs();
-                counts.push(l.len());
+                let a = plants[p].plant.apex_points();
+                counts.push((l.len(), a.len()));
                 leaves.extend(l);
                 extra.extend(x);
+                apices.extend(a);
             }
             // Every plant in a soil carries the soil's obstacles.
             let obstacles = &plants[first].plant.obstacles;
-            let (_, coeffs) = ps_light::rebuild_plot_with(&leaves, &extra, obstacles, path, &sky);
-            // Each plant's slice of the coefficients, then the rest of the daily step
-            // for every member in parallel (each depends only on itself).
-            let mut slices: Vec<Option<(usize, usize)>> = vec![None; plants.len()];
-            let mut at = 0;
-            for (&p, n) in members.iter().zip(counts) {
-                slices[p] = Some((at, n));
+            let (grid, coeffs) =
+                ps_light::rebuild_plot_with(&leaves, &extra, obstacles, path, &sky);
+            // The light each growing shoot apex sees (R1c, decision 0041).
+            let lights = match grid.as_ref().filter(|_| !apices.is_empty()) {
+                Some(g) => {
+                    let dirs = ps_light::DayDirections::new(path, &sky);
+                    ps_light::apex_light(g, &dirs, &sky, &apices)
+                }
+                None => vec![ps_light::ApexLight::default(); apices.len()],
+            };
+            // Each plant's slice of the coefficients and apex lights, then the rest of
+            // the daily step for every member in parallel (each depends only on itself).
+            let mut slices: Vec<Option<(usize, usize, usize, usize)>> = vec![None; plants.len()];
+            let (mut at, mut at_apex) = (0, 0);
+            for (&p, (n, m)) in members.iter().zip(counts) {
+                slices[p] = Some((at, n, at_apex, m));
                 at += n;
+                at_apex += m;
             }
             let after: Vec<(usize, DayReport)> = plants
                 .par_iter_mut()
                 .enumerate()
                 .filter_map(|(p, e)| {
-                    slices[p].map(|(a, n)| {
+                    slices[p].map(|(a, n, b, m)| {
                         let mine = coeffs.get(a..a + n).unwrap_or(&[]);
-                        (p, e.plant.day_after_light(path, Some(mine)))
+                        let tips = lights.get(b..b + m).unwrap_or(&[]);
+                        (p, e.plant.day_after_light(path, Some((mine, tips))))
                     })
                 })
                 .collect();

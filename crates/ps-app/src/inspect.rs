@@ -546,6 +546,12 @@ pub fn whole_plant(
         Field::new("  stems", format!("{:.2}", d.stem_mass), "g", CARBON),
         Field::new("  roots", format!("{:.2}", d.root_mass), "g", CARBON),
         Field::new(
+            "  of which starch",
+            format!("{:.2}", d.storage_mass),
+            "g",
+            CARBON,
+        ),
+        Field::new(
             "  pods and seeds",
             format!("{:.2}", d.fruit_mass),
             "g",

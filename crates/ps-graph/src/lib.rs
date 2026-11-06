@@ -139,6 +139,16 @@ pub enum GraphError {
     /// The arena is full (more than `u32::MAX` organs).
     #[error("organ arena is full")]
     Full,
+    /// A starch store may not go negative (R1b).
+    #[error(
+        "organ {id:?}: store change {delta} g C must be finite and leave the store non-negative"
+    )]
+    NegativeStore {
+        /// The organ.
+        id: OrganId,
+        /// The rejected change.
+        delta: f64,
+    },
 }
 
 /// Everything needed to create an organ.
@@ -197,6 +207,11 @@ pub struct OrganArena {
     /// before model 0.18.0) read as zero.
     #[serde(default)]
     secondary: Vec<GramsDM>,
+    /// Starch store (R1b, decision 0040): carbon held apart from the reserve, which
+    /// neither moves in the phloem nor counts in the reserve concentration. Missing
+    /// entries (a save from before model 0.21.0) read as zero.
+    #[serde(default)]
+    storage: Vec<GramsC>,
     /// Local carbon reserve; may go negative briefly (starvation signal).
     pub reserve: Vec<GramsC>,
     /// Nitrogen content.
@@ -297,6 +312,8 @@ impl OrganArena {
         self.structural.push(o.structural);
         self.secondary.resize(id.index(), GramsDM(0.0));
         self.secondary.push(GramsDM(0.0));
+        self.storage.resize(id.index(), GramsC(0.0));
+        self.storage.push(GramsC(0.0));
         self.reserve.push(o.reserve);
         self.nitrogen.push(o.nitrogen);
         self.unmet.push(GramsC(0.0));
@@ -334,6 +351,36 @@ impl OrganArena {
             .get(id.index())
             .copied()
             .unwrap_or(GramsDM(0.0))
+    }
+
+    /// An organ's starch store (R1b; zero for organs that store nothing).
+    #[must_use]
+    pub fn storage(&self, id: OrganId) -> GramsC {
+        self.storage.get(id.index()).copied().unwrap_or(GramsC(0.0))
+    }
+
+    /// Moves `amount` of carbon from a living organ's reserve into its store (a
+    /// negative amount releases from the store into the reserve). The reserve may go
+    /// negative like any reserve; the store may not.
+    ///
+    /// # Errors
+    /// [`GraphError::NegativeStore`] for a non-finite amount or one that would leave
+    /// the store negative, or if the organ is missing or dead.
+    pub fn store(&mut self, id: OrganId, amount: GramsC) -> Result<(), GraphError> {
+        let i = self.check_alive(id)?;
+        let s = self.storage(id).0 + amount.0;
+        if !(amount.0.is_finite() && s >= 0.0) {
+            return Err(GraphError::NegativeStore {
+                id,
+                delta: amount.0,
+            });
+        }
+        if self.storage.len() < self.len() {
+            self.storage.resize(self.len(), GramsC(0.0));
+        }
+        self.storage[i] = GramsC(s);
+        self.reserve[i] -= amount;
+        Ok(())
     }
 
     /// The primary part of an organ's structural mass: what its expansion built, and
@@ -423,11 +470,17 @@ impl OrganArena {
 
     /// Kills an organ at tick `at` and returns its structural mass at death, from which
     /// the caller books resorption and litter (§3.9 step 6). Children are not killed.
+    /// The organ's starch store joins its reserve, so the caller books it as reserve
+    /// (R1b, decision 0040).
     ///
     /// # Errors
     /// If the organ is missing or already dead.
     pub fn kill(&mut self, id: OrganId, at: Hours) -> Result<GramsDM, GraphError> {
         let i = self.check_alive(id)?;
+        if let Some(s) = self.storage.get_mut(i) {
+            self.reserve[i] += *s;
+            *s = GramsC(0.0);
+        }
         self.alive[i] = false;
         self.death[i] = Some(at);
         Ok(self.structural[i])
@@ -521,9 +574,9 @@ impl OrganArena {
             f(self.size[i].radius.to_bits());
             f(self.size[i].area.to_bits());
             f(self.structural[i].to_bits());
-            f(self
-                .secondary(OrganId(u32::try_from(i).unwrap_or(u32::MAX)))
-                .to_bits());
+            let id = OrganId(u32::try_from(i).unwrap_or(u32::MAX));
+            f(self.secondary(id).to_bits());
+            f(self.storage(id).to_bits());
             f(self.reserve[i].to_bits());
             f(self.nitrogen[i].to_bits());
             f(self.unmet[i].to_bits());

@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use ps_world::{DayRow, WorldState};
 
 /// Columns of [`daily_csv`], in order.
-pub const DAILY_COLUMNS: [&str; 46] = [
+pub const DAILY_COLUMNS: [&str; 50] = [
     "day",
     "plant",
     "soil",
@@ -55,10 +55,14 @@ pub const DAILY_COLUMNS: [&str; 46] = [
     "hypocotyl_diameter_mm",
     "tap_root_diameter_mm",
     "fine_root_length_m",
+    "storage_mass_g",
+    "stem_structural_mass_g",
+    "root_structural_mass_g",
+    "exudation_gc",
 ];
 
 /// Columns of [`organs_csv`], in order.
-pub const ORGAN_COLUMNS: [&str; 24] = [
+pub const ORGAN_COLUMNS: [&str; 25] = [
     "plant",
     "organ",
     "kind",
@@ -83,6 +87,7 @@ pub const ORGAN_COLUMNS: [&str; 24] = [
     "light_index",
     "nitrogen_g",
     "secondary_g",
+    "storage_gc",
 ];
 
 fn header(cols: &[&str]) -> String {
@@ -106,7 +111,7 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
     // Writing to a String cannot fail.
     let _ = writeln!(
         out,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         row.day,
         row.plant,
         soil_id(state, row.plant),
@@ -153,6 +158,10 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
         r.hypocotyl_diameter * 1e3,
         r.tap_root_diameter * 1e3,
         r.fine_root_length,
+        r.storage_mass,
+        r.stem_structural_mass,
+        r.root_structural_mass,
+        r.exudation,
     );
 }
 
@@ -182,7 +191,7 @@ pub fn organs_csv(state: &WorldState) -> String {
             let role = meta.map_or_else(String::new, |m| format!("{:?}", m.role));
             let _ = writeln!(
                 out,
-                "{},{},{:?},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{:?},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 p.id,
                 i,
                 a.kind[i],
@@ -207,6 +216,8 @@ pub fn organs_csv(state: &WorldState) -> String {
                 meta.map_or(1.0, |m| m.light_index),
                 a.nitrogen[i].0,
                 a.secondary(ps_graph::OrganId(u32::try_from(i).unwrap_or(u32::MAX)))
+                    .0,
+                a.storage(ps_graph::OrganId(u32::try_from(i).unwrap_or(u32::MAX)))
                     .0,
             );
         }
@@ -277,6 +288,10 @@ pub fn daily_number(state: &WorldState, row: &DayRow, column: &str) -> Option<f6
         "hypocotyl_diameter_mm" => r.hypocotyl_diameter * 1e3,
         "tap_root_diameter_mm" => r.tap_root_diameter * 1e3,
         "fine_root_length_m" => r.fine_root_length,
+        "storage_mass_g" => r.storage_mass,
+        "stem_structural_mass_g" => r.stem_structural_mass,
+        "root_structural_mass_g" => r.root_structural_mass,
+        "exudation_gc" => r.exudation,
         _ => return None,
     })
 }

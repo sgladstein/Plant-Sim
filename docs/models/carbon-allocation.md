@@ -8,7 +8,9 @@ Leaves make sugar; every other part of the plant has to get it from them. Sugar 
 from where it is plentiful to where it is scarce, and each growing
 part takes what it can. A part that keeps running short ends up smaller, and a part that
 cannot even pay its upkeep for three days dies and drops. Shaded lower branches starving
-and falling off is not scripted; it happens this way.
+and falling off is not scripted; it happens this way. Stems and main roots also keep a
+starch store: they fill it when sugar is plentiful and give it back when it runs short,
+and once the seeds start filling it empties into them.
 
 ## Equations
 Per plant, hourly steps 8 to 12 of §3.2, crate `ps-physio::allocation`. Organ `i` has
@@ -17,7 +19,10 @@ with `W_p = W − W_s` its primary structure: secondary (wood) mass `W_s` from R
 thickening holds no phloem sap (decision 0036), so it neither dilutes the sugar
 concentration nor raises the reserve floor.
 
-1. Maintenance (step 8): non-leaf organs pay `Rm` (respiration card) from `R`.
+1. Maintenance (step 8): non-leaf organs pay `Rm` (respiration card) from `R`. Roots
+   then exude `e · Rm` from what positive reserve they have left, never into debt
+   (`e` = `exudation_fraction`, 0.4; R1b, decision 0040); it leaves the plant as the
+   ledger's `exudation`.
 2. Income (step 9): each leaf adds its net assimilation (negative at night).
    Starvation signal: an organ whose `R < 0` now counts one more starving hour; any
    other organ resets to zero.
@@ -35,7 +40,8 @@ concentration nor raises the reserve floor.
 4. Thermal time (step 11): organ thermal age advances (thermal-time card), and so does
    the organ's expansion clock, by thermal time times the expansion temperature
    multiplier (decision 0011).
-5. Growth (step 12), for organs still expanding: potential `ΔW = potential ×
+5. Growth (step 12). First, a starch store short of sugar releases (R1b, decision
+   0040; item 8 below). Then, for organs still expanding: potential `ΔW = potential ×
    (y(a + da) − y(a))` from the beta curve on the expansion clock `a`, times the
    water stress factor for leaves, internodes, tendrils and cotyledons. Cold slows the
    clock, so it delays expansion instead of cutting the organ short. Demand
@@ -56,6 +62,10 @@ concentration nor raises the reserve floor.
    decision 0037), scaled by the day's share of the expanding shoot's carbon demand
    that was met (leaves and internodes, `Plant::carbon_met`), so wood is the first sink
    to yield when carbon is short.
+   Last, the store refills (item 8).
+   From physiological maturity nothing in step 12 runs: no organ grows, thickens,
+   releases or refills, so late pods keep the seed mass they have (R1d, decision 0042;
+   CROPGRO stops seed growth at R7).
 6. No catch-up: demand always follows the species potential, and a shortfall is lost, so
    a fully expanded organ ends at `(1 − unmet / potential demand) × potential`.
 7. Starvation (daily step 4): an organ with at least `24 × starvation_window` starving
@@ -75,9 +85,19 @@ concentration nor raises the reserve floor.
    A cut (pruning; harvest later) goes through `allocation::cut` instead: nothing is
    resorbed, and each cut organ's structure and reserve (a debt included) leave the
    plant as `removed` (WP10, WP9 review).
-8. Ledger: `stock = Σ_living (R + 0.45 W)` must equal
-   `start + added + income − maintenance − growth respiration − litter − removed`; debug builds
-   assert it every hour at 1e-9 relative.
+8. Starch store (R1b, decision 0040). Stem segments and main (order 0) root segments
+   hold starch `S` (g C), apart from the reserve: it does not move and does not count
+   in `C`. Capacity `S_max = s_max W c_f` (`s_max` 0.25 for bean stems and roots, 0.28
+   for wheat stems, 0 for wheat roots). In step 12, before the organ grows: if
+   `C < C_off` (0.06), release `min(k_r S, (C_off − C) W_p)` into `R` (`k_r` 0.02 h⁻¹).
+   After its growth, once it has finished expanding and if `C > C_on` (0.15): store
+   `min(k_s (S_max − S), 0.2 · max(0, R − 0.05 W_p))` (`k_s` 0.05 h⁻¹, priority 0.2).
+   From seed fill (R5) the store stops refilling and releases at least `k_f S` an hour
+   whatever `C` (`k_f` 0.08 d⁻¹ / 24). At death the store joins the reserve, so it is
+   booked like reserve. Starch counts in the stock and, as `S / c_f`, in dry mass.
+9. Ledger: `stock = Σ_living (R + S + 0.45 W)` must equal
+   `start + added + income − maintenance − growth respiration − litter − removed −
+   fixation − exudation`; debug builds assert it every hour at 1e-9 relative.
 
 ## Parameters
 | Name | Value | Unit | Source |
@@ -90,13 +110,20 @@ concentration nor raises the reserve floor.
 | phloem_conductance K | 500 | g DM m⁻¹ h⁻¹ | "~" decision 0009 |
 | priorities | 1.0, 0.9, 0.7, 0.6 + 0.4 (1 − FTSW) | 1 | design plan §3.9 step 2 |
 | secondary priority | 0.4 | 1 | design plan §3.9 step 2; decision 0036 |
+| store refill priority | 0.2 | 1 | design plan §3.9 step 2 (reserve refill); decision 0040 |
+| storage_capacity, root_storage_capacity | 0.25, 0.25 bean; 0.28, 0 wheat | g g DM⁻¹ | "~" bean (0.15 to 0.30); wheat Davidson and Chevalier 1992; R1 numbers |
+| storage_on, storage_off | 0.15, 0.06 | g C g DM⁻¹ | "~" decision 0040 (spec 0.12, 0.06) |
+| storage_refill_rate, storage_release_rate | 0.05, 0.02 | h⁻¹ | "~" R1 spec §4.4 |
+| storage_fill_release_rate | 0.08 | d⁻¹ | "~" Waters et al. 1980; decision 0040 |
+| exudation_fraction | 0.4 | 1 | R1 numbers (0.3 to 0.5): Warembourg 2003, Nguyen 2003, Nielsen 2001 |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
 | --- | --- | --- | --- |
 | in | leaf net assimilation | g C h⁻¹ | gas exchange |
 | in | organ temperatures, FTSW, stress | °C, 1, 1 | weather, soil |
-| out | organ reserves, structural growth, unmet demand, starving hours, deaths | g C, g DM | organ graph, architecture, lenses |
+| out | organ reserves, starch stores, structural growth, unmet demand, starving hours, deaths | g C, g DM | organ graph, architecture, lenses |
+| out | exudation | g C | carbon ledger, daily CSV (soil carbon is not tracked) |
 
 ## Encoded or emergent
 Encoded: the priority numbers (the root term is the one encoded piece of functional
@@ -117,8 +144,17 @@ late leaves, smaller leaves after a dull week.
   an hourly step it is a weak lever (decision 0009). If fruit does not starve late
   leaves in WP12, make priority shape the transport to the receiving organ.
 - Secondary thickening is a sink at priority 0.4 (decision 0036), scaled by the
-  previous day's shoot carbon (decision 0037); the reserve refill sink (§3.9 priority
-  0.2) is not separate yet (R1b).
+  previous day's shoot carbon (decision 0037). It keeps building wood through seed
+  fill when the plant has sugar to spare, so a pot bean's stem mass hardly falls in
+  seed fill (−1% against −10 to −35% in the field, where petioles count with the stem;
+  decision 0040).
+- A lone pot plant still has more sugar than its seeds can take in seed fill (about
+  41% of its potential gross assimilation is lost to the sink feedback in model 0.23.0;
+  the target is at most 35%).
+- Exuded carbon leaves the model: there is no soil carbon pool or rhizosphere.
+- Growth stops at once at maturity (decision 0042): a pod still filling is cut short,
+  and the reserves left in the plant stay there. Under drought and heat the mean seed
+  grows larger rather than smaller, likely because fewer pods share those reserves.
 - Root tip feeding lets a growing root spend its parent's reserve at its own priority,
   so a fast-growing root system can draw on the reserve of the root behind it within
   the hour; there is no unloading limit at the tip (decision 0037).
@@ -143,7 +179,15 @@ and the final size matches the reduced potential within 5%),
 property tests `transport_conserves_and_clamps` and
 `implicit_transport_is_conservative_and_monotone` (random trees),
 `secondary_growth_is_a_low_priority_sink` (R1a),
-`root_tip_draws_on_its_parent` and `shedding_does_not_resorb_wood` (R2a).
+`root_tip_draws_on_its_parent` and `shedding_does_not_resorb_wood` (R2a),
+`store_fills_holds_and_releases` (refill and release conserve carbon to 1e-12 per hour,
+the store stays within 0 and `S_max`, release only below `C_off`),
+`roots_exude_a_share_of_maintenance` and `filling_empties_the_store` (R1b),
+`nothing_grows_after_maturity` (R1d; with `ninety_days`, which checks that seed mass
+does not change after maturity);
+`ps_graph::tests::store_moves_carbon_and_returns_it_at_death`. Validation report:
+`stem_share_peak`, `stem_decline_fill`, `feedback_loss_fill`, `root_shoot_seed_fill`,
+`mean_seed_mass`, `harvest_index_tops`.
 
 ## References
 - Allen, M. T., Prusinkiewicz, P. and DeJong, T. M. (2005). Using L-systems for modeling

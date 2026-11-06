@@ -79,6 +79,52 @@ pub struct CarbonParams {
     pub starvation_hours: u32,
     /// Phloem conductance per unit segment cross-section over length, g DM m⁻¹ h⁻¹.
     pub phloem_conductance: f64,
+    /// The starch store and root exudation (R1b, decision 0040); off when missing
+    /// (a save from before model 0.21.0).
+    #[serde(default)]
+    pub storage: StorageParams,
+}
+
+/// The starch store of stems and main roots, and root exudation (R1b, decision 0040).
+/// The default is off: no store, no exudation.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct StorageParams {
+    /// Most starch per unit of structural dry mass in a stem segment, g per g DM.
+    pub capacity: f64,
+    /// The same in a main-root segment.
+    #[serde(default)]
+    pub root_capacity: f64,
+    /// Reserve concentration above which the store refills, g C per g DM.
+    pub on: f64,
+    /// Reserve concentration below which the store releases, g C per g DM.
+    pub off: f64,
+    /// Share of the store's free room filled per hour while it refills.
+    pub refill_rate: f64,
+    /// Share of the store released per hour while it releases.
+    pub release_rate: f64,
+    /// Share of the store released per hour while seeds fill, whatever the reserve.
+    #[serde(default)]
+    pub fill_release_rate: f64,
+    /// Root exudation as a share of each root's maintenance respiration.
+    pub exudation: f64,
+}
+
+impl StorageParams {
+    /// From a species file.
+    #[must_use]
+    pub fn from_species(s: &ps_species::Species) -> Self {
+        let st = &s.storage;
+        Self {
+            capacity: st.storage_capacity.value,
+            root_capacity: st.root_storage_capacity.value,
+            on: st.storage_on.value,
+            off: st.storage_off.value,
+            refill_rate: st.storage_refill_rate.value,
+            release_rate: st.storage_release_rate.value,
+            fill_release_rate: st.storage_fill_release_rate.value / 24.0,
+            exudation: st.exudation_fraction.value,
+        }
+    }
 }
 
 impl CarbonParams {
@@ -102,6 +148,7 @@ impl CarbonParams {
             resorption_fraction: c.resorption_fraction.value,
             starvation_hours,
             phloem_conductance: c.phloem_conductance.value,
+            storage: StorageParams::from_species(s),
         }
     }
 }
@@ -121,6 +168,22 @@ pub fn priority(kind: OrganKind, ftsw: f64) -> f64 {
 /// Sink priority of secondary growth, stem and root thickening (§3.9 step 2, R1a).
 pub const SECONDARY_PRIORITY: f64 = 0.4;
 
+/// Sink priority of the starch store's refill (§3.9 step 2, the reserve refill
+/// value; R1b, decision 0040).
+pub const STORAGE_PRIORITY: f64 = 0.2;
+
+/// An organ's starch capacity per unit of structural dry mass, g per g DM: stem
+/// segments and the segments of main (order 0) roots keep a store; lateral and fine
+/// roots store little (R1b, decision 0040).
+#[must_use]
+pub fn storage_capacity(sp: &StorageParams, kind: OrganKind, axis_order: u8) -> f64 {
+    match kind {
+        OrganKind::Internode => sp.capacity,
+        OrganKind::Root if axis_order == 0 => sp.root_capacity,
+        _ => 0.0,
+    }
+}
+
 /// True for organs whose growth is expansion and so is limited by water stress.
 #[must_use]
 pub fn is_expanding_kind(kind: OrganKind) -> bool {
@@ -132,10 +195,11 @@ pub fn is_expanding_kind(kind: OrganKind) -> bool {
 
 /// Carbon flows of one plant since the ledger started. The balance closes when
 /// `stock now = start + added + income − maintenance − growth respiration − litter −
-/// removed`.
+/// removed − fixation − exudation`.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CarbonLedger {
-    /// Stock (reserves plus structural carbon of living organs) when the ledger started.
+    /// Stock (reserves, stores and structural carbon of living organs) when the ledger
+    /// started.
     pub start: GramsC,
     /// Carbon added from outside the plant (the sown seed, tests).
     pub added: GramsC,
@@ -153,6 +217,9 @@ pub struct CarbonLedger {
     /// Carbon respired by nodules to fix nitrogen (WP24, decision 0020).
     #[serde(default)]
     pub fixation: GramsC,
+    /// Carbon exuded by roots into the soil (R1b, decision 0040).
+    #[serde(default)]
+    pub exudation: GramsC,
 }
 
 impl CarbonLedger {
@@ -174,7 +241,8 @@ impl CarbonLedger {
                 - self.growth_respiration.0
                 - self.litter.0
                 - self.removed.0
-                - self.fixation.0,
+                - self.fixation.0
+                - self.exudation.0,
         )
     }
 
@@ -192,6 +260,7 @@ impl CarbonLedger {
             self.litter.0.abs(),
             self.removed.0.abs(),
             self.fixation.0,
+            self.exudation.0,
             1e-12,
         ]
         .into_iter()
@@ -200,14 +269,14 @@ impl CarbonLedger {
     }
 }
 
-/// Reserves plus structural carbon of the living organs, in id order.
+/// Reserves, stores and structural carbon of the living organs, in id order.
 #[must_use]
 pub fn stock(arena: &OrganArena, carbon_fraction: f64) -> GramsC {
     arena
         .alive_ids()
         .map(|id| {
             let i = id.index();
-            arena.reserve[i] + arena.structural(id).to_carbon(carbon_fraction)
+            arena.reserve[i] + arena.storage(id) + arena.structural(id).to_carbon(carbon_fraction)
         })
         .sum()
 }
@@ -228,6 +297,10 @@ pub struct HourReport {
     /// Carbon spent on secondary growth, structure plus growth respiration (part of
     /// `growth`).
     pub secondary: GramsC,
+    /// Carbon exuded by roots (R1b).
+    pub exudation: GramsC,
+    /// Net carbon moved into starch stores, refill less release (R1b).
+    pub stored: GramsC,
 }
 
 /// Per-hour inputs to [`hourly`], all indexed by organ id.
@@ -252,6 +325,12 @@ pub struct HourInputs<'a> {
     /// structure, from the caller's rules (R1a; set once a day since decision 0037);
     /// empty for none.
     pub secondary: &'a [GramsDM],
+    /// Whether seeds are filling (stage R5 on): starch stores stop refilling and
+    /// release to the seeds (R1b, decision 0040).
+    pub filling: bool,
+    /// Whether organs grow: false from physiological maturity, where seed growth stops
+    /// as in CROPGRO's R7 and the annual's tissues dry (decision 0042).
+    pub growing: bool,
 }
 
 /// Number of organ kinds, for per-kind tables.
@@ -449,6 +528,74 @@ fn build_secondary(
     Ok(())
 }
 
+/// Reserve concentration as transport sees it: reserve over primary mass (R1a).
+fn concentration(arena: &OrganArena, id: OrganId) -> (f64, f64) {
+    let w = arena.primary(id).0.max(MIN_MASS);
+    (arena.reserve[id.index()].0 / w, w)
+}
+
+/// A store's release this hour (R1b, decision 0040): below the release
+/// concentration `C_off`, `min(k_r · S, (C_off − C) · W_p)` moves from the store into
+/// the reserve, so growth and transport can use it; while seeds fill, at least
+/// `k_f · S` does, whatever the reserve. Returns the carbon released.
+fn release_store(
+    arena: &mut OrganArena,
+    id: OrganId,
+    sp: &StorageParams,
+    filling: bool,
+) -> Result<GramsC, PhysioError> {
+    let s = arena.storage(id).0;
+    if s <= 0.0 {
+        return Ok(GramsC(0.0));
+    }
+    let (c, w) = concentration(arena, id);
+    let short = if c < sp.off {
+        (sp.release_rate * s).min((sp.off - c) * w)
+    } else {
+        0.0
+    };
+    let fill = if filling {
+        sp.fill_release_rate * s
+    } else {
+        0.0
+    };
+    let r = short.max(fill);
+    if r <= 0.0 {
+        return Ok(GramsC(0.0));
+    }
+    arena.store(id, GramsC(-r))?;
+    Ok(GramsC(r))
+}
+
+/// A store's refill this hour (R1b, decision 0040): once the organ has finished
+/// expanding, above the refill concentration `C_on` the store is a sink for
+/// `k_s · (S_max − S)`, with `S_max = s_max · W · c_f`, met at [`STORAGE_PRIORITY`] of
+/// the reserve above the growth floor. Returns the carbon stored.
+fn refill_store(
+    arena: &mut OrganArena,
+    id: OrganId,
+    capacity: f64,
+    p: &CarbonParams,
+) -> Result<GramsC, PhysioError> {
+    let sp = &p.storage;
+    let i = id.index();
+    if !arena.curve[i].is_complete(arena.expansion_age[i]) {
+        return Ok(GramsC(0.0));
+    }
+    let (c, w) = concentration(arena, id);
+    if c <= sp.on {
+        return Ok(GramsC(0.0));
+    }
+    let room = capacity * arena.structural(id).0 * p.carbon_fraction - arena.storage(id).0;
+    let available = arena.reserve[id.index()].0 - p.reserve_floor * w;
+    let r = (sp.refill_rate * room).min(STORAGE_PRIORITY * available);
+    if r <= 0.0 {
+        return Ok(GramsC(0.0));
+    }
+    arena.store(id, GramsC(r))?;
+    Ok(GramsC(r))
+}
+
 /// [`hourly`], also recording each organ's phloem import for the hour in `flows`
 /// (WP26, the carbon flow lens): the carbon moved from its parent into it, negative
 /// for an export to the parent, indexed by organ id (zero for organs without a living
@@ -508,6 +655,13 @@ pub fn hourly_recording(
         let m = maintenance_with_factor(p.maintenance_rate_20c, arena.nitrogen[i], factor);
         arena.reserve[i] -= m;
         rep.maintenance += m;
+        // Roots also leak sugars to the soil, a share of their maintenance, from
+        // what reserve is left: exudation never runs a reserve into debt (R1b).
+        if arena.kind[i] == OrganKind::Root && p.storage.exudation > 0.0 {
+            let x = (p.storage.exudation * m.0).min(arena.reserve[i].0.max(0.0));
+            arena.reserve[i] -= GramsC(x);
+            rep.exudation += GramsC(x);
+        }
     }
     // 9. Income into each leaf's own reserve.
     for &id in &ids {
@@ -538,22 +692,35 @@ pub fn hourly_recording(
         dt_exp[i] = DegreeDays(dt.0 * temp.growth.factor(t_of(id)));
         arena.expansion_age[i] += dt_exp[i];
     }
-    // 12. Growth: primary growth along each organ's expansion curve, then secondary
-    // growth (stem and root thickening, R1a) from what is left, at its own priority.
-    // Its potential is set once a day (decision 0037).
+    // 12. Growth: a starch store short of reserve releases first (R1b); then primary
+    // growth along each organ's expansion curve, then secondary growth (stem and
+    // root thickening, R1a) from what is left, at its own priority, whose potential
+    // is set once a day (decision 0037); last, a store refills from a surplus.
     let cf = p.carbon_fraction;
     let g = GrowCtx { p, inp, allometry };
-    for &id in &ids {
+    // From maturity nothing grows: late pods keep the seed mass they have (decision 0042).
+    let growing: &[OrganId] = if inp.growing { &ids } else { &[] };
+    for &id in growing {
         let i = id.index();
+        let cap = storage_capacity(&p.storage, arena.kind[i], arena.axis_order[i]);
+        // Old saves carry a store their species no longer fills: it still releases.
+        let has_store = inp.respiring && (cap > 0.0 || arena.storage(id).0 > 0.0);
+        if has_store {
+            rep.stored -= release_store(arena, id, &p.storage, inp.filling)?;
+        }
         let cost = p.construction_cost.of(arena.kind[i]);
         build_primary(arena, id, dt_exp[i], cost, &g, &mut rep, ledger)?;
         let pot = inp.secondary.get(i).copied().unwrap_or(GramsDM(0.0));
         if pot.0 > 0.0 {
             build_secondary(arena, id, pot, cost, &g, &mut rep, ledger)?;
         }
+        if has_store && !inp.filling {
+            rep.stored += refill_store(arena, id, cap, p)?;
+        }
     }
     ledger.maintenance += rep.maintenance;
     ledger.income += rep.income;
+    ledger.exudation += rep.exudation;
     debug_assert!(
         ledger.relative_residual(arena, cf).abs() < LEDGER_TOLERANCE,
         "carbon ledger residual {}",

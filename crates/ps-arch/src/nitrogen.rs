@@ -16,7 +16,9 @@
 //! 2. **Supply, in order.** The pool (without yesterday's fixation), then the soil (the
 //!    world's joint uptake, asked for the demand the pool leaves), then mining: up to
 //!    `rate · (N − c_final · W)` per day from organs that have stopped growing,
-//!    low-light leaves first.
+//!    low-light leaves first. From seed fill on (`seed_fill_mining_first`), the seeds'
+//!    own demand is served first by mining, whatever the soil holds, and the pool and
+//!    the soil cover the rest (R1b, decision 0040; CROPGRO's order after R5).
 //! 3. **Fixation for tomorrow.** Nodules are set to fix the demand that uptake and mining
 //!    left, up to their capacity. Each hour a nodule pays `fixation_cost` g C per g N from
 //!    its own reserve and adds the nitrogen to the pool (demand-driven fixation, CROPGRO
@@ -93,6 +95,10 @@ pub struct NitrogenParams {
     pub fixation_drought: f64,
     /// Nitrate inhibition of nodulation: onset ppm, full ppm, floor.
     pub nodule_nitrate: [f64; 3],
+    /// From seed fill on, mine the seeds' demand before asking the soil (R1b, decision
+    /// 0040).
+    #[serde(default)]
+    pub seed_fill_mining_first: bool,
 }
 
 impl NitrogenParams {
@@ -156,6 +162,7 @@ impl NitrogenParams {
                 n.nodule_nitrate_full.value,
                 n.nodule_nitrate_floor.value,
             ],
+            seed_fill_mining_first: n.seed_fill_mining_first.value >= 0.5,
         }
     }
 
@@ -257,6 +264,12 @@ pub struct NitrogenDay {
     /// Growing organs' deficits left after the last top-up.
     #[serde(default)]
     pub residual: GramsN,
+    /// The seeds' part of `growth` (R1b).
+    #[serde(default)]
+    pub seed_growth: GramsN,
+    /// The seeds' part of `residual` (R1b).
+    #[serde(default)]
+    pub seed_residual: GramsN,
     /// From the soil.
     pub uptake: GramsN,
     /// Mobilized from organs that stopped growing.
@@ -385,17 +398,42 @@ impl Plant {
         GramsN(self.deficits().iter().map(|x| x.1).sum::<f64>()) + self.nitrogen.today.growth
     }
 
+    /// What mining serves before the soil today (R1b, decision 0040): from seed fill on,
+    /// the filling seeds' demand (their deficits plus the nitrogen their growth used
+    /// yesterday), up to the day's mining capacity; zero before seed fill or with the
+    /// rule off.
+    fn seed_mining_first(&self) -> f64 {
+        if !self.params.nitrogen.seed_fill_mining_first || self.phenology.stage < Stage::SeedFill {
+            return 0.0;
+        }
+        let seeds: f64 = self
+            .deficits()
+            .iter()
+            .filter(|d| self.arena.kind[d.0] == OrganKind::SeedInPod)
+            .map(|d| d.1)
+            .sum::<f64>()
+            + self.nitrogen.today.seed_growth.0;
+        if seeds <= 0.0 {
+            return 0.0;
+        }
+        let capacity: f64 = self.mining_caps().iter().map(|c| c.1).sum();
+        seeds.min(capacity)
+    }
+
     /// The pool without today's fixation (fixation is the last source, decision 0020).
     fn pool_without_fixation(&self) -> GramsN {
         (self.nitrogen.pool - self.nitrogen.today.fixed).max(GramsN(0.0))
     }
 
     /// The plant's request in the soil's joint nitrogen uptake: the demand the pool
-    /// does not cover.
+    /// and, in seed fill, mining first do not cover.
     #[must_use]
     pub fn nitrogen_request(&self) -> NitrogenRequest<'_> {
         NitrogenRequest {
-            demand: (self.nitrogen_demand() - self.pool_without_fixation()).max(GramsN(0.0)),
+            demand: (self.nitrogen_demand()
+                - self.pool_without_fixation()
+                - GramsN(self.seed_mining_first()))
+            .max(GramsN(0.0)),
             roots: &self.roots,
             capacity_per_length: self.params.nitrogen.uptake_capacity,
         }
@@ -406,11 +444,18 @@ impl Plant {
     pub(crate) fn top_up_hour(&mut self) {
         let deficits = self.deficits();
         let want: f64 = deficits.iter().map(|d| d.1).sum();
+        let want_seeds: f64 = deficits
+            .iter()
+            .filter(|d| self.arena.kind[d.0] == OrganKind::SeedInPod)
+            .map(|d| d.1)
+            .sum();
         let today = &mut self.nitrogen.today;
         today.growth.0 += (want - today.residual.0).max(0.0);
+        today.seed_growth.0 += (want_seeds - today.seed_residual.0).max(0.0);
         let give = want.min(self.nitrogen.pool.0.max(0.0));
+        let mut f = 0.0;
         if want > 0.0 && give > 0.0 {
-            let f = give / want;
+            f = give / want;
             for &(i, d) in &deficits {
                 self.arena.nitrogen[i].0 += d * f;
             }
@@ -418,6 +463,7 @@ impl Plant {
         }
         self.nitrogen.today.used.0 += give;
         self.nitrogen.today.residual = GramsN((want - give).max(0.0));
+        self.nitrogen.today.seed_residual = GramsN(want_seeds * (1.0 - f));
     }
 
     /// The day's nitrogen for a plant alone in its soil: its request, the soil's
@@ -446,23 +492,31 @@ impl Plant {
     ) -> Result<(), ArchError> {
         let pool_nonfix = self.pool_without_fixation();
         let demand = self.nitrogen_demand().0;
+        // In seed fill the seeds' demand is mined first (R1b); it is within the day's
+        // mining capacity, so mining for the rest takes from what capacity is left.
+        let first = self.seed_mining_first();
         self.nitrogen.pool += uptake;
         self.nitrogen.ledger.uptake += uptake;
         self.nitrogen.today.uptake = uptake;
         self.nitrogen.today.demand = GramsN(demand);
         // Mining covers what the pool (without today's fixation) and the soil leave.
-        let need = (demand - pool_nonfix.0 - uptake.0).max(0.0);
-        let mined = if need > 0.0 { self.mine(need) } else { 0.0 };
+        let need = (demand - pool_nonfix.0 - uptake.0 - first).max(0.0);
+        let mined = if first + need > 0.0 {
+            self.mine(first + need)
+        } else {
+            0.0
+        };
         self.nitrogen.today.mined = GramsN(mined);
-        let fixation_need = (need - mined).max(0.0);
+        let fixation_need = (first + need - mined).max(0.0);
         self.nitrogen.today.fixation_need = GramsN(fixation_need);
         // Top up the growing organs now; the rest stays in the pool for tomorrow.
         // (Not counted in the hourly record that forecasts tomorrow.)
         self.nitrogen.today.unmet = GramsN(self.deficits().iter().map(|x| x.1).sum());
-        let (used, growth) = (self.nitrogen.today.used, self.nitrogen.today.growth);
+        let today = self.nitrogen.today;
         self.top_up_hour();
-        self.nitrogen.today.used = used;
-        self.nitrogen.today.growth = growth;
+        self.nitrogen.today.used = today.used;
+        self.nitrogen.today.growth = today.growth;
+        self.nitrogen.today.seed_growth = today.seed_growth;
         self.set_fixation(fixation_need);
         self.nodulate(fixation_need, soil, now)?;
         self.drop_mined_leaves(now)?;
@@ -473,9 +527,29 @@ impl Plant {
 
     /// Mines up to `need` from organs that have stopped growing; returns what it took.
     fn mine(&mut self, need: f64) -> f64 {
+        let caps = self.mining_caps();
+        let total: f64 = caps.iter().map(|c| c.1).sum();
+        if total <= 0.0 {
+            return 0.0;
+        }
+        let take = need.min(total);
+        let f = take / total;
+        for (i, c) in caps {
+            self.arena.nitrogen[i].0 -= c * f;
+            if self.arena.kind[i] == OrganKind::Leaf {
+                self.meta[i].mined = true;
+            }
+        }
+        self.nitrogen.pool.0 += take;
+        take
+    }
+
+    /// What each organ that has stopped growing can give today, by id:
+    /// `rate · (N − c_final · W)`, low-light leaves first.
+    fn mining_caps(&self) -> Vec<(usize, f64)> {
         let np = &self.params.nitrogen;
         if self.phenology.stage < Stage::Emerged {
-            return 0.0;
+            return Vec::new();
         }
         let filling = self
             .arena
@@ -492,8 +566,7 @@ impl Plant {
             .alive_of(OrganKind::Leaf)
             .map(|id| self.meta[id.index()].light_index)
             .fold(0.0_f64, f64::max);
-        let caps: Vec<(usize, f64)> = self
-            .arena
+        self.arena
             .alive_ids()
             .filter(|id| !self.growing(*id))
             .filter_map(|id| {
@@ -518,21 +591,7 @@ impl Plant {
                 };
                 Some((i, rate * weight * mobile))
             })
-            .collect();
-        let total: f64 = caps.iter().map(|c| c.1).sum();
-        if total <= 0.0 {
-            return 0.0;
-        }
-        let take = need.min(total);
-        let f = take / total;
-        for (i, c) in caps {
-            self.arena.nitrogen[i].0 -= c * f;
-            if self.arena.kind[i] == OrganKind::Leaf {
-                self.meta[i].mined = true;
-            }
-        }
-        self.nitrogen.pool.0 += take;
-        take
+            .collect()
     }
 
     /// Fixation capacity per nodule dry mass today, g N g⁻¹ d⁻¹.
@@ -727,6 +786,7 @@ impl Plant {
         self.nitrogen.last = self.nitrogen.today;
         self.nitrogen.today = NitrogenDay {
             residual: self.nitrogen.last.residual,
+            seed_residual: self.nitrogen.last.seed_residual,
             ..NitrogenDay::default()
         };
     }

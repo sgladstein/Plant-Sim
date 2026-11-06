@@ -136,6 +136,12 @@ Daily step, in order (from M2, a step 0 runs first: each soil's joint nitrogen u
 
 From R2a (decision 0037), the potential of stem and root thickening (secondary growth, R1a decision 0036) is set once a day as step 5b, after root elongation, from the day's mean temperature and stress, as a rate per hour for the coming day; hourly step 12 builds it after primary growth, as in R1a.
 
+From R1b (decision 0040), with no change to the step list: roots exude a share of their maintenance in step 8; in step 12 a stem or main-root starch store releases before its organ grows and refills after it (from seed fill it only releases); and in daily step 0, from seed fill, the seeds' nitrogen is mined before the soil is asked for the rest.
+
+From R1c (decision 0041), with no change to the step list: daily step 6 also casts rays from the tip of each growing shoot apex toward the next day's suns and the sky; in hourly step 3 each apex adds the hour's vector irradiance to what it has seen; and in daily step 3 a new internode turns toward that light before gravitropism.
+
+From R1d (decision 0042), with no change to the step list: from physiological maturity hourly step 12 grows nothing, so seeds stop filling at maturity.
+
 ### 3.3 Plant structure and organ state
 
 An MTG-like organ graph stored as structs-of-arrays indexed by integer ids, with parent pointers and per-node children lists kept in creation order so iteration is deterministic. Organ types: seed, cotyledon, internode, bud, leaf (blade plus petiole), root segment, flower, pod, seed-in-pod, and in M2 nodule. (Decision 0023: common bean twines, so there is no tendril organ; a twining internode carries its support and coil instead. `OrganKind::Tendril` stays unused until the next model bump removes it.)

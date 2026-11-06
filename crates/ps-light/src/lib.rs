@@ -1147,6 +1147,91 @@ fn leaf_coeffs(
     }
 }
 
+/// The light a shoot apex sees (R1c, decision 0041): toward each hour's sun, the
+/// transmittance from the apex times the unit vector to the sun, and for the sky,
+/// `Σ_s a_s T_s d̂_s` over the sectors, with `a_s` the sector's radiance times solid
+/// angle ([`SkySector::absorb_weight`]) and `d̂_s` its flux-weighted direction. Times
+/// the hour's beam irradiance (normal to the sun) and horizontal diffuse irradiance,
+/// they sum to the vector irradiance at the apex, whose horizontal part is the light
+/// difference across a stem.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ApexLight {
+    /// `T_h ŝ_h` for each clock hour; zero while the sun is down.
+    pub direct: [[f64; 3]; 24],
+    /// `Σ_s a_s T_s d̂_s`; `[0, 0, 1]` under an open overcast sky.
+    pub diffuse: [f64; 3],
+}
+
+impl Default for ApexLight {
+    fn default() -> Self {
+        Self {
+            direct: [[0.0; 3]; 24],
+            diffuse: [0.0; 3],
+        }
+    }
+}
+
+impl ApexLight {
+    /// The vector irradiance for an hour with this beam irradiance on a horizontal
+    /// surface and diffuse irradiance, W m⁻² (the beam is taken normal to the sun as in
+    /// [`absorbed_par`]).
+    #[must_use]
+    pub fn vector(
+        &self,
+        hour: usize,
+        direct: WPerM2,
+        diffuse: WPerM2,
+        sin_elevation: f64,
+    ) -> [f64; 3] {
+        let d = diffuse.0.max(0.0);
+        let mut v = [
+            d * self.diffuse[0],
+            d * self.diffuse[1],
+            d * self.diffuse[2],
+        ];
+        if sin_elevation > 0.0 && direct.0 > 0.0 {
+            let b = direct.0 / sin_elevation.max(MIN_SIN_ELEVATION);
+            for (vk, sk) in v.iter_mut().zip(self.direct[hour.min(23)]) {
+                *vk += b * sk;
+            }
+        }
+        v
+    }
+}
+
+/// The light seen from each point of `at` (shoot apices) on `grid`, which was built for
+/// `dirs`; rays pass every leaf in the cells they cross and every obstacle.
+#[must_use]
+pub fn apex_light(
+    grid: &LightGrid,
+    dirs: &DayDirections,
+    sky: &[SkySector],
+    at: &[[f64; 3]],
+) -> Vec<ApexLight> {
+    debug_assert_eq!(grid.directions, dirs.all, "grid built for these directions");
+    let none = Footprint::none();
+    at.iter()
+        .map(|p| {
+            let t = |j: usize| libm::exp(-grid.path_depth(*p, j, &none));
+            let mut out = ApexLight::default();
+            for (h, j) in dirs.sun.iter().enumerate() {
+                if let Some(j) = *j {
+                    let tj = t(j);
+                    let s = dirs.all[j];
+                    out.direct[h] = [tj * s[0], tj * s[1], tj * s[2]];
+                }
+            }
+            for (sec, &j) in sky.iter().zip(&dirs.sky) {
+                let w = sec.absorb_weight * t(j);
+                for (ok, dk) in out.diffuse.iter_mut().zip(sec.absorb_direction()) {
+                    *ok += w * dk;
+                }
+            }
+            out
+        })
+        .collect()
+}
+
 /// Number of points on a leaf's disc from which rays are cast: the center and a ring.
 pub const SAMPLE_POINTS: usize = 5;
 /// Number of points along a narrow strip (a third of a grass blade) from which rays are

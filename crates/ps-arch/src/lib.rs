@@ -255,6 +255,21 @@ pub struct ShootAxis {
     /// Stem length made while upright and unsupported, m (vines).
     #[serde(default)]
     pub free_length: f64,
+    /// The light its apex has seen, for phototropism (R1c, decision 0041).
+    #[serde(default)]
+    pub sight: ApexSight,
+}
+
+/// What a shoot apex has seen of the light (R1c, decision 0041).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ApexSight {
+    /// The apex's light coefficients from the last light rebuild.
+    pub light: ps_light::ApexLight,
+    /// Vector irradiance summed over the hours since the axis' last node, W h m⁻²
+    /// (east, north, up).
+    pub seen: [f64; 3],
+    /// Hours summed into `seen`.
+    pub hours: u32,
 }
 
 /// Fate of an axillary bud.
@@ -399,6 +414,9 @@ pub struct DayStats {
     /// day's thickening (decision 0037).
     #[serde(default)]
     pub stress_sum: f64,
+    /// Carbon the roots exuded today, g C (R1b).
+    #[serde(default)]
+    pub exudation: f64,
 }
 
 fn lowest() -> f64 {
@@ -443,6 +461,7 @@ impl Default for DayStats {
             assimilation: 0.0,
             transpiration: 0.0,
             stress_sum: 0.0,
+            exudation: 0.0,
         }
     }
 }
@@ -476,12 +495,12 @@ pub struct DayReport {
     pub lateral_cohorts: u32,
     /// Total living root length, m.
     pub root_length: f64,
-    /// Root dry mass, g.
+    /// Living root dry mass, structure plus starch, g (starch since R1b).
     pub root_mass: f64,
-    /// Total living structural dry mass, g.
+    /// Total living dry mass, structure plus starch, g (starch since R1b).
     pub dry_mass: f64,
-    /// Structural dry mass ever built, living or shed, g (the plant's total
-    /// production, for comparison with harvested totals).
+    /// Structural dry mass ever built, living or shed, plus the living starch, g (the
+    /// plant's total production, for comparison with harvested totals).
     pub total_dry_mass: f64,
     /// Share of today's potential gross assimilation lost to the sink feedback
     /// (decision 0013 diagnostic: above about 0.2 the plant lacks sinks).
@@ -490,7 +509,8 @@ pub struct DayReport {
     pub fruit_mass: f64,
     /// Living leaf blade and petiole dry mass (unifoliates and trifoliates), g.
     pub leaf_mass: f64,
-    /// Living stem dry mass (internodes, the hypocotyl included), g.
+    /// Living stem dry mass (internodes, the hypocotyl included), structure plus
+    /// starch, g (starch since R1b).
     pub stem_mass: f64,
     /// Seed dry mass in pods, g.
     pub seed_mass: f64,
@@ -539,6 +559,18 @@ pub struct DayReport {
     /// the shortfall).
     #[serde(default)]
     pub transpiration: f64,
+    /// Starch in the living stems and main roots, as dry mass, g (R1b).
+    #[serde(default)]
+    pub storage_mass: f64,
+    /// Living stem structural dry mass, g (`stem_mass` before R1b).
+    #[serde(default)]
+    pub stem_structural_mass: f64,
+    /// Living root structural dry mass, g (`root_mass` before R1b).
+    #[serde(default)]
+    pub root_structural_mass: f64,
+    /// Carbon the roots exuded today, g C (R1b).
+    #[serde(default)]
+    pub exudation: f64,
 }
 
 /// What sets one plant apart from its siblings at sowing (decision 0027): the seed it
@@ -1331,6 +1363,8 @@ impl Plant {
                 _ => wx.t_air,
             })
             .collect();
+        // Phototropism (R1c): each growing apex sums the hour's light.
+        self.sight_hour(ctx);
         // Nodules pay for the hour's fixation first (decision 0020).
         self.fix_hour();
         let respiring = self.phenology.stage != Stage::Mature;
@@ -1352,6 +1386,8 @@ impl Plant {
                 respiring,
                 n_floor: Some(&self.params.nitrogen.growth_floor),
                 secondary: &self.wood_potential,
+                filling: self.phenology.stage == Stage::SeedFill,
+                growing: self.phenology.stage < Stage::Mature,
             },
             &mut self.ledger,
             flows,
@@ -1374,6 +1410,7 @@ impl Plant {
         let emerged = self.emerged();
         let d = &mut self.today;
         d.hours += 1;
+        d.exudation += rep.exudation.0;
         d.t_sum += wx.t_air.0;
         d.stress_sum += stress;
         d.t_min = d.t_min.min(wx.t_air.0);
@@ -1483,6 +1520,66 @@ impl Plant {
         self.shoot_demand = (d, u);
     }
 
+    /// The axes whose apex takes part in phototropism (R1c, decision 0041): growing
+    /// axes with a living apex, in axis order; none for a grass or with the weight 0.
+    fn sighted_axes(&self) -> Vec<usize> {
+        if self.params.phototropism_weight <= 0.0 || self.is_grass() {
+            return Vec::new();
+        }
+        (0..self.axes.len())
+            .filter(|&x| {
+                let ax = &self.axes[x];
+                !ax.terminated && self.arena.alive[ax.apex.index()]
+            })
+            .collect()
+    }
+
+    /// The tips of the growing shoot apices that cast light rays (R1c), in the soil
+    /// frame, in the order [`Plant::day_after_light`] takes their light back.
+    #[must_use]
+    pub fn apex_points(&self) -> Vec<V3> {
+        self.sighted_axes()
+            .iter()
+            .map(|&x| {
+                let i = self.axes[x].apex.index();
+                self.positions.get(i).map_or(self.collar_position, |p| p.1)
+            })
+            .collect()
+    }
+
+    /// Hands each growing apex its light for the coming day.
+    fn set_apex_light(&mut self, lights: &[ps_light::ApexLight]) {
+        debug_assert_eq!(lights.len(), self.sighted_axes().len(), "one per apex");
+        for (x, l) in self.sighted_axes().into_iter().zip(lights) {
+            self.axes[x].sight.light = *l;
+        }
+    }
+
+    /// One hour of phototropism (R1c): each growing apex adds the hour's vector
+    /// irradiance at its tip to what it has seen since its axis' last node.
+    fn sight_hour(&mut self, ctx: &HourCtx<'_>) {
+        if self.params.phototropism_weight <= 0.0 || self.is_grass() {
+            return;
+        }
+        let wx = ctx.weather;
+        let sin_e = if wx.sun.is_up() {
+            wx.sun.direction()[2]
+        } else {
+            0.0
+        };
+        for ax in &mut self.axes {
+            if ax.terminated {
+                continue;
+            }
+            let v = ax
+                .sight
+                .light
+                .vector(ctx.hour, wx.direct, wx.diffuse, sin_e);
+            ax.sight.seen = geometry::add(ax.sight.seen, v, 1.0);
+            ax.sight.hours += 1;
+        }
+    }
+
     /// The light model's input for this plant: its leaflet discs (see
     /// [`Plant::light_points`]) and the internode tips that bound the shoot, in the
     /// soil frame.
@@ -1499,14 +1596,15 @@ impl Plant {
     }
 
     /// The rest of the daily step after [`Plant::day_before_light`]: the light rebuild,
-    /// nitrogen and the day's report. `coeffs` holds one entry per leaflet of
-    /// [`Plant::light_inputs`] from a shared grid, or `None` to build this plant's own.
+    /// nitrogen and the day's report. `shared` holds, from a shared grid, one
+    /// coefficient per leaflet of [`Plant::light_inputs`] and one apex light per point
+    /// of [`Plant::apex_points`]; `None` builds this plant's own grid.
     pub fn day_after_light(
         &mut self,
         sun_path: &[Option<V3>; 24],
-        coeffs: Option<&[LightCoeffs]>,
+        shared: Option<(&[LightCoeffs], &[ps_light::ApexLight])>,
     ) -> DayReport {
-        self.rebuild_light(sun_path, coeffs);
+        self.rebuild_light(sun_path, shared);
         self.mark_expanded();
         let rep = self.report();
         self.close_nitrogen_day();
@@ -1574,7 +1672,11 @@ impl Plant {
         (points, owner)
     }
 
-    fn rebuild_light(&mut self, sun_path: &[Option<V3>; 24], shared: Option<&[LightCoeffs]>) {
+    fn rebuild_light(
+        &mut self,
+        sun_path: &[Option<V3>; 24],
+        shared: Option<(&[LightCoeffs], &[ps_light::ApexLight])>,
+    ) {
         // Absorbed PAR, for low-light acclimation of new organs: a running mean that
         // gives yesterday a weight of 1/3, so one dull day does not set a leaf's
         // thickness (decision 0018).
@@ -1595,12 +1697,21 @@ impl Plant {
         }
         let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
         let (points, owner) = self.leaflets();
-        let coeffs = if let Some(c) = shared {
+        let coeffs = if let Some((c, apices)) = shared {
             debug_assert_eq!(c.len(), points.len(), "one coefficient per leaflet");
+            self.set_apex_light(apices);
             c.to_vec()
         } else {
             let extra = self.internode_tips();
-            ps_light::rebuild_daily_with(&points, &extra, &self.obstacles, sun_path, &self.sky).1
+            let (grid, c) =
+                ps_light::rebuild_daily_with(&points, &extra, &self.obstacles, sun_path, &self.sky);
+            let at = self.apex_points();
+            if let Some(g) = grid.as_ref().filter(|_| !at.is_empty()) {
+                let dirs = ps_light::DayDirections::new(sun_path, &self.sky);
+                let lights = ps_light::apex_light(g, &dirs, &self.sky, &at);
+                self.set_apex_light(&lights);
+            }
+            c
         };
         let mut sums: Vec<(LightCoeffs, f64)> = vec![(zero_coeffs(), 0.0); self.arena.len()];
         for (c, &i) in coeffs.iter().zip(&owner) {
@@ -1812,6 +1923,11 @@ impl Plant {
         let a = &self.arena;
         let alive = |k: OrganKind| a.alive_of(k);
         let mass = |k: OrganKind| a.total_structural(k).0;
+        // Starch as dry mass (R1b): stores hold carbon at the species carbon fraction.
+        let cf = self.params.carbon.carbon_fraction;
+        let starch = |k: OrganKind| alive(k).map(|id| a.storage(id).0).sum::<f64>() / cf;
+        let stem_starch = starch(OrganKind::Internode);
+        let root_starch = starch(OrganKind::Root);
         let height = a
             .alive_ids()
             .filter(|id| a.kind[id.index()] != OrganKind::Root)
@@ -1858,9 +1974,13 @@ impl Plant {
             )
             .unwrap_or(0),
             root_length,
-            root_mass: mass(OrganKind::Root),
-            dry_mass: a.alive_ids().map(|id| a.structural(id).0).sum(),
-            total_dry_mass: a.ids().map(|id| a.structural(id).0).sum(),
+            root_mass: mass(OrganKind::Root) + root_starch,
+            dry_mass: a.alive_ids().map(|id| a.structural(id).0).sum::<f64>()
+                + stem_starch
+                + root_starch,
+            total_dry_mass: a.ids().map(|id| a.structural(id).0).sum::<f64>()
+                + stem_starch
+                + root_starch,
             feedback_loss: if self.today.gross_potential > 0.0 {
                 self.today.gross_lost / self.today.gross_potential
             } else {
@@ -1868,7 +1988,7 @@ impl Plant {
             },
             fruit_mass: mass(OrganKind::Pod) + mass(OrganKind::SeedInPod),
             leaf_mass: mass(OrganKind::Leaf),
-            stem_mass: mass(OrganKind::Internode),
+            stem_mass: mass(OrganKind::Internode) + stem_starch,
             seed_mass: mass(OrganKind::SeedInPod),
             height,
             shortfall: self.shortfall.0,
@@ -1889,6 +2009,10 @@ impl Plant {
             tap_root_diameter: self.tap_root_diameter(TAP_ROOT_DEPTH),
             fine_root_length,
             transpiration: self.today.transpiration,
+            storage_mass: stem_starch + root_starch,
+            stem_structural_mass: mass(OrganKind::Internode),
+            root_structural_mass: mass(OrganKind::Root),
+            exudation: self.today.exudation,
         }
     }
 }

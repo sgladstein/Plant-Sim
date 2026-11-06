@@ -84,6 +84,8 @@ fn run_hour(
             respiring: true,
             n_floor: None,
             secondary: &[],
+            filling: false,
+            growing: true,
         },
         ledger,
     )
@@ -200,10 +202,12 @@ proptest! {
             g.nitrogen[id.index()] = GramsN(0.0);
             g.curve[id.index()] = ExpansionCurve::none();
         }
-        let before: f64 = g.reserve.iter().map(|x| x.0).sum();
+        // Reserves plus stores: the internode's store may refill (R1b).
+        let total = |g: &OrganArena| -> f64 { g.ids().map(|id| g.reserve[id.index()].0 + g.storage(id).0).sum() };
+        let before = total(&g);
         let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
         run_hour(&mut g, &[GramsC(0.0); 4], &mut ledger, 20.0);
-        let after: f64 = g.reserve.iter().map(|x| x.0).sum();
+        let after = total(&g);
         prop_assert!((after - before).abs() < 1e-12);
         for (id, v) in ids.iter().zip(&r) {
             let now = g.reserve[id.index()].0;
@@ -281,6 +285,8 @@ fn inputs_must_cover_every_organ() {
             respiring: true,
             n_floor: None,
             secondary: &[],
+            filling: false,
+            growing: true,
         },
         &mut ledger,
     );
@@ -396,6 +402,8 @@ fn secondary_growth_is_a_low_priority_sink() {
         respiring: false,
         n_floor: None,
         secondary: &pot,
+        filling: false,
+        growing: true,
     };
     let rep = allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
     // A large potential is limited by the priority share of the reserve above the
@@ -485,6 +493,8 @@ fn shedding_does_not_resorb_wood() {
         respiring: false,
         n_floor: None,
         secondary: &pot,
+        filling: false,
+        growing: true,
     };
     allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
     let wood = g.secondary(i).0;
@@ -496,4 +506,188 @@ fn shedding_does_not_resorb_wood() {
     let expect = primary * p.carbon_fraction * p.resorption_fraction;
     assert!((to_seed - expect).abs() <= 1e-15, "{to_seed} vs {expect}");
     assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-12);
+}
+
+/// R1b (decision 0040): a stem's store refills above `C_on`, never past `S_max`; holds
+/// between `C_off` and `C_on`; releases below `C_off`, at most `k_r · S` an hour and
+/// no further than `C_off`. Reserve plus store is conserved to 1e-12 every hour and
+/// the store never goes negative.
+#[test]
+fn store_fills_holds_and_releases() {
+    let p = params();
+    let sp = p.storage;
+    assert!(sp.capacity > 0.0 && sp.off < sp.on);
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let i = g
+        .add(&organ(OrganKind::Internode, None, 0.0, 0.0), &a)
+        .unwrap();
+    // No maintenance and no growth: only the store moves carbon.
+    g.nitrogen[i.index()] = GramsN(0.0);
+    let w = g.primary(i).0;
+    let s_max = sp.capacity * g.structural(i).0 * p.carbon_fraction;
+    let conc = |g: &OrganArena| g.reserve[i.index()].0 / w;
+    let none = [GramsC(0.0)];
+    let hour = |g: &mut OrganArena, ledger: &mut CarbonLedger| {
+        let (c0, s0) = (conc(g), g.storage(i).0);
+        let before = g.reserve[i.index()].0 + s0;
+        run_hour(g, &none, ledger, 20.0);
+        let s = g.storage(i).0;
+        assert!((g.reserve[i.index()].0 + s - before).abs() < 1e-12);
+        assert!((0.0..=s_max * (1.0 + 1e-12)).contains(&s), "{s} of {s_max}");
+        if s > s0 {
+            assert!(c0 > sp.on, "refilled at {c0}");
+        }
+        if s < s0 {
+            assert!(c0 < sp.off, "released at {c0}");
+            assert!(s0 - s <= sp.release_rate * s0 * (1.0 + 1e-12));
+            assert!(conc(g) <= sp.off + 1e-12);
+        }
+        (c0, s0, s)
+    };
+    // A surplus fills the store.
+    g.reserve[i.index()] = GramsC(0.4 * w);
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    for _ in 0..24 * 10 {
+        hour(&mut g, &mut ledger);
+    }
+    let full = g.storage(i).0;
+    assert!(full > 0.99 * s_max, "{full} of {s_max}");
+    // Between the thresholds nothing moves.
+    g.reserve[i.index()] = GramsC(0.5 * (sp.on + sp.off) * w);
+    ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    for _ in 0..24 {
+        let (_, s0, s) = hour(&mut g, &mut ledger);
+        assert!((s - s0).abs() < 1e-18);
+    }
+    // A shortage draws it down, up to the release concentration.
+    g.reserve[i.index()] = GramsC(0.0);
+    ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    for _ in 0..24 * 10 {
+        hour(&mut g, &mut ledger);
+    }
+    assert!(g.storage(i).0 < full);
+    assert!((conc(&g) - sp.off).abs() < 1e-3 * sp.off, "{}", conc(&g));
+}
+
+/// R1b (decision 0040): a root exudes `e` times its maintenance from the reserve it
+/// has, never into debt, and the ledger books it and still closes.
+#[test]
+fn roots_exude_a_share_of_maintenance() {
+    let p = params();
+    assert!(p.storage.exudation > 0.0);
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let r = g.add(&organ(OrganKind::Root, None, 0.0, 0.01), &a).unwrap();
+    let none = [GramsC(0.0)];
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    let rep = run_hour(&mut g, &none, &mut ledger, 20.0);
+    assert!(rep.maintenance.0 > 0.0);
+    assert!((rep.exudation.0 - p.storage.exudation * rep.maintenance.0).abs() < 1e-18);
+    assert!((ledger.exudation.0 - rep.exudation.0).abs() < 1e-18);
+    assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-12);
+    // In debt it exudes nothing.
+    g.reserve[r.index()] = GramsC(-1e-4);
+    ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    let rep = run_hour(&mut g, &none, &mut ledger, 20.0);
+    assert!(rep.exudation.0.abs() < 1e-18);
+    assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-12);
+}
+
+/// R1b (decision 0040): while seeds fill, a store stops refilling and gives back
+/// `k_f · S` an hour even with a full reserve; a store still expanding does not refill.
+#[test]
+fn filling_empties_the_store() {
+    let p = params();
+    let sp = p.storage;
+    assert!(sp.fill_release_rate > 0.0);
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let i = g
+        .add(&organ(OrganKind::Internode, None, 0.0, 0.0), &a)
+        .unwrap();
+    g.nitrogen[i.index()] = GramsN(0.0);
+    let w = g.primary(i).0;
+    g.reserve[i.index()] = GramsC(0.5 * w);
+    g.store(i, GramsC(0.001)).unwrap();
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    let temps = vec![Celsius(20.0); g.len()];
+    let none = [GramsC(0.0)];
+    for _ in 0..24 {
+        let s0 = g.storage(i).0;
+        allocation::hourly(
+            &mut g,
+            &a,
+            &p,
+            &temp(),
+            &HourInputs {
+                temperature: &temps,
+                income: &none,
+                ftsw: 1.0,
+                stress: 1.0,
+                respiring: true,
+                n_floor: None,
+                secondary: &[],
+                filling: true,
+                growing: true,
+            },
+            &mut ledger,
+        )
+        .unwrap();
+        let s = g.storage(i).0;
+        assert!(
+            (s - s0 * (1.0 - sp.fill_release_rate)).abs() < 1e-15,
+            "{s0} -> {s}"
+        );
+    }
+    // An internode still expanding does not refill, however much sugar it holds.
+    let mut g = OrganArena::new();
+    let i = g
+        .add(&organ(OrganKind::Internode, None, 0.1, 0.5), &a)
+        .unwrap();
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    run_hour(&mut g, &none, &mut ledger, 20.0);
+    assert!(g.storage(i).0.abs() < 1e-18);
+}
+
+/// R1d (decision 0042): from maturity nothing grows. The organs keep their mass, the
+/// reserve stays in the plant and the ledger stays closed.
+#[test]
+fn nothing_grows_after_maturity() {
+    let p = params();
+    let (mut g, ids) = plant(0.5);
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    let temps = vec![Celsius(25.0); g.len()];
+    let income = vec![GramsC(0.0); g.len()];
+    let mass: Vec<f64> = ids.iter().map(|&id| g.structural(id).0).collect();
+    let reserve: f64 = ids.iter().map(|id| g.reserve[id.index()].0).sum();
+    for _ in 0..24 * 5 {
+        allocation::hourly(
+            &mut g,
+            &Allometry::generic_herb(),
+            &p,
+            &temp(),
+            &HourInputs {
+                temperature: &temps,
+                income: &income,
+                ftsw: 1.0,
+                stress: 1.0,
+                respiring: false,
+                n_floor: None,
+                secondary: &[],
+                filling: false,
+                growing: false,
+            },
+            &mut ledger,
+        )
+        .unwrap();
+    }
+    let after: Vec<f64> = ids.iter().map(|&id| g.structural(id).0).collect();
+    assert!(
+        mass.iter().zip(&after).all(|(a, b)| (a - b).abs() < 1e-15),
+        "{mass:?} -> {after:?}"
+    );
+    let left: f64 = ids.iter().map(|id| g.reserve[id.index()].0).sum();
+    assert!((left - reserve).abs() < 1e-12, "{reserve} -> {left}");
+    assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-9);
 }

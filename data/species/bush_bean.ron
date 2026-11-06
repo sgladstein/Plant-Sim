@@ -1,7 +1,7 @@
 // Bush bean archetype (Phaseolus vulgaris, determinate type I). Design plan §3.16, §6.1.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 13,
+  schema: 15,
   id: "bush_bean",
   name: "Bush bean archetype",
   growth_form: Herb,
@@ -59,7 +59,7 @@ Species(
     pod_wall_mass: (value: 0.6, unit: "g DM", source: "~ (pod wall about a third of pod mass at 4 seeds of 0.3 g)"),
     pod_expansion: (value: 154.0, unit: "Cd", source: "CROPGRO LNGSH 8 photothermal days (research review item 18); restated from 145.0 for the development trapezoid (decision 0032)"),
     seed_fill_delay: (value: 74.0, unit: "Cd", source: "CROPGRO about 3.5 photothermal days after pod start (research review item 18); restated from 70.0 for the development trapezoid (decision 0032)"),
-    seed_fill: (value: 350.0, unit: "Cd", source: "CROPGRO SFDUR 15 to 22 photothermal days (research review item 18); restated from 330.0 for the development trapezoid (decision 0032)"),
+    seed_fill: (value: 289.0, unit: "Cd", source: "CROPGRO SFDUR 15 photothermal days, the generic determinate bush (Andean Habit 1; determinate cultivars 14 to 19, BNGRO048.CUL), at 19.25 Cd per photothermal day (decision 0032); was 350, from the 15 to 22 range of every habit, which left late pods filling after maturity (decision 0042)"),
     phyllochron: (value: 59.5, unit: "Cd", source: "CROPGRO TRIFL 0.34 leaves per thermal day, about 53 to 65 Cd per node (research review); restated from 55.0 for the development trapezoid (decision 0032)"),
     leaf_expansion: (value: 162.0, unit: "Cd", source: "~ (decision 0013); restated from 150.0 for the development trapezoid (decision 0032)"),
     internode_expansion: (value: 130.0, unit: "Cd", source: "~ (decision 0013); restated from 120.0 for the development trapezoid (decision 0032)"),
@@ -86,6 +86,8 @@ Species(
     abaxial_conductance_share: (value: 0.875, unit: "-", source: "abaxial stomata about 7 times as many as adaxial in bean (Kanemasu and Tanner 1969, abstract; research notes/boundary_layer_wind.md)"),
     root_segment_length: (value: 2.0, unit: "cm", source: "model resolution (decision 0013)"),
     shoot_gravitropism: (value: 0.3, unit: "-", source: "~ (decision 0013)"),
+    phototropism_weight: (value: 0.3, unit: "-", source: "~ R1 spec §5 (decision 0041): a new internode turns 0.3 of the angle toward the light it saw, before gravitropism pulls it 0.3 of the way to vertical"),
+    phototropism_max_per_day: (value: 10.0, unit: "deg", source: "~ conservative; seedlings of sunflower and pea bend about 25 degrees in 2 h, and no bean stem kinetics were found (R1 numbers, docs/research/realism-plan/numbers/README.md; decision 0041)"),
     shade_senescence_days: (value: 5.0, unit: "day", source: "design plan §3.11"),
     hypocotyl_specific_length: (value: 150.0, unit: "cm/g", source: "~ thin, watery hypocotyl the seed reserve can pay for (decision 0013)"),
     reserve_feedback_onset: (value: 0.10, unit: "g C / g DM", source: "~ leaf reserve where end-product inhibition starts, about 18% non-structural carbohydrate in total dry mass (L-PEACH style feedback, Allen et al. 2005; decision 0013)"),
@@ -206,6 +208,7 @@ Species(
     nodule_nitrate_onset: (value: 5.0, unit: "mg N / kg", source: "~ research m2-m3 notes (to calibrate against 2 to 10 mM solution thresholds)"),
     nodule_nitrate_full: (value: 30.0, unit: "mg N / kg", source: "~ research m2-m3 notes"),
     nodule_nitrate_floor: (value: 0.1, unit: "-", source: "~ research m2-m3 notes"),
+    seed_fill_mining_first: (value: 1.0, unit: "-", source: "CROPGRO: from R5 the seeds' nitrogen demand is served first by mobilization, soil uptake covers the rest (archive m2-m3 science notes); the 'self-destruction' of Sinclair and de Wit 1975 (R1 spec §4.3)"),
   ),
   climbing: (             // WP22, decision 0021; read only when habit >= 0.5 (the pole bean's values, unused here)
     max_main_nodes: (value: 30.0, unit: "-", source: "~ research m2-m3 notes: open-ended, cap 25 to 35"),
@@ -244,6 +247,16 @@ Species(
     points: [(0.0, 0.0), (4.0, 0.0005), (5.0, 0.001), (7.0, 0.0015), (11.0, 0.002), (13.0, 0.0023), (18.0, 0.0026), (24.0, 0.00285), (29.0, 0.003)],
     x_unit: "day", unit: "cm/day",
     source: "OpenSimRoot bean (Carioca) growthrates.xml, secondaryGrowthRate by root segment age: a diameter increment that adds 0.1 cm in 43 days"),
+  storage: (              // schema 14, R1b, decision 0040: the starch store of stems and main roots, and root exudation
+    storage_capacity: (value: 0.25, unit: "g / g DM", source: "~ calibrated to the stem dry mass decline in seed fill (R1 spec §6: -10 to -35%, UFGA8501), within 0.15 to 0.30; greenhouse bean stem starch reaches 30 to 68% of dry mass (Waters et al. 1980), a ceiling (R1 numbers, research thread)"),
+    root_storage_capacity: (value: 0.25, unit: "g / g DM", source: "~ the stem value: the bean tap root stores starch in its secondary xylem and phloem parenchyma (R1 spec §4.4, \"0.25 bean stem and root\")"),
+    storage_on: (value: 0.15, unit: "g C / g DM", source: "~ above the leaves' sink feedback onset 0.10, so a stem stores only sugar the leaves are already holding back; at 0.12 (R1 spec §4.4) the store took sugar that growing organs needed, since their growth follows their reserve: the pot bean set 9.8 pods against 12.5, and wheat stood 3% shorter (four-seed means; R1b, decision 0040)"),
+    storage_off: (value: 0.06, unit: "g C / g DM", source: "~ just above the growth floor 0.05, so the store gives back before growth stops (R1 spec §4.4)"),
+    storage_refill_rate: (value: 0.05, unit: "1/h", source: "~ fills about 70% of an empty store in a day of surplus (R1 spec §4.4)"),
+    storage_release_rate: (value: 0.02, unit: "1/h", source: "~ gives back about 40% of the store in a day of shortage; bean stem starch fell 42% in 7 days of pod fill (Waters et al. 1980) (R1 spec §4.4)"),
+    storage_fill_release_rate: (value: 0.08, unit: "1/day", source: "~ from seed fill the store stops refilling and gives back this share a day whatever the reserve: bean stem starch fell 42% in 7 days of pod fill (Waters et al. 1980), about 0.08 a day; stem sugars fall from about 7% to 1.6% of dry mass through fill (Pena-Valdivia 1991) (R1 numbers, research thread)"),
+    exudation_fraction: (value: 0.4, unit: "-", source: "legume exudates are about 2.7% of assimilated 14C (Warembourg 2003), rhizodeposition 5 to 10% of assimilated C (Nguyen 2003), bean root respiration about 20% of daytime assimilation (Nielsen 2001): 0.1 to 0.5 of root respiration; OpenSimRoot bean exudates.xml has 0.67 (R1 numbers, research thread)"),
+  ),
   roots: [
     RootType(name: "tap", origin: Radicle, order: 0,
       count: (value: 1.0, unit: "-", source: "botany"),

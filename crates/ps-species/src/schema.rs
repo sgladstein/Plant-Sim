@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 13;
+pub const SCHEMA: u32 = 15;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -216,6 +216,11 @@ param_group!(
         root_segment_length: "cm",
         /// Share of the way to vertical a new internode turns per node (shoot gravitropism).
         shoot_gravitropism: "-",
+        /// Share of the angle between a new internode and the light it saw that the
+        /// internode turns toward the light (R1c, decision 0041; schema 15).
+        phototropism_weight: "-",
+        /// Most a shoot turns toward the light in a day (R1c, decision 0041).
+        phototropism_max_per_day: "deg",
         /// Days below the shade light threshold before a leaf senesces.
         shade_senescence_days: "day",
         /// Hypocotyl length per dry mass.
@@ -308,6 +313,10 @@ param_group!(
         nodule_nitrate_full: "mg N / kg",
         /// Nodule initiation at high nitrate, relative to none.
         nodule_nitrate_floor: "-",
+        /// 1 if, from seed fill on, the seeds' nitrogen comes first from mining the
+        /// plant's organs and soil uptake covers the rest; 0 if mining only covers what
+        /// soil uptake left short (schema 14, R1b, decision 0040).
+        seed_fill_mining_first: "-",
     }
 );
 
@@ -459,6 +468,30 @@ param_group!(
         pipe_area_per_fruit_mass: "m2/g",
         /// Most a stem's radius can grow per day (cambial activity).
         stem_radial_rate_max: "mm/day",
+    }
+);
+
+param_group!(
+    /// Non-structural carbon beyond the reserve: the starch store of stems and main
+    /// roots, and root exudation (schema 14, realism plan R1b, decision 0040).
+    Storage {
+        /// Most starch a stem segment holds per unit of its structural dry mass.
+        storage_capacity: "g / g DM",
+        /// Most starch a main-root segment holds per unit of its structural dry mass.
+        root_storage_capacity: "g / g DM",
+        /// Reserve concentration above which the store refills.
+        storage_on: "g C / g DM",
+        /// Reserve concentration below which the store releases.
+        storage_off: "g C / g DM",
+        /// Share of the store's free room filled per hour while it refills.
+        storage_refill_rate: "1/h",
+        /// Share of the store released per hour while it releases.
+        storage_release_rate: "1/h",
+        /// Share of the store released per day from seed fill on, whatever the
+        /// reserve, when the store also stops refilling (remobilization to the seeds).
+        storage_fill_release_rate: "1/day",
+        /// Root exudation as a share of each root's maintenance respiration.
+        exudation_fraction: "-",
     }
 );
 
