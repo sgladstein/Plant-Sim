@@ -24,8 +24,10 @@
 //! Sinks are a symptom more than a cause (a plant whose pods aborted in a heat wave
 //! has nowhere to put its sugar), so a week's top factor and the season ranking use the
 //! five environmental factors; sinks stay in the weekly numbers only. The
-//! season ranks factors that hit while flowers were open first, then by their worst
-//! week, since one bad week in bloom can cost a season's pods.
+//! season ranks factors that hit in a bloom week first, by their bloom-week peak, then
+//! the rest by their worst week, since one bad week in bloom can cost a season's pods.
+//! Bloom is a flower opened within the last flower lifespan, and the debrief stops at
+//! maturity.
 
 use ps_physio::phenology::Stage;
 use ps_species::Param;
@@ -182,6 +184,8 @@ struct Temps {
     pod_set: [f64; 4],
     /// FTSW below which flowers abort.
     abort_ftsw: f64,
+    /// Days a flower stays open.
+    flower_days: usize,
 }
 
 /// The model's pod-set temperature response (mirrors ps-arch
@@ -214,13 +218,10 @@ fn trapezoid(t: [f64; 4], x: f64) -> f64 {
     }
 }
 
-fn day_pressure(row: &DayRow, temps: &Temps, full_sun: f64) -> [f64; 6] {
+fn day_pressure(row: &DayRow, bloom: bool, temps: &Temps, full_sun: f64) -> [f64; 6] {
     let r = &row.report;
     let e = &row.env;
     let mut p = [0.0; 6];
-    // Bloom: any flower open. The model sets pods for every flower that closes, whatever
-    // the stage, so this is wider than Flowering and PodSet.
-    let bloom = r.flowers > 0;
     let demand = r.transpiration + r.shortfall;
     let mut water = if demand > 0.0 {
         r.shortfall / demand
@@ -278,6 +279,8 @@ fn temps(state: &WorldState, species: &str) -> Option<Temps> {
             c.pod_set_t_max.value,
         ],
         abort_ftsw: c.drought_abortion_ftsw.value,
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        flower_days: c.flower_lifespan.value.round().max(1.0) as usize,
     })
 }
 
@@ -318,12 +321,6 @@ fn spans_text(spans: &[(u32, u32)]) -> String {
         .join(", ")
 }
 
-fn in_bloom(weeks: &[WeekDebrief], spans: &[(u32, u32)]) -> bool {
-    weeks
-        .iter()
-        .any(|w| w.bloom && spans.iter().any(|(a, b)| (*a..=*b).contains(&w.week)))
-}
-
 fn weeks_over(weeks: &[WeekDebrief], f: Factor, notable: f64) -> usize {
     weeks
         .iter()
@@ -339,30 +336,53 @@ fn is_chronic(weeks: &[WeekDebrief], f: Factor, notable: f64) -> bool {
     over >= CHRONIC_SHARE * n
 }
 
+/// A season-long factor that never hit while flowers were open: the setting, not an
+/// event. One that hit in bloom is always an event, however long it lasted.
+fn is_backdrop(weeks: &[WeekDebrief], bloom_peak: &[f64; 6], f: Factor, notable: f64) -> bool {
+    bloom_peak[f.index()] < notable && is_chronic(weeks, f, notable)
+}
+
 /// Share of weeks above the notable pressure from which a factor is called a backdrop
 /// of the whole season rather than an event.
 const CHRONIC_SHARE: f64 = 0.6;
 
-fn summary(weeks: &[WeekDebrief], peak: &[f64; 6], ranked: &[Factor], notable: f64) -> Vec<String> {
+fn summary(
+    weeks: &[WeekDebrief],
+    peak: &[f64; 6],
+    bloom_peak: &[f64; 6],
+    ranked: &[Factor],
+    notable: f64,
+) -> Vec<String> {
     let mut out = Vec::new();
-    #[allow(clippy::cast_precision_loss)]
-    let chronic =
-        |f: Factor| weeks_over(weeks, f, notable) as f64 >= CHRONIC_SHARE * weeks.len() as f64;
-    let events: Vec<Factor> = ranked.iter().copied().filter(|f| !chronic(*f)).collect();
-    let backdrop: Vec<Factor> = ranked.iter().copied().filter(|f| chronic(*f)).collect();
+    let events: Vec<Factor> = ranked
+        .iter()
+        .copied()
+        .filter(|f| !is_backdrop(weeks, bloom_peak, *f, notable))
+        .collect();
+    let backdrop: Vec<Factor> = ranked
+        .iter()
+        .copied()
+        .filter(|f| is_backdrop(weeks, bloom_peak, *f, notable))
+        .collect();
     if events.is_empty() {
         out.push(
             "No single week stood out: nothing in its surroundings hit this plant hard.".into(),
         );
     }
+    let bloom_weeks: Vec<WeekDebrief> = weeks.iter().filter(|w| w.bloom).cloned().collect();
     for f in events.iter().take(3) {
-        let spans = week_span(weeks, *f, notable);
-        let bloom = if in_bloom(weeks, &spans) {
-            ", during bloom"
+        let i = f.index();
+        // A factor that hit in bloom is told by its bloom weeks only.
+        let (pct, spans, bloom) = if bloom_peak[i] >= notable {
+            (
+                bloom_peak[i],
+                week_span(&bloom_weeks, *f, notable),
+                ", during bloom",
+            )
         } else {
-            ""
+            (peak[i], week_span(weeks, *f, notable), "")
         };
-        let pct = (peak[f.index()] * 100.0).round();
+        let pct = (pct * 100.0).round();
         out.push(format!(
             "{}: up to {pct:.0}% in {}{bloom}. {}",
             capitalise(f.name()),
@@ -401,6 +421,7 @@ pub fn week_event(w: &WeekDebrief, backdrop: &[Factor], notable: f64) -> Option<
 
 /// The debrief of a run, from its daily table.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One pass per plant: bloom days, weeks, ranking.
 pub fn debrief(state: &WorldState, refs: &DebriefRefs) -> Debrief {
     let full_sun = refs.full_sun_radiation.value;
     let notable = refs.notable_pressure.value;
@@ -409,21 +430,37 @@ pub fn debrief(state: &WorldState, refs: &DebriefRefs) -> Debrief {
         let Some(temps) = temps(state, &p.species) else {
             continue;
         };
-        let rows: Vec<&DayRow> = state
-            .history
+        let all: Vec<&DayRow> = state.history.iter().filter(|r| r.plant == p.id).collect();
+        // Bloom on a day: a flower opened within the last flower lifespan. The daily
+        // `flowers` column counts flowers opened so far. The model sets pods for every
+        // flower that closes, whatever the stage, so this is wider than Flowering and
+        // PodSet.
+        let open: Vec<bool> = (0..all.len())
+            .map(|i| {
+                let before = i
+                    .checked_sub(temps.flower_days)
+                    .map_or(0, |j| all[j].report.flowers);
+                all[i].report.flowers > before
+            })
+            .collect();
+        // From emergence to maturity: after maturity nothing more can be lost.
+        let rows: Vec<(&DayRow, bool)> = all
             .iter()
-            .filter(|r| r.plant == p.id && r.report.stage.is_some_and(|s| s >= Stage::Emerged))
+            .zip(&open)
+            .filter(|(r, _)| r.report.stage.is_some_and(|s| s >= Stage::Emerged))
+            .take_while(|(r, _)| r.report.stage.is_some_and(|s| s < Stage::Mature))
+            .map(|(r, b)| (*r, *b))
             .collect();
         if rows.is_empty() {
             continue;
         }
         let mut weeks: Vec<WeekDebrief> = Vec::new();
         let mut prev_pods = 0_i64;
-        let mut prev_mass = rows[0].report.total_dry_mass;
+        let mut prev_mass = rows[0].0.report.total_dry_mass;
         for (i, chunk) in rows.chunks(7).enumerate() {
             let mut sum = [0.0; 6];
-            for r in chunk {
-                let d = day_pressure(r, &temps, full_sun);
+            for (r, bloom) in chunk {
+                let d = day_pressure(r, *bloom, &temps, full_sun);
                 for (s, p) in sum.iter_mut().zip(d) {
                     *s += p;
                 }
@@ -431,14 +468,14 @@ pub fn debrief(state: &WorldState, refs: &DebriefRefs) -> Debrief {
             #[allow(clippy::cast_precision_loss)]
             let n = chunk.len() as f64;
             let pressure = sum.map(|s| s / n);
-            let last = chunk[chunk.len() - 1];
+            let last = chunk[chunk.len() - 1].0;
             let top = ranked(&pressure, notable).first().copied();
             let pods = i64::from(last.report.pods);
             weeks.push(WeekDebrief {
                 week: u32::try_from(i + 1).unwrap_or(u32::MAX),
-                days: (chunk[0].day, last.day),
-                stage: chunk.iter().filter_map(|r| r.report.stage).max(),
-                bloom: chunk.iter().any(|r| r.report.flowers > 0),
+                days: (chunk[0].0.day, last.day),
+                stage: chunk.iter().filter_map(|(r, _)| r.report.stage).max(),
+                bloom: chunk.iter().any(|(_, b)| *b),
                 pressure,
                 top,
                 pods_gained: pods - prev_pods,
@@ -471,17 +508,24 @@ pub fn debrief(state: &WorldState, refs: &DebriefRefs) -> Debrief {
             }
         }
         let mut rank = ranked(&peak, notable);
+        // Bloom factors first, by their bloom-week peak; then the rest by their peak.
+        let key = |f: &Factor| {
+            let b = bloom_peak[f.index()];
+            if b >= notable {
+                (true, b)
+            } else {
+                (false, peak[f.index()])
+            }
+        };
         rank.sort_by(|a, b| {
-            let (ba, bb) = (bloom_peak[a.index()], bloom_peak[b.index()]);
-            (bb >= notable)
-                .cmp(&(ba >= notable))
-                .then(peak[b.index()].total_cmp(&peak[a.index()]))
+            let (ka, kb) = (key(a), key(b));
+            kb.0.cmp(&ka.0).then(kb.1.total_cmp(&ka.1))
         });
-        let summary = summary(&weeks, &peak, &rank, notable);
+        let summary = summary(&weeks, &peak, &bloom_peak, &rank, notable);
         let backdrop: Vec<Factor> = rank
             .iter()
             .copied()
-            .filter(|f| is_chronic(&weeks, *f, notable))
+            .filter(|f| is_backdrop(&weeks, &bloom_peak, *f, notable))
             .collect();
         plants.push(PlantDebrief {
             plant: p.id,

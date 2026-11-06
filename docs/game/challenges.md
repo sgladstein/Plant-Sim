@@ -35,7 +35,7 @@ single draw. The review's eight-seed sweep is in the project files
 | Challenge | Setting | Player controls | Sweep (0.23.0, seed 7) | Medals (B / S / G) |
 | --- | --- | --- | --- | --- |
 | Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | 6 L spread over the whole season: 2 to 5 pods; the same 6 L in bloom (days 40 to 75, every 1 to 4 days): 9 to 14 | 5 / 8 / 11 pods |
-| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 20 (blooms into the heat): 1 to 8 pods; days 22 to 40: 6 to 18, mostly 11 to 18 | 8 / 12 / 15 pods |
+| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 20 (blooms into the heat): 1 to 8 pods; days 22 to 40: 6 to 18, mostly 11 to 18 | 9 / 12 / 15 pods |
 | Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none: 0.5 g seed; all at sowing: 4.0; all on day 45: 2.1; split or mid-season (days 25 to 35, or several doses from day 15 to 55): 4.9 to 7.4 | 4.5 / 6 / 7 g seed |
 
 The tests in `crates/ps-game/tests/challenges.rs` replay a good and a poor strategy for
@@ -63,17 +63,22 @@ Reading rules:
   pressure (0.15, a guess in `data/game/debrief.ron`). Sinks are a symptom (a plant that
   lost its pods to heat has nowhere to put sugar), so they stay in the weekly numbers
   and never top a week or reach the summary.
-- The season ranks factors that hit while flowers were open first, then by their worst
-  week, since one bad week in bloom can cost the season's pods. "During bloom" means any
-  flower open (`flowers > 0`), which runs well into seed fill. A factor notable in 60% or more of the weeks is reported as the season's
+- The debrief runs from emergence to maturity. A day is in bloom when a flower opened
+  within the last flower lifespan (3 days for the bush bean; the daily `flowers` column
+  counts flowers opened so far), which runs well into seed fill.
+- The season ranks factors that hit in a bloom week first, by their bloom-week peak
+  (the number quoted, with only the bloom weeks named), then the rest by their worst
+  week, since one bad week in bloom can cost the season's pods. A factor that hit in
+  bloom is never called backdrop. A factor notable in 60% or more of the weeks is reported as the season's
   backdrop ("All season, mildly: cool weather and light"), not as an event.
-- A span that includes flowering or pod set is marked "during bloom".
+- "During bloom" is added when the quoted spans are bloom weeks.
 
 Known limits: the temperature pressure uses the daily mean, while the model steps
 hourly; light ignores shade from neighbours; the debrief names pressures, it does not
 count the pods each one cost; weekly means dilute a short heat wave that straddles two
-weeks (on `response/heat_at_flowering` heat is named for every plant but often after
-light).
+weeks. On `response/heat_at_flowering` heat leads the summary for 7 of 8 plants; on
+`response/drought_from_flowering` water leads for all 8. A frost kill is not reported
+yet.
 
 ## Viewer
 
