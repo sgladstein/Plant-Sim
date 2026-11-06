@@ -233,6 +233,8 @@ pub struct Tools {
     pub enabled: bool,
     /// Whether the breeding bench window is open (WP30).
     pub breeding: bool,
+    /// Whether the challenge list is open (WP32).
+    pub challenges: bool,
 }
 
 impl Default for Tools {
@@ -254,6 +256,7 @@ impl Default for Tools {
             },
             enabled: false,
             breeding: false,
+            challenges: false,
         }
     }
 }

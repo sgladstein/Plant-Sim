@@ -1,0 +1,12 @@
+// The nitrogen challenge: time a small fertilizer budget for the most seed.
+Challenge(
+  schema: 1,
+  id: "hungry_soil",
+  title: "Hungry soil",
+  brief: "Worn-out soil and no rhizobia to fix nitrogen. You have half a gram of nitrogen fertilizer. Grow the most seed weight by day 90.",
+  hint: "Leaves need nitrogen while they are growing. Feed once the plant has roots to take it up, before the pods start to fill.",
+  scenario: "challenges/hungry_soil",
+  score: (metric: PeakSum("seed_mass_g"), label: "g of seed", higher_is_better: true),
+  rules: (allowed: [Fertilize, Harvest], nitrogen_budget: Some(0.5)),
+  medals: (bronze: 6.0, silver: 9.0, gold: 11.5),
+)

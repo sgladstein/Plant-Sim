@@ -9,7 +9,12 @@
 //! ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]
 //! ps-cli founders LIBRARY SPECIES [--count N] [--world-seed S] [--line] [--data DIR]
 //! ps-cli breed  LIBRARY PLAN [--data DIR] [--out DIR]
+//! ps-cli challenge ID [LOG] [--data DIR] [--out DIR]
 //! ```
+//!
+//! `challenge` replays a log (none: an empty log) on the challenge's scenario, prints
+//! the score, the medal, any broken rule and the debrief; with `--out` it also writes
+//! the run's CSVs and `debrief.ron` to `OUT/<id>/`.
 //!
 //! `founders` adds pure lines to a seed library file (created if missing): the species
 //! line with `--line`, else `--count` lines drawn from the species population. `breed`
@@ -40,7 +45,8 @@ const USAGE: &str = "usage:
   ps-cli replay --snapshot FILE [--out DIR]
   ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]
   ps-cli founders LIBRARY SPECIES [--count N] [--world-seed S] [--line] [--data DIR]
-  ps-cli breed  LIBRARY PLAN [--data DIR] [--out DIR]";
+  ps-cli breed  LIBRARY PLAN [--data DIR] [--out DIR]
+  ps-cli challenge ID [LOG] [--data DIR] [--out DIR]";
 
 /// Options that take no value.
 const FLAGS: [&str; 2] = ["allow-missing", "line"];
@@ -680,6 +686,74 @@ fn bench_csv(rows: &[ps_breed::BenchRow]) -> String {
     csv
 }
 
+fn cmd_challenge(a: &Args) -> Result<()> {
+    a.check_keys(&["data", "out"])?;
+    let (id, log) = match a.files.as_slice() {
+        [id] => (id, Vec::new()),
+        [id, log] => {
+            let text = std::fs::read_to_string(log)
+                .with_context(|| format!("reading {}", log.display()))?;
+            let actions: Vec<Action> =
+                ron::from_str(&text).with_context(|| format!("parsing {}", log.display()))?;
+            (id, actions)
+        }
+        _ => bail!("challenge needs an id and optionally a log\n{USAGE}"),
+    };
+    let data = a.data_dir();
+    let id = id.to_string_lossy();
+    let c = ps_game::load_challenge(&data, &id)?;
+    let (w, o) = ps_game::play(&data, &c, &log)?;
+    println!("{}: {:.2} {}", c.title, o.score, c.score.label);
+    println!(
+        "medal: {}",
+        o.medal
+            .map_or_else(|| "none".to_string(), |m| format!("{m:?}"))
+    );
+    println!(
+        "water by can: {:.2} L, nitrogen added: {:.3} g",
+        o.water_used.0, o.nitrogen_used.0
+    );
+    for b in &o.breaks {
+        println!("rule broken: {b}");
+    }
+    if !o.version_matches {
+        println!(
+            "note: scored with model {}, the challenge pins {}",
+            o.model_version,
+            w.state().scenario.model_version
+        );
+    }
+    let refs = ps_game::load_debrief_refs(&data)?;
+    let d = ps_game::debrief(w.state(), &refs);
+    for p in &d.plants {
+        println!("plant {} ({}):", p.plant, p.species);
+        for w in &p.weeks {
+            let top = w.top.map_or("-", ps_game::Factor::name);
+            let pr: Vec<String> = w.pressure.iter().map(|x| format!("{x:.2}")).collect();
+            println!(
+                "  week {:>2} (days {:>3}-{:>3}) {:<14} pods {:+} mass {:+.1} g  [{}]",
+                w.week,
+                w.days.0,
+                w.days.1,
+                top,
+                w.pods_gained,
+                w.mass_gained_g,
+                pr.join(" ")
+            );
+        }
+        for s in &p.summary {
+            println!("  {s}");
+        }
+    }
+    if a.get("out").is_some() {
+        let dir = a.out_dir().join(id.as_ref());
+        write_outputs(&dir, &w)?;
+        let text = ron::ser::to_string_pretty(&(&o, &d), ron::ser::PrettyConfig::default())?;
+        std::fs::write(dir.join("debrief.ron"), text)?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -694,6 +768,7 @@ fn main() -> Result<()> {
         "validate" => cmd_validate(&a),
         "founders" => cmd_founders(&a),
         "breed" => cmd_breed(&a),
+        "challenge" => cmd_challenge(&a),
         "" | "help" | "-h" | "--help" => {
             println!("{USAGE}");
             Ok(())

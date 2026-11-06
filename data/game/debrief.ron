@@ -1,0 +1,6 @@
+// Reference values for the run debrief (crates/ps-game/src/debrief.rs). These shape
+// what the debrief screen says, never a model result.
+DebriefRefs(
+  full_sun_radiation: (value: 25.0, unit: "MJ/m2/d", source: "~ (clear midsummer day at 45 N is about 28 to 30; 25 allows for haze)"),
+  notable_pressure: (value: 0.15, unit: "-", source: "~ (design: a factor costing about a sixth of the week's potential is worth naming)"),
+)

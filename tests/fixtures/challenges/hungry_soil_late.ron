@@ -1,0 +1,4 @@
+// 0.5 g N all on day 45.
+[
+  (tick: 1088, kind: Fertilize(soil: 0, form: Nitrate, g_per_m2: 11.052426603603843)),
+]

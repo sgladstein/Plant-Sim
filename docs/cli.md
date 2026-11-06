@@ -14,6 +14,7 @@ cargo run --release -p ps-cli -- run data/scenarios/response/*.ron --out out
 | `bench SCENARIO... [--days N] [--repeat N]` | Reports wall time per sim-day, the best of N runs. |
 | `replay SCENARIO LOG [--until-tick T] [--out DIR]` | Replays a `log.ron` from the start and prints the hash. |
 | `replay --snapshot FILE [--out DIR]` | Resumes a snapshot to the end of its scenario. |
+| `challenge ID [LOG] [--out DIR]` | Replays a log (none: an empty log) on challenge `data/challenges/ID.ron`, prints the score, medal, broken rules and the weekly debrief. `--out` writes the CSVs and `debrief.ron` to `DIR/ID/`. See docs/game/challenges.md. |
 
 `--data DIR` points at the data directory (default `data`). `--days N` shortens a run.
 The scenario is hashed, so `--days` changes every hash.

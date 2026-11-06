@@ -4962,10 +4962,12 @@ dependencies = [
  "ps-arch",
  "ps-breed",
  "ps-export",
+ "ps-game",
  "ps-graph",
  "ps-light",
  "ps-mesh",
  "ps-session",
+ "ps-soil",
  "ps-species",
  "ps-ui",
  "ps-units",
@@ -5034,6 +5036,7 @@ dependencies = [
  "mimalloc",
  "ps-breed",
  "ps-export",
+ "ps-game",
  "ps-species",
  "ps-validate",
  "ps-world",
@@ -5048,6 +5051,19 @@ dependencies = [
  "ps-arch",
  "ps-graph",
  "ps-world",
+]
+
+[[package]]
+name = "ps-game"
+version = "0.1.0"
+dependencies = [
+ "ps-physio",
+ "ps-species",
+ "ps-units",
+ "ps-world",
+ "ron 0.10.1",
+ "serde",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

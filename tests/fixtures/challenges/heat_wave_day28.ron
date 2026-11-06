@@ -1,0 +1,4 @@
+// Sown on day 28.
+[
+  (tick: 680, kind: Sow((soil: 0, species: "bush_bean", seed: Default, depth_cm: 3.0))),
+]
