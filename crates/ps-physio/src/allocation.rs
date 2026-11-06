@@ -749,17 +749,17 @@ fn transport_recording(
 ) -> GramsC {
     // Edges by child id; a parent is always created before its children, so its id is
     // smaller and descending child order eliminates every subtree before its root.
-    let edges: Vec<(usize, usize, f64)> = arena
-        .edges()
-        .map(|(pa, ch)| {
-            (
-                pa.index(),
-                ch.index(),
-                conductance(arena, pa, ch, p.phloem_conductance),
-            )
-        })
-        .collect();
+    // Sized up front: the filtered iterator gives no length hint, and growing a
+    // Vec of thousands of edges every hour was about 3% of a plot's run.
     let n = arena.len();
+    let mut edges: Vec<(usize, usize, f64)> = Vec::with_capacity(n);
+    edges.extend(arena.edges().map(|(pa, ch)| {
+        (
+            pa.index(),
+            ch.index(),
+            conductance(arena, pa, ch, p.phloem_conductance),
+        )
+    }));
     let mut diag = vec![0.0; n];
     let mut rhs = vec![0.0; n];
     for id in arena.alive_ids() {
