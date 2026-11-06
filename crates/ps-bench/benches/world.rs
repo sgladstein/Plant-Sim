@@ -1,6 +1,6 @@
 //! Whole-sim benches: the committed scenarios run end to end through `World`, plus the
 //! daily state hash and an on-demand snapshot (docs/performance.md). These are the
-//! numbers the M0 (2 ms per sim-day, one plant) and M1 (a sim-week per second, two pots)
+//! numbers the M0 (4 ms per sim-day, one plant; decision 0039) and M1 (a sim-week per second, two pots)
 //! budgets are about.
 
 use std::path::{Path, PathBuf};

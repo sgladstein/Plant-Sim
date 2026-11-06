@@ -9,11 +9,18 @@ How the performance work runs, what is open and what was tried: [perf/handoff.md
 
 | Scope | Budget | Source |
 | --- | --- | --- |
-| Single plant, M0 | under 2 ms per sim-day (instruction count on CI) | §7, M0 exit |
-| Plot, M2 | 30 plants under 20 ms per sim-day | §7, WP21 and M2 exit |
+| Single plant, M0 | under 4 ms per sim-day (was 2 ms; provisional until timed on the owner's PC) | decision 0039 (owner, 2026-11-06), §7 M0 exit |
+| Plot, M2 | 30 plants under 30 ms per sim-day (was 20 ms; provisional until timed on the owner's PC) | decision 0039, §7 WP21 and M2 exit |
 | Frame, M1 | under 16 ms at one sim-week per second (7 sim-days per second, about 2.3 ms of sim per frame at 60 fps) | §7, M1 exit |
 | Light, per plant | about 40 rays × 50 cells per leaf per day (a 300-leaf plant: 600,000 cell visits) | §3.5 |
 | Gas exchange | one solve per light class: 30 plants × 32 classes × 24 h ≈ 23,000 solves per day (WP7 uses a 17 PAR × 4 capacity table, about 68 solves per plant per hour) | §3.8 |
+
+The owner re-baselined the sim budgets on 2026-11-06 (decision 0039): the old 2 ms
+and 20 ms were set before WP27, thickening and the realism plan. Big plots and
+fast-forward use the simplified mode of the multi-fidelity plan
+(docs/research/realism-plan/fidelity-levels.md). Result-changing speedups are no
+longer pursued just to hit a budget; bit-identical ones continue. Older
+measurements below compare against the old budgets.
 
 ## Running
 

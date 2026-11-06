@@ -259,6 +259,7 @@ mod tests {
                     size: PotSize::RHIZOBOX,
                     skeleton: ps_mesh::Skeleton::default(),
                     water_stress: 1.0,
+                    wilt: 0.0,
                     first_flower: *first_flower,
                     organ_values: std::sync::Arc::default(),
                     soil_water: SoilFace::default(),

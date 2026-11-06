@@ -259,6 +259,7 @@ mod tests {
                 container: None,
             },
             water_stress: 1.0,
+            wilt: 0.0,
             first_flower: None,
             organ_values: std::sync::Arc::default(),
             soil_water: crate::garden::SoilFace::default(),

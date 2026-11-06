@@ -119,6 +119,9 @@ pub struct InstanceOptions {
     /// The plant's water stress factor, 1 = unstressed, 0 = fully stressed (§5.2 plant
     /// water lens). Drives leaf droop.
     pub water_stress_factor: f32,
+    /// Drawn wilting, 0 to 1, when the source smooths it over time
+    /// ([`crate::moments::turgor_step`]); `None` takes it from `water_stress_factor`.
+    pub wilt: Option<f32>,
     /// Include dead organs (for a lens or the inspector); normally off.
     pub include_dead: bool,
     /// Include seeds inside pods (hidden inside the pod mesh); normally off.
@@ -129,6 +132,7 @@ impl Default for InstanceOptions {
     fn default() -> Self {
         Self {
             water_stress_factor: 1.0,
+            wilt: None,
             include_dead: false,
             include_seeds_in_pods: false,
         }
@@ -139,7 +143,17 @@ impl Default for InstanceOptions {
 /// [`crate::wilt_of_stress`].
 #[must_use]
 pub fn droop_level(water_stress_factor: f32) -> u8 {
-    let w = crate::wilt_of_stress(water_stress_factor);
+    wilt_droop_level(crate::wilt_of_stress(water_stress_factor))
+}
+
+/// Droop level for a wilt of 0 (turgid) to 1.
+#[must_use]
+pub fn wilt_droop_level(wilt: f32) -> u8 {
+    let w = if wilt.is_finite() {
+        wilt.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     let levels = f32::from(DROOP_LEVELS - 1);
     // In 0..=levels as wilt is in 0..=1, so the cast is exact.
     #[allow(clippy::cast_sign_loss)]
@@ -184,7 +198,10 @@ fn frame(forward: Vec3, azimuth: f32) -> Quat {
 /// One instance per templated organ of `skeleton`, in organ id order.
 #[must_use]
 pub fn instances(skeleton: &Skeleton, options: InstanceOptions) -> Vec<Instance> {
-    let droop = droop_level(options.water_stress_factor);
+    let droop = options.wilt.map_or_else(
+        || droop_level(options.water_stress_factor),
+        wilt_droop_level,
+    );
     let mut main_leaves = 0_usize;
     let mut out = Vec::new();
     let grass = skeleton.blade_aspect.filter(|a| a.is_finite() && *a > 0.0);

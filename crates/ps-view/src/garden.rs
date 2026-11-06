@@ -124,6 +124,8 @@ pub struct PotView {
     pub skeleton: Skeleton,
     /// Plant water stress factor, 1 = unstressed.
     pub water_stress: f32,
+    /// Drawn wilting, 0 (turgid) to 1, smoothed over sim time by the source (WP20).
+    pub wilt: f32,
     /// Sim hour the plant's first flower appeared, once it has flowered (WP20's
     /// flowering cue).
     pub first_flower: Option<f64>,
