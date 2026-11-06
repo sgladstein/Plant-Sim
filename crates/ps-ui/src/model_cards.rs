@@ -27,6 +27,7 @@ cards!(
     "light.md",
     "nitrogen.md",
     "organ-growth.md",
+    "plant-hydraulics.md",
     "plant-variation.md",
     "random-numbers.md",
     "respiration.md",
