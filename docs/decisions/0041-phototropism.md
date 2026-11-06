@@ -41,7 +41,11 @@ no bean stem kinetics were found).
    culms grow straight; wheat's keys are 0 ("unused by the grass") and casts no rays.
 5. **Parameters** (species schema 15): `phototropism_weight` 0.3 and
    `phototropism_max_per_day` 10° for both beans, from the spec, checked 0 to 1 and 0 to
-   90°.
+   90°. The daily bound does not bind at today's phyllochron (review): nodes come 3 to 5
+   days apart, so it allows 30 to 50° per node while `k_p · ∠` is at most 27° for light
+   within 90°, and 30° a day gives bit-identical runs (16 pot seeds, 4 plot seeds). So
+   `k_p` alone sets the response: under a fixed light direction `α` from vertical a stem
+   settles at about `α · k_p / (k_p + 0.3) = α/2`.
 6. No change to the §3.2 step list: the rays are part of daily step 6, the hourly sum of
    hourly step 3, the turn of daily step 3.
 
@@ -66,22 +70,39 @@ no bean stem kinetics were found).
   1.2 mm from above the collar at days 50 and 70, 34 to 35 cm up; the summed sun path
   and the open sky are close to vertical), so its yield changes by chance, not by
   geometry: leaf area and carbon fixed stay within 0.3% of 0.21.0 to day 45, then pod
-  set draws go the other way (7 pods against 9 at day 55). Over 16
-  world seeds against phototropism off, seed mass per plant −0.5 ± 0.3 g (mean ± s.e.),
-  total mass −0.8 ± 0.7 g, harvest index tops −0.009 ± 0.006: within noise. The four
-  validation seeds happen to lose 1 g of seed, which takes `harvest_index_tops` out of
+  set draws go the other way (7 pods against 9 at day 55). Over world seeds 7 to 22
+  against phototropism off, seed mass per plant −0.50 ± 0.32 g (mean ± s.e., 12 of 16
+  lower), assimilation −0.52 ± 0.37 g C, harvest index tops 0.401 against 0.409: a
+  possible small cost in the lone pot, at the band edge (review). Seeds 7 to 10, the
+  validation's four, are the low tail (0.374), which takes `harvest_index_tops` out of
   its band.
+- **In the open it mostly straightens branches** (review). Branch internodes stand
+  27.2° from vertical against 33.6° with phototropism off in the pot (27.3° against
+  33.6° in the plot), and pot internode tips sit 20 to 25% closer to the collar. Under an
+  open sky a tilted branch's apex sees light from nearly straight up, so the rule adds a
+  second upward pull on top of the calibrated 0.3 gravitropism. That is physically fair,
+  but it reshapes the canopy and is the likeliest cause of the pot's small seed loss.
+  Branch angles are not yet checked against bean data; lowering `shoot_gravitropism` is
+  the other option.
+- Main stems lean only beside obstacles: their tips move 0.2 to 3.2 mm in the pot and 1
+  to 2 mm in the plot (at most 6.5 mm), and edge plants do not lean outward. Free vines
+  turn: `pole_unstaked_seed_yield` goes −51% → −59%, still in band.
 - Beside a 40 cm wall 6 cm east (single_pot, world seed 7): the main stem's tip ends
   8.2 cm west at day 50, and the plant has fixed 7% more carbon (3.38 against 3.17 g C)
   and weighs 5.0 against 4.6 g. Figure: `/mnt/project-files/figures/r1c/r1c_wall_lean.png`.
 - Speed: within the container's noise (plot_30_beans 34.0 to 36.6 ms per sim-day with
   phototropism, 34.1 to 35.6 without; single_pot 3.5 to 3.9 against 3.1 to 3.9).
-- **Viewer.** The sim now leans stems toward the light, so the WP20 drawn lean
-  (`ps_mesh::moments::lean_from_light`) should shrink or switch off, or a plant beside
-  a wall leans twice.
-- Follow-ups: leaf heliotropism (blades turning toward the sun, light follow-ups of
-  decision 0025), and a phototropism rate for bean stems if one is found (10° a day is
-  a guess).
+- **Viewer.** The sim now leans stems beside obstacles, so the WP20 drawn lean
+  (`ps_mesh::moments::lean_from_light`) should be turned down near obstacles, or the
+  sim's lean subtracted, or a plant beside a wall leans twice. Switching it off would
+  remove the only lean visible in open plots.
+- Follow-ups: turn the growing internode daily so the per-day bound means what it says;
+  check branch angles against bean data; leaf heliotropism (blades turning toward the
+  sun, light follow-ups of decision 0025); a phototropism rate for bean stems if one is
+  found (10° a day is a guess). Small points from review: a plant with no light grid
+  keeps yesterday's apex light, and a ray's partial path through its starting cell
+  (about 10 cm in the plot) could tilt the vector in dense cells; nothing shows either
+  at today's lean sizes.
 
 ## References
 - Spec R1 §5 and the R1 numbers (`docs/research/realism-plan/numbers/README.md`):

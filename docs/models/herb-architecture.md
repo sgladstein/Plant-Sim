@@ -34,7 +34,11 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   each hour's sun and each of 16 sky sectors (light card), `a_s` a sector's radiance
   times solid angle. Its horizontal part is the light difference across the stem. Only
   new internodes turn; grown ones keep their direction. A twining vine's internode
-  follows its support, and a grass does not bend.
+  follows its support, and a grass does not bend. Nodes come 3 to 5 days apart, so the
+  daily bound allows 30 to 50° per node while `k_p · ∠` is at most 27° for light within
+  90°: the bound does not bind today, and `k_p` alone sets the response (30° a day gives
+  bit-identical runs; review of decision 0041). Under a fixed light direction at angle
+  `α` from vertical a stem settles at about `α · k_p / (k_p + g) = α/2`.
 - **Shade response (decision 0018):** the newest leaf below the node that has seen a
   whole day gives two signals, red:far-red `ρ` and its running mean daily absorbed PAR
   `D` (mol m⁻² day⁻¹; `D ← D + (D_yesterday − D)/3`). The response index is
@@ -123,7 +127,7 @@ All values, units and sources are in `data/species/bush_bean.ron`. The main ones
 | Root types | tap, two basal whorls of 4, 10 hypocotyl-borne, laterals, fine laterals | see file | OpenSimRoot bean (values only; fine laterals and lateral spacing 0.5 cm / apical zone 4 cm from carioca.xml, decision 0037) |
 | root_segment_length | 2 | cm | "~" (decision 0013) |
 | shoot_gravitropism | 0.3 | - | "~" (decision 0013) |
-| phototropism_weight, phototropism_max_per_day | 0.3, 10 | -, ° | "~" R1 spec §5; 20 to 30° a day is defensible from seedling bending (sunflower, pea) (decision 0041) |
+| phototropism_weight, phototropism_max_per_day | 0.3, 10 | -, ° | "~" R1 spec §5; the daily bound does not bind at today's phyllochron (decision 0041) |
 | PRIMORDIUM | 0.02 | - | "~" code constant (decision 0013) |
 
 ## Inputs and outputs
@@ -165,7 +169,11 @@ shade, and where roots end up.
   supply (decision 0037), drought closes them harder than the published pots show.
 - Stems lean toward the light (R1c): next to a low wall a pot plant leans away from
   it and its leaves catch a few percent more light, while a lone plant in the open stays
-  nearly upright. Next to a tall wall leaning gains no sky (decision 0041). Leaves do
+  nearly upright. Next to a tall wall leaning gains no sky (decision 0041). Under an
+  open sky a tilted branch's apex sees light from nearly straight up, so the rule adds a
+  second upward pull on top of gravitropism: pot and plot branch internodes stand 27°
+  from vertical against 34° without it, with tips 20 to 25% closer to the collar. Branch
+  angles have not been checked against bean data. Leaves do
   not turn their blades toward the sun (no heliotropism), and roots have no
   hydrotropism; they bend only by gravity and noise.
 - Laterals are lumped into cohorts; their fine roots are one more cohort each, in the
