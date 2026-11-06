@@ -82,6 +82,8 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - **drought_shoot_mass** (−65% against −26%): stomata now follow what the roots supply, and the drought pot closes them harder than published pots show. R3's root hydraulics revisit it.
 - **fine_root_share** (0.082 at flowering, 0.1 to 0.4): a lateral cohort gets its fine roots only when it finishes. The rest of R2.
 - **At their band edges since R2a:** harvest_index_tops (0.395 against 0.4), density_leaf_area_per_plant (−34% against −35%), pod_set_thermal_time_b10 (411 against 414 Cd).
+- **Near-edge M0 passes (R2a review):** shade_internode +25.9% (seeds −11% to +40%), shade_total_mass −47.9% (gate −50%), heat_seeds weakest seed −1.1%. Watch them on every model change.
+- **R2a review notes for later work:** 38% of the pot's root length sits in the bottom 4 cm at maturity (R3 density saturation will matter there); A/E 3 to 5 mmol/mol, the low end for C3 (keep in view for R3); fine roots could start past a lateral's apical zone instead of when it finishes (R2b).
 - **stem_share_peak** (0.31, R1b adds stem storage), **shade_height** (+31%), **nar_early** (7.5).
 
 **Speed (perf thread, 4 cores).** single_pot about 2.3 ms per sim-day (target 2). plot_30_beans about 24.7 ms (M2 target 20). wheat_stand about 108 ms after #98. The perf thread has a bit-identical speed-up in flight.
