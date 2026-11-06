@@ -196,9 +196,24 @@ pub fn soil_cell(soil: &SoilGrid, p: V3) -> Option<usize> {
 /// dropped.
 #[must_use]
 pub fn root_cells(arena: &OrganArena, pos: &[(V3, V3)], soil: &SoilGrid) -> RootCells {
+    root_cells_from(arena, pos, soil, 0)
+}
+
+/// [`root_cells`] for the root organs of axis order `min_order` and above (1: laterals
+/// and fine roots, for the R2b nitrate-patch check).
+#[must_use]
+pub fn root_cells_from(
+    arena: &OrganArena,
+    pos: &[(V3, V3)],
+    soil: &SoilGrid,
+    min_order: u8,
+) -> RootCells {
     let half = 0.5 * soil.cell_size().0;
     let mut pairs = Vec::new();
-    for id in arena.alive_of(OrganKind::Root) {
+    for id in arena
+        .alive_of(OrganKind::Root)
+        .filter(|id| arena.axis_order[id.index()] >= min_order)
+    {
         let i = id.index();
         let total = arena.size[i].length.0;
         if total <= 0.0 {

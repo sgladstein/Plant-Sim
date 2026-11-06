@@ -21,8 +21,16 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
    the wilting point to 1 halfway to field capacity, stays 1 up to field capacity, and
    falls linearly to 0.5 at saturation (APSIM SoilN shape).
 4. Drainage moves `NO₃ · drained / W` with the drained water (complete mixing); what
-   leaves the bottom is leached. Lateral flow moves `NO₃` with the same fraction as the
-   water. NH₄ and humus N do not move.
+   leaves the bottom is leached. Laterally (R2b, decision 0043) nitrate moves with the
+   water's flux `f` at the concentration of the cell the water leaves,
+   `f · NO₃_from / W_from`, plus diffusion `d (NO₃_i − NO₃_j)` with
+   `d = D_l θ^{7/3} / θ_s² · 3600 s / Δx²`, 5.1e-3 `(0.02 m / Δx)²` per hour (a cell's
+   nitrate evens out at about 5.7e-10 m² s⁻¹, Millington–Quirk at field capacity: the
+   factor `θ^{10/3}/θ_s²` already holds the water's share of the section, and the grid
+   exchanges amounts, which divides by `θ`); both stop at a pot divider. Before R2b
+   nitrate spread at the water's fraction, 0.1 per hour in pot cells (a diffusivity
+   about 20 times too high), so a patch evened out in days. NH₄ and humus N do not
+   move.
 5. Concentration `ppm = N · 10³ / (ρ_b V)` (mg N per kg soil).
 
 **Uptake, daily step 0, joint over a soil's plants** (`SoilGrid::take_up_nitrogen`):
@@ -88,6 +96,7 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 | Nitrification rate at 30 °C | 0.34 | 1/day | ~ (0.15 at 20 °C) |
 | Uptake floors NO₃, NH₄ | 0.25, 0.5 | mg N/kg | CROPGRO NUPTAK |
 | Uptake response | 0.08 | per mg N/kg | CROPGRO NUPTAK |
+| Nitrate diffusion fraction at 2 cm | 5.1e-3 | per hour | Millington–Quirk at field capacity, `D₀ θ^{7/3}/φ²` with D₀ 1.9e-9 m² s⁻¹, θ 0.3, φ 0.45 (R2b, decision 0043) |
 | Bulk density loam, sand, clay | 1300, 1550, 1250 | kg/m3 | ~ typical mineral soils |
 | Garden soil NO₃, NH₄, humus N | 20, 2, 1000 | mg N/kg | ~ (decision 0020) |
 | leaf, stem, root, shell, seed N initial | 0.0384, 0.024, 0.016, 0.0352, 0.0376 | g N/g DM | CROPGRO-Drybean BNGRO048.SPE (protein × 0.16) |
@@ -147,8 +156,13 @@ Emergent:
   saturates by about 40 ppm, with no low-affinity uptake at high nitrate (decision 0037).
 - Mineralization is low for a garden: about 0.03 g N per m² a day on the plot against
   0.05 to 0.15.
-- The soil water has no upward flow, and nitrate does not diffuse, so a cell's roots see
-  only the nitrate that is in it or drains into it.
+- The soil water has no upward flow, and nitrate diffuses only slowly (R2b), so a
+  cell's roots see the nitrate that is in it or that water brings. Where water flows to
+  roots that take up less nitrate than it carries (the 300 ppm M0 pots, whose uptake
+  saturates), nitrate gathers in the rooted cells: by day 45 the split pot's roots sit
+  in about 2.3 times the nitrate of its rootless cells (root-length weighted, seed 9;
+  decision 0043). Real roots in rich soil
+  do this too, but more of it would diffuse back at the scale of a root.
 - Leaf aging still multiplies capacity next to leaf N (decision 0020).
 - Pod set does not read N. An N-short plant sets as many pods as a fed one and fills
   smaller seeds; real beans shed pods instead.
@@ -164,8 +178,10 @@ Emergent:
 
 ## Validation
 - `ps_soil::nitrogen::tests::*`: rates to 1e-9 relative, factor shapes, leaching closes
-  the ledger, lateral spread, fertilizer in the top layer, uptake limited by root length,
-  soil N and demand and fair between plants.
+  the ledger, nitrate moving with the water and diffusing slowly
+  (`nitrate_moves_with_the_water_and_diffuses_slowly`, `a_divider_stops_water_and_nitrate`,
+  R2b), fertilizer in the top layer, uptake limited by root length, soil N and demand
+  and fair between plants.
 - Debug builds assert the soil N ledger every hour and each plant's N ledger every day
   at 1e-9 relative.
 - `ps-validate/tests/nitrogen_free.rs::nitrogen_free_sand_needs_nodules` (WP24

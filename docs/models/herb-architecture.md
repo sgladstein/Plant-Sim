@@ -92,6 +92,28 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   fine-root spacing `s₁`), attached in the middle of that stretch, built like a lateral
   cohort. Fine roots are 0.1 mm across (about 1,350 m/g), live in the cells next to
   their lateral and do not thicken.
+- **Root plasticity (R2b, decision 0043).** Every rule reads soil cells at the daily
+  root step and draws no random numbers.
+  - *Dry soil slows elongation:* each growing root organ's expansion clock runs at
+    `f_w = max(floor, clamp(θ/θ_full, 0, 1))` for the day, with `θ` the relative
+    available water of its tip's cell, `θ_full` 0.3 and floor 0.3 (root tips keep
+    elongating near −1.6 MPa). Set after the day's layout; hourly step 11 multiplies
+    the organ's thermal time by it.
+  - *Xerobranching:* no lateral or fine-root cohort forms where the parent's cell is
+    below `θ` 0.1, and none forms there later.
+  - *Proliferation:* a cohort stands for `m · F` roots, `F` the mean over its straight
+    path (sampled every half cell) of `(1 + a_N r_N)(1 + a_W r_W)`,
+    `r = clamp((v − v̄)/v̄, 0, 2)` for the cell's nitrate (mg N/kg) and `θ`, with `v̄` the
+    larger of the soil's mean over its active cells and the root-length-weighted mean
+    over the plant's root cells; `a_N` 1, `a_W` 0.5. The soil's mean keeps the roots'
+    own depletion from making fresh soil look rich; the roots' mean keeps nitrate that
+    the water carried to them, and left there, from looking rich to the roots already
+    in it. Carbon still limits: `F` raises the cohort's potential, not its supply.
+  - *Hydropatterning:* a cohort's direction is the first of the eight golden-angle
+    candidates whose tip cell holds at least their median `θ`, where they differ;
+    otherwise the rule above.
+  - *Hydrotropism:* an axis tip's direction gains `w_h ĝ`, `ĝ` the unit gradient of `θ`
+    over the six neighbors of its cell (zero where they are equal), `w_h` 0.05.
 - **Sink feedback on gross assimilation:** `A' = f(C) (A + Rd) − Rd`,
   `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (provisional; see gas-exchange).
 - **Leaf death:** at thermal age `expanded + lifespan`, after 5 days below light index
@@ -129,6 +151,10 @@ All values, units and sources are in `data/species/bush_bean.ron`. The main ones
 | shoot_gravitropism | 0.3 | - | "~" (decision 0013) |
 | phototropism_weight, phototropism_max_per_day | 0.3, 10 | -, ° | "~" R1 spec §5; the daily bound does not bind at today's phyllochron (decision 0041) |
 | PRIMORDIUM | 0.02 | - | "~" code constant (decision 0013) |
+| root_dry_full, root_dry_floor | 0.3, 0.3 | - | "~" R2b spec; floor from Sharp 2004, Yamaguchi 2010 (decision 0043) |
+| xerobranching_threshold | 0.1 | - | "~" Orman-Ligeza 2018 (barley) |
+| root_proliferation_nitrate, root_proliferation_water | 1.0, 0.5 | - | "~" Drew 1975; Zhang 1999 and Linkohr 2002 (Arabidopsis, 1.5 to 4 times); water a guess |
+| hydropatterning, hydrotropism_weight | 1 (on), 0.05 | -, - | Bao 2014; "~" Dietrich 2017 |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -174,10 +200,25 @@ shade, and where roots end up.
   second upward pull on top of gravitropism: pot and plot branch internodes stand 27°
   from vertical against 34° without it, with tips 20 to 25% closer to the collar. Branch
   angles have not been checked against bean data. Leaves do
-  not turn their blades toward the sun (no heliotropism), and roots have no
-  hydrotropism; they bend only by gravity and noise.
+  not turn their blades toward the sun (no heliotropism). Roots bend by gravity, noise
+  and, weakly, toward wetter cells (R2b).
 - Laterals are lumped into cohorts; their fine roots are one more cohort each, in the
   cells next to the lateral, without geometry of their own (decision 0037).
+- A cohort is one straight organ, so proliferation raises the roots it stands for along
+  its whole path by the path's mean richness: a lateral that only crosses a patch
+  proliferates in part, and outside the patch too (decision 0043). A nitrate patch the
+  tap root runs through gains about 1.5 times the lateral length of the same cube
+  without it by day 45 (1.3 to 1.7 over six seeds), at the low end of the Arabidopsis
+  1.5 to 4; no legume number exists.
+- The dry-soil rules act only once soil is dry: in the split pot the unwatered half
+  falls to about 0.4 of available water by day 45, so wet:dry root length is about 1.5
+  (1.3 to 1.6; 1.1 without the rules). Root growth reads relative available water, not
+  water potential, until R3.
+- In soil that starts uniform the plant still makes differences (it depletes the
+  cells it roots in, and water carries nitrate to them), so the rules act a little:
+  over six seeds of the watered 300 ppm pot, root mass and total mass stay within 2% of
+  the rules off, root length is 5 to 8% higher (more of the root carbon in laterals)
+  (decision 0043).
 - Leaves senesce from the base during seed fill through nitrogen mining (nitrogen
   card). Since R1b the seeds mine first whatever the soil holds (decision 0040), but a
   fertilized pot's lower leaves still end above the drop threshold, so it keeps its
@@ -202,6 +243,14 @@ shade, and where roots end up.
   done-when, world seed 7, day 45): beside a 40 cm wall 6 cm east of the stem the main
   stem's tip ends 8.5 cm west of the collar and the leaves absorb 4% more PAR than with
   phototropism off; the same plant in the open ends within 2 cm of upright.
+- `ps_arch::roots::tests::*` (R2b): proliferation follows nitrate above the mean and is
+  1 in uniform soil, a cohort's factor is the share of its path in rich soil, the water
+  gradient points to the wet side and is zero in uniform soil.
+- `tests/root_plasticity.rs` (R2b, world seed 7, 40 days): a split pot roots more in
+  its watered half with the rules than without; laterals in a nitrate patch on the tap
+  root's path outgrow those in the same cube of plain soil by more than 1.2 times.
+- Validation (Info): `split_pot_foraging` (m2/split_pot) and
+  `nitrate_patch_proliferation` (m2/nitrate_patch against m2/nitrate_patch_control).
 
 ## References
 - Allen, M. T., Prusinkiewicz, P., DeJong, T. M. (2005). Using L-systems for modeling
@@ -224,3 +273,25 @@ shade, and where roots end up.
   root systems. Annals of Botany 121: 1033-1053.
 - Postma, J. A., et al. (2017). OpenSimRoot: widening the scope and application of root
   architectural models. New Phytologist 215: 1274-1286.
+- Bao, Y., Aggarwal, P., Robbins, N. E., et al. (2014). Plant roots use a patterning
+  mechanism to position lateral root branches toward available water. PNAS 111:
+  9319-9324.
+- Dietrich, D., Pang, L., Kobayashi, A., et al. (2017). Root hydrotropism is controlled
+  via a cortex-specific growth mechanism. Nature Plants 3: 17057.
+- Drew, M. C. (1975). Comparison of the effects of a localised supply of phosphate,
+  nitrate, ammonium and potassium on the growth of the seminal root system, and the
+  shoot, in barley. New Phytologist 75: 479-490.
+- Linkohr, B. I., Williamson, L. C., Fitter, A. H., Leyser, H. M. O. (2002). Nitrate and
+  phosphate availability and distribution have different effects on root system
+  architecture of Arabidopsis. Plant Journal 29: 751-760.
+- Orman-Ligeza, B., Morris, E. C., Parizot, B., et al. (2018). The xerobranching
+  response represses lateral root formation when roots are not in contact with water.
+  Current Biology 28: 3165-3173.
+- Sharp, R. E., Poroyko, V., Hejlek, L. G., et al. (2004). Root growth maintenance during
+  water deficits: physiology to functional genomics. Journal of Experimental Botany
+  55: 2343-2351.
+- Yamaguchi, M., Valliyodan, B., Zhang, J., et al. (2010). Regulation of growth
+  response to water stress in the soybean primary root. Plant, Cell and Environment 33:
+  223-235.
+- Zhang, H., Jennings, A., Barlow, P. W., Forde, B. G. (1999). Dual pathways for
+  regulation of root branching by nitrate. PNAS 96: 6529-6534.

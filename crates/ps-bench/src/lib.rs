@@ -17,6 +17,7 @@ pub fn summer_hour() -> SoilHour {
         water_in: Millimeters(0.5),
         surface_radiation: WPerM2(300.0),
         t_air: Celsius(20.0),
+        strip: None,
     }
 }
 

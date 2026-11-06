@@ -71,6 +71,7 @@ fn run(
             water_in: Millimeters(0.0),
             surface_radiation: WPerM2(h.global.0 * libm::exp(-0.5 * lai)),
             t_air: h.t_air,
+            strip: None,
         });
         let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
         // Done-when 6: what the soil gives plus what it could not equals the plant's

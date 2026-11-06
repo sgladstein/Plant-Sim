@@ -12,12 +12,14 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 `W_x = θ_x V ρ_w` for saturation `s`, field capacity `fc`, wilting point `wp`, air-dry `ad`.
 
 1. **Infiltration**: water in (mm) × `Δx²` per active column; fill cells top-down to `W_fc`,
-   then to `W_s`; leftover is runoff.
+   then to `W_s`; leftover is runoff. A strip of columns `x0 ≤ x < x1` (a split pot's
+   watered half) can get water of its own on top (R2b, decision 0043).
 2. **Drainage**: `e_i = max(0, W_i − W_fc)` from the start-of-step state; `W_i −= e_i`,
    added to the cell below, or drained if there is none.
 3. **Lateral**: for each horizontal neighbor pair, `f = a (W_i − W_j)`; `W_i −= f`, `W_j += f`,
    with `a = min(0.25, 0.1 (0.02 m / Δx)²)`, a diffusivity of 4e-5 m² h⁻¹ (decision 0019):
-   0.1 in 2 cm pot cells, 0.016 in 5 cm plot cells.
+   0.1 in 2 cm pot cells, 0.016 in 5 cm plot cells. A watertight divider (a split
+   pot's, R2b) removes the pairs across columns `nx/2 − 1` and `nx/2`.
 4. **Evaporation** (top layer): `E = 0.5 · R_soil · 3600 / λ · Δx² · clamp((W − W_ad)/(W_fc − W_ad), 0, 1)`,
    at most `W − W_ad`; `λ = 2.45 MJ/kg`.
 5. **Soil temperature** of layer at depth `z`: `T = T̄₂₄ + e^{−z/D} (T_air(t − 24z/(2πD)) − T̄₂₄)`.
@@ -88,6 +90,7 @@ root hydraulics (decision 0037).
 - `ps_soil::tests::random_hours_conserve`: property test, random rain, radiation, temperature and uptake.
 - `infiltration_fills_from_the_top`, `excess_runs_off_when_saturated`,
   `lateral_redistribution_smooths_and_conserves`, `lateral_fraction_scales_as_a_diffusivity`, `evaporation_takes_from_top_only_and_stops_dry`,
+  `a_strip_waters_its_columns_only` (R2b),
   `ftsw_and_stress`, `uptake_is_proportional_and_limited`, `joint_uptake_shares_cells_fairly`,
   `deeper_soil_is_damped_and_lagged`,
   `pot_mask_area_is_close_to_circle`.

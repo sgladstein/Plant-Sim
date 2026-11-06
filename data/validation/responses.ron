@@ -316,5 +316,17 @@ ValidationResponses(
       tag: Emergent,
       note: "WP23 (decision 0022): a dense stand tillers less than a spaced plant (field 2 to 5 against several more), through the red:far-red at the crown and the carbon of each tiller site. The threshold is encoded; when it bites follows from the stand's own leaf area.",
     ),
+    Response(
+      id: "nitrate_patch_proliferation",
+      scenario: "m2/nitrate_patch",
+      baseline: "m2/nitrate_patch_control",
+      variable: "root_length_patch_m",
+      at: Final,
+      expect: RelChange(min: 0.5, max: 3.0),
+      sources: ["zhang1999", "linkohr2002"],
+      gate: Info,
+      tag: Encoded,
+      note: "R2b (decision 0043): lateral and fine-root length in an 8 cm cube of soil on the tap root's path, 6 to 14 cm deep, with ten times the nitrate, against the same cube at the soil's own nitrate, day 45 (pot under a rain shelter). Arabidopsis: about 2x lateral elongation in a nitrate zone (Zhang 1999); mean lateral length 1.8 against 0.8 cm in a patch (Linkohr 2002); 1.5 to 4 expected. No legume number; a nodulated bean probably responds less (R2 numbers, research thread).",
+    ),
   ],
 )

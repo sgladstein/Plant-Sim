@@ -91,7 +91,10 @@ schema 14: the `storage` group (starch store and root exudation) and
 `nitrogen.seed_fill_mining_first`, whose rates and shares the loader keeps within 0 and
 1 (a day's fill release within 24) with release below refill, decision 0040;
 schema 15: `phototropism_weight` (0 to 1) and `phototropism_max_per_day` (0 to 90°),
-decision 0041);
+decision 0041; schema 16: the root plasticity constants `root_dry_full`,
+`root_dry_floor`, `xerobranching_threshold`, `hydrotropism_weight` (0 to 1),
+`root_proliferation_nitrate`, `root_proliferation_water` (0 to 5) and `hydropatterning`
+(0 or 1), decision 0043);
 the expected units are in `crates/ps-species/src/schema.rs`. The loader rejects a wrong
 unit, an empty source, an unknown or missing key, a non-finite value, and a default
 outside its bounds.

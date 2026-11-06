@@ -1,6 +1,13 @@
 //! CRootBox-style root system (§3.7; decision 0013): axes of each root type appear at
 //! their emergence time, grow as chains of segments, bend by gravitropism and deflect
 //! along the pot wall; laterals are lumped into cohorts, one per parent segment.
+//!
+//! Plasticity (R2b, decision 0043): a tip in dry soil slows, a dry stretch of parent
+//! root forms no laterals, laterals proliferate where nitrate or water is richer than
+//! both the soil's mean and the mean the roots sit in, a cohort turns toward the wetter
+//! side of its parent, and a
+//! tip leans weakly up the water gradient. Every rule reads the cell a tip or segment
+//! is in at the daily root step; none draws random numbers.
 
 use ps_graph::{OrganId, OrganKind, SpecificSize};
 use ps_rng::Purpose;
@@ -8,7 +15,7 @@ use ps_soil::SoilGrid;
 use ps_species::RootOrigin;
 use ps_units::{DegreeDays, GramsDM, Hours};
 
-use crate::geometry::{V3, add, deflect, from_azimuth, soil_cell, unit};
+use crate::geometry::{V3, add, deflect, from_azimuth, norm, soil_cell, unit};
 use crate::{ArchError, PRIMORDIUM, Plant, Role, RootAxis, Spawn, curve};
 
 /// Golden angle, rad: the azimuth step between successive lateral cohorts.
@@ -201,8 +208,14 @@ impl Plant {
 
     /// Daily step 5 (§3.7): each growing root axis queues its next segment behind
     /// the tip, bent by gravitropism and noise, to start when the tip finishes; axes
-    /// past their apical zone emit one lateral cohort per segment.
-    pub(crate) fn root_elongation(&mut self, now: Hours, soil: &SoilGrid) -> Result<(), ArchError> {
+    /// past their apical zone emit one lateral cohort per segment. `soil_means` is the
+    /// soil's [`SoilGrid::means`] if the world computed it already.
+    pub(crate) fn root_elongation(
+        &mut self,
+        now: Hours,
+        soil: &SoilGrid,
+        soil_means: Option<(f64, f64)>,
+    ) -> Result<(), ArchError> {
         let child = |order: u8| {
             self.params
                 .roots
@@ -211,6 +224,8 @@ impl Plant {
         };
         let lateral_type = child(0);
         let fine_type = child(1);
+        let means = self.root_zone_means(soil, soil_means);
+        let hydrotropism = self.params.root_plasticity.hydrotropism;
         for a in 0..self.root_axes.len() {
             // A finished axis that does not branch (a lateral cohort) has nothing to do.
             if self.root_axes[a].done
@@ -229,14 +244,14 @@ impl Plant {
             if rp.order > 0 {
                 // A lateral cohort: its fine roots once it has finished.
                 if let Some(ft) = fine_type.filter(|_| rp.order == 1) {
-                    self.fine_roots(a, ft, now, soil)?;
+                    self.fine_roots(a, ft, now, soil, means)?;
                 }
                 continue;
             }
             self.settle_axis(a);
             // Laterals behind the apical zone, one cohort per parent segment.
             if let Some(lt) = lateral_type.filter(|_| rp.branch_spacing.0 > 0.0) {
-                self.laterals(a, lt, now, soil)?;
+                self.laterals(a, lt, now, soil, means)?;
             }
             let ax = self.root_axes[a].clone();
             if ax.done {
@@ -261,10 +276,16 @@ impl Plant {
                 TROPISM_NOISE * rng.standard_normal(),
                 TROPISM_NOISE * rng.standard_normal(),
             ];
+            // Hydrotropism (R2b): a weak pull up the water gradient at the tip.
+            let wet = water_gradient(soil, ax.end);
             let dir = unit(add(
-                add(ax.direction, [0.0, 0.0, -1.0], rp.gravitropism * 0.2),
-                noise,
-                1.0,
+                add(
+                    add(ax.direction, [0.0, 0.0, -1.0], rp.gravitropism * 0.2),
+                    noise,
+                    1.0,
+                ),
+                wet,
+                hydrotropism,
             ));
             self.root_segment(a, tip, 1.0, dir, wait, now, soil)?;
         }
@@ -277,6 +298,7 @@ impl Plant {
         lt: usize,
         now: Hours,
         soil: &SoilGrid,
+        means: Option<(f64, f64)>,
     ) -> Result<(), ArchError> {
         let seg = self.params.root_segment.0;
         let parent_type = self.params.roots[self.root_axes[a].kind].clone();
@@ -303,7 +325,7 @@ impl Plant {
                 (self.arena.size[h].length.0 / self.meta[h].multiplicity.max(1.0)).max(1e-9);
             let attach = ((mid - host_start) / host_len).clamp(0.0, 1.0);
             let mult = seg / parent_type.branch_spacing.0;
-            self.cohort(host, attach, lt, k, mult, now, soil)?;
+            self.cohort(host, attach, lt, k, mult, now, soil, means)?;
         }
     }
 
@@ -317,6 +339,7 @@ impl Plant {
         ft: usize,
         now: Hours,
         soil: &SoilGrid,
+        means: Option<(f64, f64)>,
     ) -> Result<(), ArchError> {
         let ax = &self.root_axes[a];
         let Some(&(host, _)) = ax.segments.first() else {
@@ -340,12 +363,14 @@ impl Plant {
             return Ok(());
         }
         let mult = m1 * branched / spacing;
-        self.cohort(host, 0.5 * branched / len1, ft, k, mult, now, soil)
+        self.cohort(host, 0.5 * branched / len1, ft, k, mult, now, soil, means)
     }
 
     /// One lateral cohort of type `lt` on root organ `host` at `attach` (a fraction of
     /// its length): a single straight organ of the lateral's full length standing for
-    /// `mult` roots, aimed by the golden angle `k`.
+    /// `mult` roots, aimed by the golden angle `k`. Where the parent's cell is drier
+    /// than the xerobranching threshold none forms; where it is richer in nitrate or
+    /// water than the root zone (`means`) the cohort stands for more roots (R2b).
     #[allow(clippy::too_many_arguments)]
     fn cohort(
         &mut self,
@@ -356,6 +381,7 @@ impl Plant {
         mult: f64,
         now: Hours,
         soil: &SoilGrid,
+        means: Option<(f64, f64)>,
     ) -> Result<(), ArchError> {
         let lp = self.params.roots[lt].clone();
         let h = host.index();
@@ -373,26 +399,49 @@ impl Plant {
         // (decision 0037).
         let host_base = self.positions.get(h).map_or(self.collar_position, |p| p.0);
         let base = add(host_base, host_dir, attach * host_len);
+        let plastic = &self.params.root_plasticity;
+        // Xerobranching: no laterals from a parent in dry soil, and none later.
+        if soil_cell(soil, base).is_some_and(|c| soil.cell_ftsw(c) < plastic.xerobranching) {
+            return Ok(());
+        }
         let len = lp.max_length.0;
         // The cohort reaches its potential plus the primordium it starts as.
         let reach = len * (1.0 + PRIMORDIUM);
         let inside = |d: V3| soil_cell(soil, add(base, d, reach)).is_some();
+        let turn = |j: u32| {
+            let mut d = deflect(host_dir, lp.insertion.0, GOLDEN_ANGLE * f64::from(k + j));
+            d[2] = -d[2].abs();
+            d
+        };
+        // Hydropatterning: the first of the golden-angle candidates whose tip cell
+        // holds at least their median available water, where they differ.
+        let wetter = if plastic.hydropatterning {
+            let cands: Vec<(V3, f64)> = (0..8)
+                .map(turn)
+                .filter_map(|d| {
+                    soil_cell(soil, add(base, d, reach)).map(|c| (d, soil.cell_ftsw(c)))
+                })
+                .collect();
+            let mut ws: Vec<f64> = cands.iter().map(|c| c.1).collect();
+            ws.sort_by(f64::total_cmp);
+            match (ws.first(), ws.last()) {
+                (Some(lo), Some(hi)) if hi - lo > 1e-9 => {
+                    let median = ws[(ws.len() - 1) / 2];
+                    cands.iter().find(|c| c.1 >= median).map(|c| c.0)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         let inward = [
             self.collar_position[0] - base[0],
             self.collar_position[1] - base[1],
             0.0,
         ];
-        let found = wall(soil, base, dir, reach)
-            .or_else(|| {
-                (1..8)
-                    .map(|j| {
-                        let mut d =
-                            deflect(host_dir, lp.insertion.0, GOLDEN_ANGLE * f64::from(k + j));
-                        d[2] = -d[2].abs();
-                        d
-                    })
-                    .find(|d| inside(*d))
-            })
+        let found = wetter
+            .or_else(|| wall(soil, base, dir, reach))
+            .or_else(|| (1..8).map(turn).find(|d| inside(*d)))
             .or_else(|| {
                 (libm::hypot(inward[0], inward[1]) > 1e-6)
                     .then(|| unit(inward))
@@ -402,6 +451,9 @@ impl Plant {
             return Ok(());
         };
         dir = d;
+        // Proliferation: the cohort is one straight organ, so it stands for more roots by
+        // the mean factor of the cells along its path (R2b, decision 0043).
+        let mult = mult * path_proliferation(plastic, soil, base, dir, reach, means);
         let potential = GramsDM(lp.max_length.0 * mult / lp.specific_length.0);
         let duration = DegreeDays(lp.max_length.0 / lp.elongation_per_cd.max(1e-12));
         let mut s = Spawn::new(
@@ -431,6 +483,160 @@ impl Plant {
     }
 }
 
+impl Plant {
+    /// The levels a cell's richness is judged against (R2b, decision 0043): relative
+    /// available water and nitrate (mg N per kg soil), each the larger of the soil's
+    /// mean over its active cells and the mean the roots sit in (weighted by root
+    /// length); `None` without roots. The soil's mean keeps the roots' own depletion
+    /// from making every fresh cell look rich; the roots' mean keeps nitrate the water
+    /// carried to them, and left there, from looking rich to roots already in it. `None`
+    /// also when proliferation is off. `soil_means` is the soil's mean if already known.
+    fn root_zone_means(
+        &self,
+        soil: &SoilGrid,
+        soil_means: Option<(f64, f64)>,
+    ) -> Option<(f64, f64)> {
+        let rp = &self.params.root_plasticity;
+        if rp.proliferation_nitrate <= 0.0 && rp.proliferation_water <= 0.0 {
+            return None;
+        }
+        let (mut l, mut w, mut n) = (0.0_f64, 0.0_f64, 0.0_f64);
+        for &(i, len) in self.roots.cells() {
+            if i < soil.len() {
+                l += len.0;
+                w += len.0 * soil.cell_ftsw(i);
+                n += len.0 * soil.no3_ppm(i);
+            }
+        }
+        if l <= 0.0 {
+            return None;
+        }
+        let (sw, sn) = soil_means.unwrap_or_else(|| soil.means());
+        Some((sw.max(w / l), sn.max(n / l)))
+    }
+
+    /// Each growing root organ's expansion clock factor for the coming day (R2b): the
+    /// relative available water `θ` of its tip's cell over `dry_full`, at most 1 and at
+    /// least `dry_floor`. Cleared when nothing is slowed.
+    pub(crate) fn set_root_clock(&mut self, soil: &SoilGrid) {
+        let rp = &self.params.root_plasticity;
+        let (full, floor) = (rp.dry_full, rp.dry_floor);
+        self.root_clock.clear();
+        if floor >= 1.0 || full <= 0.0 {
+            return;
+        }
+        let mut clock = vec![1.0; self.arena.len()];
+        let mut slowed = false;
+        for id in self.arena.alive_of(OrganKind::Root) {
+            let i = id.index();
+            if self.arena.curve[i].is_complete(self.arena.expansion_age[i]) {
+                continue;
+            }
+            let Some(c) = self.positions.get(i).and_then(|p| soil_cell(soil, p.1)) else {
+                continue;
+            };
+            let f = (soil.cell_ftsw(c) / full).clamp(0.0, 1.0).max(floor);
+            clock[i] = f;
+            slowed |= f < 1.0;
+        }
+        if slowed {
+            self.root_clock = clock;
+        }
+    }
+}
+
+/// Proliferation (R2b): the factor on the roots a cohort formed in cell `c` stands for,
+/// `(1 + a_N r_N)(1 + a_W r_W)` with `r` the cell's nitrate and available water above
+/// the levels of [`Plant::root_zone_means`], relative to them, clamped to 0 to 2.
+fn proliferation(
+    p: &crate::params::RootPlasticity,
+    soil: &SoilGrid,
+    c: usize,
+    means: Option<(f64, f64)>,
+) -> f64 {
+    let Some((mw, mn)) = means else {
+        return 1.0;
+    };
+    let rel = |v: f64, m: f64| {
+        if m > 1e-12 {
+            ((v - m) / m).clamp(0.0, 2.0)
+        } else {
+            0.0
+        }
+    };
+    (1.0 + p.proliferation_nitrate * rel(soil.no3_ppm(c), mn))
+        * (1.0 + p.proliferation_water * rel(soil.cell_ftsw(c), mw))
+}
+
+/// The mean proliferation factor along a cohort's path from `base` along `dir` for
+/// `len`, sampled every half cell as root length is spread over cells; 1 without a
+/// root zone or outside the soil.
+fn path_proliferation(
+    p: &crate::params::RootPlasticity,
+    soil: &SoilGrid,
+    base: V3,
+    dir: V3,
+    len: f64,
+    means: Option<(f64, f64)>,
+) -> f64 {
+    if means.is_none() || (p.proliferation_nitrate <= 0.0 && p.proliferation_water <= 0.0) {
+        return 1.0;
+    }
+    let half = 0.5 * soil.cell_size().0;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let n = (libm::ceil(len / half) as u32).max(1);
+    let (mut sum, mut count) = (0.0, 0.0);
+    for k in 0..n {
+        let at = add(base, dir, len * (f64::from(k) + 0.5) / f64::from(n));
+        if let Some(c) = soil_cell(soil, at) {
+            sum += proliferation(p, soil, c, means);
+            count += 1.0;
+        }
+    }
+    if count > 0.0 { sum / count } else { 1.0 }
+}
+
+/// The unit gradient of relative available water at `p` (R2b hydrotropism), from the
+/// six neighbors of its cell (a missing or inactive one counts as the cell itself),
+/// in garden axes (z up); zero where they are equal or outside the soil.
+fn water_gradient(soil: &SoilGrid, p: V3) -> V3 {
+    let Some(i) = soil_cell(soil, p) else {
+        return [0.0; 3];
+    };
+    let c = soil.cell_of(i);
+    let (nx, ny, nz) = soil.dims();
+    let f0 = soil.cell_ftsw(i);
+    let at = |dx: i64, dy: i64, dz: i64| {
+        let step = |v: usize, d: i64, n: usize| {
+            let v = i64::try_from(v).ok()? + d;
+            usize::try_from(v).ok().filter(|v| *v < n)
+        };
+        match (step(c.x, dx, nx), step(c.y, dy, ny), step(c.z, dz, nz)) {
+            (Some(x), Some(y), Some(z)) => {
+                let j = soil.index(ps_soil::Cell { x, y, z });
+                if soil.is_active(j) {
+                    soil.cell_ftsw(j)
+                } else {
+                    f0
+                }
+            }
+            _ => f0,
+        }
+    };
+    // Grid z counts down from the surface, so up is z − 1.
+    let g = [
+        at(1, 0, 0) - at(-1, 0, 0),
+        at(0, 1, 0) - at(0, -1, 0),
+        at(0, 0, -1) - at(0, 0, 1),
+    ];
+    let n = norm(g);
+    if n > 1e-9 {
+        [g[0] / n, g[1] / n, g[2] / n]
+    } else {
+        [0.0; 3]
+    }
+}
+
 /// A direction from `base` that keeps a segment of length `len` in active soil: `dir`
 /// itself, else (at the pot wall) straight down, else along the wall either way, else
 /// none (decision 0013). Roots never grow above the surface.
@@ -450,4 +656,121 @@ fn wall(soil: &SoilGrid, base: V3, dir: V3, len: f64) -> Option<V3> {
     let side = unit([-d[1], d[0], 0.0]);
     let other = [-side[0], -side[1], 0.0];
     [side, other].into_iter().find(|s| inside(*s))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{path_proliferation, proliferation, water_gradient};
+    use crate::params::RootPlasticity;
+    use ps_soil::{Cell, SoilGrid, SoilHour, SoilNitrogen, Strip, Texture};
+    use ps_units::{Celsius, Meters, Millimeters, WPerM2};
+
+    fn pot() -> SoilGrid {
+        let mut soil = SoilGrid::new_pot(
+            Meters(0.24),
+            Meters(0.24),
+            Meters(0.02),
+            Texture::Loam,
+            Celsius(15.0),
+        )
+        .unwrap();
+        soil.fill_to(Texture::Loam.hydraulics().field_capacity);
+        soil.set_nitrogen(&SoilNitrogen::GARDEN);
+        soil
+    }
+
+    fn rules() -> RootPlasticity {
+        RootPlasticity {
+            proliferation_nitrate: 1.0,
+            proliferation_water: 0.5,
+            ..RootPlasticity::default()
+        }
+    }
+
+    /// The center of grid cell (x, y, z) in garden coordinates (z up from the surface).
+    fn at(x: usize, y: usize, z: usize) -> [f64; 3] {
+        #[allow(clippy::cast_precision_loss)]
+        let c = |v: usize| (v as f64 + 0.5) * 0.02;
+        [c(x), c(y), -c(z)]
+    }
+
+    #[test]
+    fn proliferation_follows_nitrate_above_the_mean() {
+        let mut soil = pot();
+        let rich = soil.index(Cell { x: 6, y: 6, z: 5 });
+        let plain = soil.index(Cell { x: 3, y: 6, z: 5 });
+        let base = soil.no3_ppm(plain);
+        soil.scale_nitrate_cells(&[rich], 3.0);
+        let means = Some((1.0, base));
+        let p = rules();
+        // Uniform: nothing; twice the mean above it (three times the mean): 1 + 2.
+        assert!((proliferation(&p, &soil, plain, means) - 1.0).abs() < 1e-12);
+        assert!((proliferation(&p, &soil, rich, means) - 3.0).abs() < 1e-9);
+        // Leaner than the mean: nothing either; off: nothing.
+        assert!((proliferation(&p, &soil, plain, Some((1.0, 2.0 * base))) - 1.0).abs() < 1e-12);
+        let off = RootPlasticity::default();
+        assert!((proliferation(&off, &soil, rich, means) - 1.0).abs() < 1e-12);
+        // Without a root zone there is nothing to compare with.
+        assert!((proliferation(&p, &soil, rich, None) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_cohort_proliferates_by_the_share_of_its_path_in_rich_soil() {
+        let mut soil = pot();
+        let rich = soil.index(Cell { x: 6, y: 6, z: 5 });
+        let base = soil.no3_ppm(soil.index(Cell { x: 3, y: 6, z: 5 }));
+        soil.scale_nitrate_cells(&[rich], 3.0);
+        let means = Some((1.0, base));
+        let p = rules();
+        let start = at(6, 6, 5);
+        let east = [1.0, 0.0, 0.0];
+        // From the rich cell's center 4 cm east: a quarter of the path is in it.
+        let f = path_proliferation(&p, &soil, start, east, 0.04, means);
+        assert!((f - 1.5).abs() < 1e-9, "{f}");
+        // Entirely inside it.
+        let f = path_proliferation(
+            &p,
+            &soil,
+            [start[0] - 0.009, start[1], start[2]],
+            east,
+            0.018,
+            means,
+        );
+        assert!((f - 3.0).abs() < 1e-9, "{f}");
+    }
+
+    #[test]
+    fn the_water_gradient_points_to_the_wet_side() {
+        let mut soil = pot();
+        let (nx, _, _) = soil.dims();
+        // Uniform soil: no pull.
+        assert!(
+            water_gradient(&soil, at(6, 6, 5))
+                .iter()
+                .all(|g| g.abs() < 1e-12)
+        );
+        // Dry the pot, then water its west half behind a divider.
+        let h = Texture::Loam.hydraulics();
+        soil.fill_to(h.wilting_point + 0.2 * (h.field_capacity - h.wilting_point));
+        soil.set_divider();
+        soil.step_hour(&SoilHour {
+            water_in: Millimeters(0.0),
+            surface_radiation: WPerM2(0.0),
+            t_air: Celsius(15.0),
+            strip: Some(Strip {
+                water: Millimeters(20.0),
+                x0: 0,
+                x1: nx / 2,
+            }),
+        });
+        // Just east of the divider the wet side is west.
+        let g = water_gradient(&soil, at(nx / 2, 6, 0));
+        assert!(g[0] < -0.5, "{g:?}");
+        // Outside the soil: nothing.
+        assert!(
+            water_gradient(&soil, [0.1, 0.1, 0.05])
+                .iter()
+                .all(|g| g.abs() < 1e-12)
+        );
+    }
 }

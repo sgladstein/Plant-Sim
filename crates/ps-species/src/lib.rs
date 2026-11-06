@@ -639,6 +639,7 @@ impl Species {
         self.validate_development()?;
         self.validate_energy()?;
         self.validate_phototropism()?;
+        self.validate_root_plasticity()?;
         self.validate_climbing()?;
         self.validate_variation()?;
         self.validate_grass()?;
@@ -771,6 +772,49 @@ impl Species {
                     why: "must be 1 or more".into(),
                 });
             }
+        }
+        Ok(())
+    }
+
+    /// Root plasticity (R2b, decision 0043): the water thresholds, floor and
+    /// hydrotropism weight are shares, 0 to 1; the proliferation weights 0 to 5; the
+    /// hydropatterning flag 0 or 1.
+    fn validate_root_plasticity(&self) -> Result<(), SpeciesError> {
+        let c = &self.constants;
+        for (key, v, max) in [
+            ("root_dry_full", c.root_dry_full.value, 1.0),
+            ("root_dry_floor", c.root_dry_floor.value, 1.0),
+            (
+                "xerobranching_threshold",
+                c.xerobranching_threshold.value,
+                1.0,
+            ),
+            (
+                "root_proliferation_nitrate",
+                c.root_proliferation_nitrate.value,
+                5.0,
+            ),
+            (
+                "root_proliferation_water",
+                c.root_proliferation_water.value,
+                5.0,
+            ),
+            ("hydrotropism_weight", c.hydrotropism_weight.value, 1.0),
+        ] {
+            // NaN fails too.
+            if !(v >= 0.0 && v <= max) {
+                return Err(SpeciesError::Value {
+                    at: format!("constants.{key}"),
+                    why: format!("{v} is outside 0 to {max}"),
+                });
+            }
+        }
+        let flag = c.hydropatterning.value;
+        if flag.abs() >= f64::EPSILON && (flag - 1.0).abs() >= f64::EPSILON {
+            return Err(SpeciesError::Value {
+                at: "constants.hydropatterning".into(),
+                why: "must be 0 or 1".into(),
+            });
         }
         Ok(())
     }

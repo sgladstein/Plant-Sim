@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 15;
+pub const SCHEMA: u32 = 16;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -221,6 +221,26 @@ param_group!(
         phototropism_weight: "-",
         /// Most a shoot turns toward the light in a day (R1c, decision 0041).
         phototropism_max_per_day: "deg",
+        /// Relative available water of a root tip's cell at and above which the tip
+        /// elongates at full rate (R2b, decision 0043; schema 16).
+        root_dry_full: "-",
+        /// Least share of its rate a root tip keeps in dry soil (R2b).
+        root_dry_floor: "-",
+        /// Relative available water of a parent root's cell below which no lateral
+        /// cohort forms there, ever (xerobranching, R2b).
+        xerobranching_threshold: "-",
+        /// Weight of a cell's nitrate above the root zone's mean on the laterals formed
+        /// there (proliferation, R2b).
+        root_proliferation_nitrate: "-",
+        /// Weight of a cell's available water above the root zone's mean on the
+        /// laterals formed there (R2b).
+        root_proliferation_water: "-",
+        /// 1 if a lateral cohort turns toward the wetter side of its parent
+        /// (hydropatterning, R2b), 0 if not.
+        hydropatterning: "-",
+        /// Weight of the available-water gradient in a root tip's direction
+        /// (hydrotropism, R2b).
+        hydrotropism_weight: "-",
         /// Days below the shade light threshold before a leaf senesces.
         shade_senescence_days: "day",
         /// Hypocotyl length per dry mass.

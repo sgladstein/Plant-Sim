@@ -107,12 +107,12 @@ fn locus_must_name_a_heritable_trait() {
 
 #[test]
 fn schema_version_checked() {
-    let bad = BEAN.replacen("schema: 15,", "schema: 6,", 1);
+    let bad = BEAN.replacen("schema: 16,", "schema: 6,", 1);
     assert!(matches!(
         Species::from_ron(&bad),
         Err(SpeciesError::Schema {
             found: 6,
-            expected: 15
+            expected: 16
         })
     ));
 }
@@ -332,6 +332,35 @@ fn storage_keys_are_checked() {
         assert!(BEAN.contains(from), "{from}");
         let e = Species::from_ron(&BEAN.replacen(from, to, 1)).unwrap_err();
         assert!(e.to_string().contains(at), "{e}");
+    }
+}
+
+/// Root plasticity (schema 16, R2b): shares 0 to 1, proliferation weights 0 to 5, the
+/// hydropatterning flag 0 or 1.
+#[test]
+fn root_plasticity_keys_are_checked() {
+    let cases = [
+        (
+            "root_dry_floor: (value: 0.3,",
+            "root_dry_floor: (value: 1.3,",
+            "constants.root_dry_floor",
+        ),
+        (
+            "root_proliferation_nitrate: (value: 1.0,",
+            "root_proliferation_nitrate: (value: -1.0,",
+            "constants.root_proliferation_nitrate",
+        ),
+        (
+            "hydropatterning: (value: 1.0,",
+            "hydropatterning: (value: 0.5,",
+            "constants.hydropatterning",
+        ),
+    ];
+    for (from, to, at) in cases {
+        assert!(BEAN.contains(from), "{from}");
+        let bad = BEAN.replacen(from, to, 1);
+        let e = Species::from_ron(&bad).unwrap_err().to_string();
+        assert!(e.contains(at), "{e}");
     }
 }
 

@@ -77,7 +77,7 @@ one at a time, with options and a recommendation.
 
 ## 4. State of the project (2026-11-05, main at the handoff merge)
 
-- **Model version 0.23.0** (`ps_world::MODEL_VERSION`; seed growth ends at maturity, decision 0042; before it 0.22.0, phototropism, realism plan R1c, decision 0041, species schema 15; before that 0.21.0, starch storage, root exudation and seed-driven nitrogen, realism plan R1b, decision 0040, species schema 14; before that 0.20.0, root length and water uptake, realism plan R2a, issue #116, decision 0037, species schema 13; before that 0.19.0, stem and root thickening, realism plan R1a, decision 0036, species schema 12; before that 0.18.0, the coupled leaf-temperature solve converges to 0.05 K for speed, decision 0034 amendment; before that 0.17.0, the leaf energy balance, WP27, decision 0034, species schema 11; before that, broad leaves cast rays from 5 points, decision 0033; before that, the research re-tune: development trapezoid, Medlyn g1 5.79, per-organ construction cost keys, decision 0032; before it, the bean genome's 40 loci, decision 0031, grass blades sample light at 3 points, decision 0030, and pole beans find their stake, decision 0029). Species schema 15.
+- **Model version 0.24.0** (`ps_world::MODEL_VERSION`; roots respond to dry and nitrate-rich soil, realism plan R2b, decision 0043, species schema 16; before it 0.23.0, seed growth ends at maturity, decision 0042; before that 0.22.0, phototropism, realism plan R1c, decision 0041, species schema 15; before that 0.21.0, starch storage, root exudation and seed-driven nitrogen, realism plan R1b, decision 0040, species schema 14; before that 0.20.0, root length and water uptake, realism plan R2a, issue #116, decision 0037, species schema 13; before that 0.19.0, stem and root thickening, realism plan R1a, decision 0036, species schema 12; before that 0.18.0, the coupled leaf-temperature solve converges to 0.05 K for speed, decision 0034 amendment; before that 0.17.0, the leaf energy balance, WP27, decision 0034, species schema 11; before that, broad leaves cast rays from 5 points, decision 0033; before that, the research re-tune: development trapezoid, Medlyn g1 5.79, per-organ construction cost keys, decision 0032; before it, the bean genome's 40 loci, decision 0031, grass blades sample light at 3 points, decision 0030, and pole beans find their stake, decision 0029). Species schema 15.
 - **M0 (headless core, WP0 to WP12): done**, awaiting owner sign-off. One bush bean in
   a pot, hourly step, carbon is the sole authority on growth, deterministic (golden
   hashes Linux = Windows, debug = release), validation report passes every M0 gate.
@@ -94,8 +94,11 @@ one at a time, with options and a recommendation.
   Pole bean (twining), spring wheat, nitrogen with nodules, harvest/prune/obstacles,
   weather files, plant-to-plant variation all landed.
 - **M3 (breeding) and M4 (tree, fields): not started.**
-- **Validation (model 0.23.0, mean of four world seeds, decision 0026):** 94 checks,
-  69 pass (0.22.0: 70; R1d took mean_seed_mass out, decision 0042), every M0 gate passes; the pole bean height targets pass since decision 0029.
+- **Validation (model 0.24.0, mean of four world seeds, decision 0026):** 96 checks,
+  70 pass (0.23.0: 69 of 94; R2b brought mean_seed_mass and harvest_index_tops back
+  in, took density_leaf_area_per_plant out and added two root checks that miss at their
+  bands' edges, decision 0043), every M0 gate passes (nearest: shade total mass −49.1%
+  against −50%); the pole bean height targets pass since decision 0029.
   One bean spans 21 to 39 g by world seed alone, so every target reads the seed mean.
   Don't tune "~" parameters on one seed. Main misses: thermal-time phenology, wheat
   stand height and yield,

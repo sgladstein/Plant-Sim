@@ -24,13 +24,13 @@ use serde::{Deserialize, Serialize};
 pub use hash::hash_of;
 pub use lens::{LensData, PlantLens, SoilLens};
 pub use scenario::{
-    Action, ActionKind, FieldVariation, Irrigation, ObstacleSpec, SCENARIO_SCHEMA, Scenario,
-    SeedChoice, SoilSpec, Sowing, Start, SupportSpec, WeatherSource,
+    Action, ActionKind, FieldVariation, Irrigation, NitratePatch, ObstacleSpec, SCENARIO_SCHEMA,
+    Scenario, SeedChoice, SoilSpec, Sowing, Start, SupportSpec, WeatherSource,
 };
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.23.0";
+pub const MODEL_VERSION: &str = "0.24.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -640,6 +640,39 @@ fn grow_soil(
     Ok(())
 }
 
+/// The active cells of `grid` whose centers lie strictly inside nitrate patch `p` (R2b):
+/// its center is east and north of the grid's center and below the surface. Cell
+/// centers sit at odd centimeters on a 2 cm grid, so a cube with even edges and center
+/// coordinates never cuts through a center.
+#[must_use]
+pub fn patch_cells(grid: &ps_soil::SoilGrid, p: &NitratePatch) -> Vec<usize> {
+    let (nx, ny, _) = grid.dims();
+    let c = grid.cell_size().0;
+    let half = 0.005 * p.size_cm;
+    #[allow(clippy::cast_precision_loss)] // grid sizes are small
+    let (cx, cy) = (0.5 * nx as f64 * c, 0.5 * ny as f64 * c);
+    let (ex, ny_, dz) = (
+        0.01 * p.center_cm.0,
+        0.01 * p.center_cm.1,
+        0.01 * p.center_cm.2,
+    );
+    (0..grid.len())
+        .filter(|&i| {
+            let cell = grid.cell_of(i);
+            #[allow(clippy::cast_precision_loss)]
+            let (x, y, z) = (
+                (cell.x as f64 + 0.5) * c - cx,
+                (cell.y as f64 + 0.5) * c - cy,
+                (cell.z as f64 + 0.5) * c,
+            );
+            grid.is_active(i)
+                && (x - ex).abs() < half
+                && (y - ny_).abs() < half
+                && (z - dz).abs() < half
+        })
+        .collect()
+}
+
 /// Each soil's layer temperatures, for the temperature lens (WP26).
 fn soil_lens(soils: &[SoilEntry]) -> Vec<SoilLens> {
     soils
@@ -677,6 +710,13 @@ impl World {
             if matches!(spec, SoilSpec::Plot { .. }) {
                 let field = soil_patches(&grid, &scenario.variation, scenario.world_seed, id);
                 grid.scale_nitrogen_columns(&field);
+            }
+            if scenario.dividers.contains(&id) {
+                grid.set_divider();
+            }
+            for p in scenario.nitrate_patches.iter().filter(|p| p.soil == id) {
+                let cells = patch_cells(&grid, p);
+                grid.scale_nitrate_cells(&cells, p.no3_factor);
             }
             soils.push(SoilEntry {
                 id,
@@ -1393,33 +1433,75 @@ impl World {
         Ok(())
     }
 
-    /// Water to add this hour from the schedule, mm.
-    fn irrigation_mm(s: &SoilEntry, clock_hour: u64, day: u64) -> f64 {
+    /// Water to add this hour from the schedule: mm over the whole surface, and a
+    /// watered strip's water (R2b).
+    fn irrigation_mm(s: &SoilEntry, clock_hour: u64, day: u64) -> (f64, Option<ps_soil::Strip>) {
         let due = |every: u32| {
             clock_hour == IRRIGATION_HOUR && day.is_multiple_of(u64::from(every.max(1)))
         };
-        match s.irrigation {
-            Irrigation::None => 0.0,
-            Irrigation::Schedule { every_days, mm } => {
-                if due(every_days) {
-                    mm
-                } else {
-                    0.0
+        let g = &s.grid;
+        let fc = g.texture().hydraulics().field_capacity * g.cell_volume() * 1000.0;
+        // Water to bring the active cells of columns x0..x1 to field capacity, kg, and
+        // their surface, m².
+        let deficit = |x0: usize, x1: usize| {
+            let (nx, _, _) = g.dims();
+            let (mut kg, mut top) = (0.0, 0usize);
+            for i in (0..g.len()).filter(|i| g.is_active(*i)) {
+                let c = g.cell_of(i);
+                if c.x >= x0 && c.x < x1.min(nx) {
+                    kg += (fc - g.water(i).0).max(0.0);
+                    top += usize::from(c.z == 0);
                 }
+            }
+            #[allow(clippy::cast_precision_loss)] // cell counts are small
+            (kg, top as f64 * g.cell_size().0 * g.cell_size().0)
+        };
+        match s.irrigation {
+            Irrigation::None => (0.0, None),
+            Irrigation::Schedule { every_days, mm } => {
+                (if due(every_days) { mm } else { 0.0 }, None)
             }
             Irrigation::ToFieldCapacity { every_days } => {
                 if due(every_days) {
-                    let g = &s.grid;
-                    let fc = g.texture().hydraulics().field_capacity * g.cell_volume() * 1000.0;
                     let deficit: f64 = (0..g.len())
                         .filter(|i| g.is_active(*i))
                         .map(|i| (fc - g.water(i).0).max(0.0))
                         .sum();
                     // kg over the surface area in m² is mm.
-                    deficit / g.surface_area().max(1e-12)
+                    (deficit / g.surface_area().max(1e-12), None)
                 } else {
-                    0.0
+                    (0.0, None)
                 }
+            }
+            Irrigation::ToFieldCapacityStrip {
+                every_days,
+                east_cm,
+            } => {
+                if !due(every_days) {
+                    return (0.0, None);
+                }
+                let (nx, _, _) = g.dims();
+                let c = g.cell_size().0;
+                #[allow(clippy::cast_precision_loss)]
+                let east = |x: usize| (x as f64 + 0.5) * c - 0.5 * nx as f64 * c;
+                let inside = |x: usize| {
+                    let e = east(x);
+                    e >= 0.01 * east_cm.0 && e < 0.01 * east_cm.1
+                };
+                let x0 = (0..nx).find(|x| inside(*x)).unwrap_or(nx);
+                let x1 = (x0..nx).find(|x| !inside(*x)).unwrap_or(nx);
+                let (kg, area) = deficit(x0, x1);
+                if area <= 0.0 {
+                    return (0.0, None);
+                }
+                (
+                    0.0,
+                    Some(ps_soil::Strip {
+                        water: Millimeters(kg / area),
+                        x0,
+                        x1,
+                    }),
+                )
             }
         }
     }
@@ -1512,7 +1594,7 @@ impl World {
                 .unzip();
             // 4. Soil water: rain, irrigation and action water; radiation under the canopy.
             let leaf_area: f64 = areas.iter().copied().sum();
-            let irr = Self::irrigation_mm(&soils[si], hour, day);
+            let (irr, strip) = Self::irrigation_mm(&soils[si], hour, day);
             let entry = &mut soils[si];
             let lai = leaf_area / entry.grid.surface_area().max(1e-12);
             let water_in = wx.rain.0 * entry.rain_fraction + irr + entry.pending_mm;
@@ -1522,6 +1604,7 @@ impl World {
                 water_in: Millimeters(water_in),
                 surface_radiation: WPerM2(local.global.0 * libm::exp(-SOIL_EXTINCTION * lai)),
                 t_air: wx.t_air,
+                strip,
             });
             entry.ledger.accumulate(&led);
             // 7. Joint uptake for every plant in this soil.
@@ -1718,11 +1801,14 @@ impl World {
     ) -> Result<Vec<DayReport>, WorldError> {
         let WorldState { plants, soils, .. } = &mut self.state;
         let soils: &[SoilEntry] = soils;
+        // Each soil's means for the root rules, once for all its plants (R2b).
+        let means: Vec<(f64, f64)> = soils.iter().map(|s| s.grid.means()).collect();
         // Pots: the whole daily step. Plots: up to the light rebuild.
         let mut reports: Vec<Option<DayReport>> = plants
             .par_iter_mut()
             .map(|e| {
                 let soil = &soils[e.soil].grid;
+                e.plant.set_soil_means(means[e.soil]);
                 if soils[e.soil].shared_light {
                     e.plant.day_before_light(soil, now)?;
                     Ok(None)

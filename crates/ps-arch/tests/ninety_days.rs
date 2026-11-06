@@ -89,6 +89,7 @@ fn run_env(
             water_in: Millimeters(0.0),
             surface_radiation: WPerM2(h.global.0 * libm::exp(-0.5 * lai)),
             t_air: h.t_air,
+            strip: None,
         });
         let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
         plant.grow_hour(&ctx, &soil, uptake.plants.first()).unwrap();

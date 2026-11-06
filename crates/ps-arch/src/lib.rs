@@ -740,6 +740,15 @@ pub struct Plant {
     /// daily step and built hourly (R2a, decision 0037); empty when nothing thickens.
     #[serde(default)]
     pub(crate) wood_potential: Vec<GramsDM>,
+    /// Each organ's expansion clock factor for the day, by organ index: a growing root
+    /// in dry soil slows (R2b, decision 0043); empty or missing for 1.
+    #[serde(default)]
+    pub(crate) root_clock: Vec<f64>,
+    /// Today's [`SoilGrid::means`] of the plant's soil, when the world computed it once
+    /// for all the plants in it; taken by the root step (R2b). Computed on the spot
+    /// when absent.
+    #[serde(skip)]
+    soil_means: Option<(f64, f64)>,
     /// This hour's leaf income, indexed like the arena (scratch between the two
     /// hourly calls; empty at the daily boundary).
     #[serde(skip)]
@@ -984,6 +993,8 @@ impl Plant {
             shoot_demand: (0.0, 0.0),
             wood_rates: Vec::new(),
             wood_potential: Vec::new(),
+            root_clock: Vec::new(),
+            soil_means: None,
             stress: (1.0, 1.0),
             income: Vec::new(),
             sky: ps_light::sky_sectors().to_vec(),
@@ -1388,6 +1399,7 @@ impl Plant {
                 secondary: &self.wood_potential,
                 filling: self.phenology.stage == Stage::SeedFill,
                 growing: self.phenology.stage < Stage::Mature,
+                clock: &self.root_clock,
             },
             &mut self.ledger,
             flows,
@@ -1439,6 +1451,13 @@ impl Plant {
         Ok(self.day_after_light(sun_path, None))
     }
 
+    /// Hands the plant today's [`SoilGrid::means`] of its soil, computed once for all
+    /// the plants in it, for the coming daily step's root rules (R2b). The step uses it
+    /// once; without it the plant computes the same value itself.
+    pub fn set_soil_means(&mut self, means: (f64, f64)) {
+        self.soil_means = Some(means);
+    }
+
     /// The daily step up to the light rebuild: phenology, buds, organ initiation,
     /// senescence, root growth, then the layout and root cells. A plot calls this for
     /// every plant, builds one light grid from their [`Plant::light_inputs`], and hands
@@ -1487,8 +1506,9 @@ impl Plant {
         self.rot_pods(now)?;
         self.update_carbon_met();
         // 5. Root elongation and branching.
+        let soil_means = self.soil_means.take();
         if stage < Stage::Mature {
-            self.root_elongation(now, soil)?;
+            self.root_elongation(now, soil, soil_means)?;
         }
         self.set_wood_rates(now);
         // 5b. Tomorrow's stem and root thickening potential (decision 0037).
@@ -1496,6 +1516,7 @@ impl Plant {
         // 6. Light geometry, root cells, nitrogen, expansion records.
         self.positions = geometry::layout(&self.arena, &self.meta, self.collar_position);
         self.roots = geometry::root_cells(&self.arena, &self.positions, soil);
+        self.set_root_clock(soil);
         Ok(())
     }
 
