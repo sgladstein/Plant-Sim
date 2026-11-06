@@ -8,5 +8,6 @@ Challenge(
   scenario: "challenges/heat_wave",
   score: (metric: PeakSum("pods"), label: "pods", higher_is_better: true),
   rules: (allowed: [Sow, Harvest], sow_window_days: Some((0, 40)), max_sowings: Some(1), sow_species: Some("bush_bean")),
-  medals: (bronze: 8.0, silver: 10.0, gold: 12.0),
+  medals: (bronze: 5.0, silver: 7.5, gold: 9.5),
+  seasons: 8,
 )

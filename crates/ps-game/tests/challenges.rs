@@ -94,6 +94,7 @@ fn thirsty_summer_rewards_water_in_bloom_and_names_the_drought() {
     assert!(bloom.breaks.is_empty() && spread.breaks.is_empty());
     assert!(bloom.score > spread.score, "{bloom:?} {spread:?}");
     assert!(bloom.medal >= Some(Medal::Bronze), "{bloom:?}");
+    assert_eq!(spread.medal, None, "{spread:?}");
     let d = ps_game::debrief(w.state(), &refs);
     assert_eq!(
         d.plants[0].ranked.first(),
@@ -162,4 +163,41 @@ fn the_debrief_names_heat_in_the_heat_at_flowering_scenario() {
             p.summary
         );
     }
+}
+
+#[test]
+fn the_score_is_the_mean_over_the_seasons() {
+    let data = data();
+    let c = load_challenge(&data, "thirsty_summer").expect("challenge");
+    assert!(c.seasons > 1);
+    let log = fixture("thirsty_summer_bloom");
+    let (w, o) = play(&data, &c, &log).expect("play");
+    assert_eq!(o.season_scores.len(), c.seasons as usize);
+    // The first season is the scenario as written: the world returned, judged alone.
+    assert!((o.season_scores[0] - c.judge(w.state()).score).abs() < 1e-12);
+    let more = ps_game::score_other_seasons(&data, &c, &log).expect("others");
+    assert_eq!(more, o.season_scores[1..]);
+    let mean = o.season_scores.iter().sum::<f64>() / f64::from(c.seasons);
+    assert!((o.score - mean).abs() < 1e-12);
+    assert_eq!(o.medal, c.medal_for(o.score));
+    // Seasons differ: another seed is another draw of weather and chance.
+    assert!(
+        o.season_scores
+            .iter()
+            .any(|v| (v - o.season_scores[0]).abs() > 0.5)
+    );
+}
+
+#[test]
+fn later_seasons_drop_actions_on_particular_organs() {
+    let pick = Action {
+        tick: 1000,
+        kind: ActionKind::Harvest {
+            plant: 0,
+            organ: 12,
+        },
+    };
+    let log = vec![sow(20), pick.clone()];
+    assert_eq!(ps_game::season_log(&log, 0), log);
+    assert_eq!(ps_game::season_log(&log, 3), vec![sow(20)]);
 }

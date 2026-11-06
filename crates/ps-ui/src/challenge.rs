@@ -112,6 +112,8 @@ pub struct ChallengeResult {
     pub title: String,
     /// Final score in words.
     pub score: String,
+    /// The seasons behind a mean score, in words; empty for one season.
+    pub seasons: String,
     /// Medal name, or `None`.
     pub medal: Option<String>,
     /// Its color, sRGB.
@@ -335,6 +337,9 @@ fn result(ui: &mut egui::Ui, c: &mut Challenges) {
             ui.label(egui::RichText::new("new best").italics());
         }
     });
+    if !r.seasons.is_empty() {
+        ui.weak(&r.seasons);
+    }
     for b in &r.breaks {
         ui.colored_label(egui::Color32::from_rgb(230, 140, 110), b);
     }

@@ -29,7 +29,7 @@ keep implementing the design plan from the repository alone.
    ```
    Windows goldens equal Linux ones. CI checks both platforms, so a mismatch is a determinism bug.
 6. The challenges (`data/challenges/`, scenarios in `data/scenarios/challenges/`) pin the model too.
-   If `cargo test -p ps-game` fails after the bump, re-sweep the medals as in docs/game/challenges.md.
+   If `cargo test -p ps-game` fails after the bump, re-sweep the medals as in docs/game/challenges.md (on the 8-season mean that `ps-cli challenge` prints).
 
 **Before every push:**
 ```sh
