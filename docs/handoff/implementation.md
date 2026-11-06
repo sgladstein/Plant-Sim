@@ -96,7 +96,7 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 ## 3. Next steps, in order
 
 1. **Realism specs, in order (owner, 2026-11-05): R1 carbon sinks, R2 root system, R3 plant hydraulics.** R1a, R2a (root length, with the water-uptake fix of #116), R1b (storage, exudation, seed-driven N) R1c (phototropism) and the R1d correction (seed growth ends at maturity) are done; the rest of R2 goes next, then R3 (`docs/research/realism-plan/`, r1-carbon-sinks.md, r2-root-system.md, r3-plant-hydraulics.md; PR #107). Each its own model version, decision record and PR; Code review before merging; the performance thread re-times after each merge.
-2. **Seed abortion after pod set** (decision 0032, not done). The root of the drought and heat seed-size misses.
+2. **Seed abortion after pod set** (decision 0032, not done), or a CROPGRO PODUR window that ends pod addition about 10 photothermal days after the first pod (decision 0042 review: ours runs 14 to 18, and the last cohorts end near-empty). The root of the drought and heat seed-size misses and of mean_seed_mass at its band edge. Also consider eight world seeds for single_pot and the response scenarios in validation: three model PRs in a row flipped a pot verdict on seeds 7 to 10 alone.
 3. **Per-organ construction costs** (decision 0032): CROPGRO's leaf 1.39, stem 1.29, root 1.25, fruit 1.36 go in with the transport and priority revisit (decision 0009), since the leaf cost alone takes the shade-internode M0 gate to +17%.
 4. **WP26, sim side** (its own thread): session save, the replay done-when test, lens data for competition, nitrogen, temperature and carbon flow.
 5. **Light follow-ups (decision 0025).**
