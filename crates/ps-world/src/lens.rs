@@ -1,11 +1,11 @@
-//! Lens data (WP26): per-hour values the viewer's competition, temperature, nitrogen
-//! and carbon-flow lenses read. They are derived from the step (copied out of it or
+//! Lens data (WP26): per-hour values the viewer's competition, temperature, nitrogen,
+//! carbon-flow and soil water-potential (R3a) lenses read. They are derived from the step (copied out of it or
 //! read from the state after it), live on the [`World`](crate::World) beside its
 //! state, and are never saved or hashed: turning them on or off cannot change a hash,
 //! and a loaded save has none until its next hour. Model card:
 //! docs/models/world-and-schedule.md, "Lens data".
 
-use ps_units::{Celsius, GramsC, M2, UmolPerM2S};
+use ps_units::{Celsius, GramsC, KPa, M2, UmolPerM2S};
 
 /// The lens data of the hour just stepped.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -56,4 +56,8 @@ pub struct SoilLens {
     pub soil: u32,
     /// Temperature of each soil layer, top first.
     pub layer_temperature: Vec<Celsius>,
+    /// Water potential of each soil layer, top first: the potential of the layer's mean
+    /// water content (R3a; `ps_soil::SoilGrid::layer_water_potentials`). A cell's own is
+    /// `SoilGrid::water_potential`.
+    pub layer_water_potential: Vec<KPa>,
 }

@@ -673,7 +673,8 @@ pub fn patch_cells(grid: &ps_soil::SoilGrid, p: &NitratePatch) -> Vec<usize> {
         .collect()
 }
 
-/// Each soil's layer temperatures, for the temperature lens (WP26).
+/// Each soil's layer temperatures and water potentials, for the temperature (WP26) and
+/// water-potential (R3a) lenses.
 fn soil_lens(soils: &[SoilEntry]) -> Vec<SoilLens> {
     soils
         .iter()
@@ -682,6 +683,7 @@ fn soil_lens(soils: &[SoilEntry]) -> Vec<SoilLens> {
             SoilLens {
                 soil: e.id,
                 layer_temperature: (0..nz).map(|z| e.grid.layer_temperature(z)).collect(),
+                layer_water_potential: e.grid.layer_water_potentials(),
             }
         })
         .collect()

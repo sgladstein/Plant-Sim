@@ -26,12 +26,17 @@
 //! [`stress_factor`]. Roots enter as sparse [`RootCells`] lists. Every flux is booked in a [`WaterLedger`];
 //! debug builds assert closure to 1e-9 relative.
 //!
+//! Water potential (R3a) is derived from the water content through each texture's
+//! [`Retention`] curve; nothing in the step reads it yet.
+//!
 //! Model card: docs/models/soil-and-water.md.
 
-use ps_units::{Celsius, GramsN, KgPerMH, KgWater, M2PerHour, Meters, Millimeters, WPerM2};
+use ps_units::{Celsius, GramsN, KPa, KgPerMH, KgWater, M2PerHour, Meters, Millimeters, WPerM2};
 
 pub mod nitrogen;
+pub mod retention;
 pub use nitrogen::{NitrogenForm, NitrogenLedger, NitrogenRequest, NitrogenUptake, SoilNitrogen};
+pub use retention::Retention;
 use serde::{Deserialize, Serialize};
 
 /// Latent heat of vaporization, J kg⁻¹ (at about 20 °C).
@@ -116,6 +121,14 @@ impl Texture {
                 bulk_density: 1250.0,
             },
         }
+    }
+
+    /// The texture's water retention curve, anchored on its field capacity and
+    /// wilting point (R3a; [`Retention::anchored`]). It solves the curve each call
+    /// (about 54 bisection steps), so callers that need many cells take it once.
+    #[must_use]
+    pub fn retention(self) -> Retention {
+        Retention::anchored(&self.hydraulics())
     }
 }
 
@@ -842,6 +855,40 @@ impl SoilGrid {
         }
         let k = k.max(1.0);
         (w / k, n / k)
+    }
+
+    /// The grid's retention curve ([`Texture::retention`]).
+    #[must_use]
+    pub fn retention(&self) -> Retention {
+        self.texture.retention()
+    }
+
+    /// Water potential of a cell (R3a), `None` outside the pot. It solves the
+    /// texture's curve each call; for many cells use [`SoilGrid::retention`] once and
+    /// [`Retention::psi`] on each [`SoilGrid::theta`].
+    #[must_use]
+    pub fn water_potential(&self, i: usize) -> Option<KPa> {
+        self.active[i].then(|| self.retention().psi(self.theta(i)))
+    }
+
+    /// Each layer's water potential, top first: the potential of the layer's mean water
+    /// content over its active cells (R3a; the lens value). That is wetter than the
+    /// mean of the cells' potentials where roots have dried some cells, since the curve
+    /// is steep when dry; [`SoilGrid::water_potential`] gives a cell's own.
+    #[must_use]
+    pub fn layer_water_potentials(&self) -> Vec<KPa> {
+        let r = self.retention();
+        let per_layer = self.nx * self.ny;
+        (0..self.nz)
+            .map(|z| {
+                let (mut theta, mut k) = (0.0_f64, 0.0_f64);
+                for i in (z * per_layer..(z + 1) * per_layer).filter(|&i| self.active[i]) {
+                    theta += self.theta(i);
+                    k += 1.0;
+                }
+                r.psi(theta / k.max(1.0))
+            })
+            .collect()
     }
 
     /// FTSW of a single cell (for germination).

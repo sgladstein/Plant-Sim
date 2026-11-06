@@ -83,7 +83,10 @@ also records, beside the state and never in it:
   balance, WP27; air for the rest of the shoot; the soil layer for roots and the
   seed); and
   its nitrogen per structural dry mass after the hour;
-- per soil: each layer's temperature.
+- per soil: each layer's temperature, and each layer's water potential at its mean
+  water content (R3a; soil-and-water card). A cell's own potential comes from the grid
+  in the state (`SoilGrid::water_potential`), so the lens does not copy every cell's
+  each hour.
 
 Recording only copies values out of the step or reads the state after it, so the hash
 and the goldens are the same with it on or off (`ps-session/tests/save.rs`). It is never
