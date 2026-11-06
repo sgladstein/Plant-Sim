@@ -107,12 +107,12 @@ fn locus_must_name_a_heritable_trait() {
 
 #[test]
 fn schema_version_checked() {
-    let bad = BEAN.replacen("schema: 14,", "schema: 6,", 1);
+    let bad = BEAN.replacen("schema: 15,", "schema: 6,", 1);
     assert!(matches!(
         Species::from_ron(&bad),
         Err(SpeciesError::Schema {
             found: 6,
-            expected: 14
+            expected: 15
         })
     ));
 }
@@ -326,6 +326,34 @@ fn storage_keys_are_checked() {
             "exudation_fraction: (value: 0.4, unit: \"-\"",
             "exudation_fraction: (value: 0.4, unit: \"1/h\"",
             "storage.exudation_fraction",
+        ),
+    ];
+    for (from, to, at) in cases {
+        assert!(BEAN.contains(from), "{from}");
+        let e = Species::from_ron(&BEAN.replacen(from, to, 1)).unwrap_err();
+        assert!(e.to_string().contains(at), "{e}");
+    }
+}
+
+/// Phototropism (schema 15, R1c): the weight is a share and the daily turn at most
+/// 90 degrees.
+#[test]
+fn phototropism_keys_are_checked() {
+    let cases = [
+        (
+            "phototropism_weight: (value: 0.3,",
+            "phototropism_weight: (value: 1.3,",
+            "constants.phototropism_weight:",
+        ),
+        (
+            "phototropism_max_per_day: (value: 10.0,",
+            "phototropism_max_per_day: (value: -1.0,",
+            "constants.phototropism_max_per_day:",
+        ),
+        (
+            "phototropism_max_per_day: (value: 10.0, unit: \"deg\"",
+            "phototropism_max_per_day: (value: 10.0, unit: \"rad\"",
+            "constants.phototropism_max_per_day",
         ),
     ];
     for (from, to, at) in cases {

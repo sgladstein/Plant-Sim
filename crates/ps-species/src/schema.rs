@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 14;
+pub const SCHEMA: u32 = 15;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -216,6 +216,11 @@ param_group!(
         root_segment_length: "cm",
         /// Share of the way to vertical a new internode turns per node (shoot gravitropism).
         shoot_gravitropism: "-",
+        /// Share of the angle between a new internode and the light it saw that the
+        /// internode turns toward the light (R1c, decision 0041; schema 15).
+        phototropism_weight: "-",
+        /// Most a shoot turns toward the light in a day (R1c, decision 0041).
+        phototropism_max_per_day: "deg",
         /// Days below the shade light threshold before a leaf senesces.
         shade_senescence_days: "day",
         /// Hypocotyl length per dry mass.

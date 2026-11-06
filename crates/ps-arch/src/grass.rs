@@ -13,7 +13,7 @@ use ps_units::{DegreeDays, GramsDM, Hours, M2, M2PerG, MPerG, Meters, Radians};
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{V3, add, cross, from_azimuth, unit};
-use crate::{ArchError, Bud, BudFate, Climb, Plant, Pod, Role, ShootAxis, Spawn, curve};
+use crate::{ApexSight, ArchError, Bud, BudFate, Climb, Plant, Pod, Role, ShootAxis, Spawn, curve};
 
 const CM: f64 = 0.01;
 
@@ -185,6 +185,7 @@ impl Plant {
             last_leaf: None,
             climb: Climb::Free,
             free_length: 0.0,
+            sight: ApexSight::default(),
         };
         self.grass_node(&g, &mut ax, 0, [0.0, 0.0, 1.0], now)?;
         ax.base = ax.apex;
@@ -389,6 +390,7 @@ impl Plant {
                 last_leaf: None,
                 climb: Climb::Free,
                 free_length: 0.0,
+                sight: ApexSight::default(),
             };
             let x = self.axes.len();
             self.grass_node(&g, &mut ax, x, dir, now)?;

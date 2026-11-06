@@ -67,6 +67,15 @@ Daily (§3.2 daily step 6), in crate `ps-light`:
   absorbed beam is exact.
 - **Red:far-red.** `R:FR = clamp(1.2 · exp(−0.5 · LAI_above), 0.2, 1.2)`, with
   `LAI_above = Σ (LAD_c − LAD_own,c) ℓ_c` straight up from the leaf center.
+- **Shoot apex light** (R1c, decision 0041). From the tip of each growing bean shoot
+  apex, one ray toward each hour's sun and each sky sector, through every leaf in the
+  cells it crosses (no own footprint) and every obstacle: `D_h = T_h ŝ_h` for each
+  hour the sun is up and `S = Σ_s a_s T_s d'_s`. Hourly, the apex adds the vector
+  irradiance `I_dir / max(sin β, 0.05) · D_h + I_dif · S` (W m⁻²) to what it has seen;
+  under an open overcast sky `S = (0, 0, 1)`. Its horizontal part is the light
+  difference across a vertical stem, `∫ L (d · n) dΩ` for a side facing `n`. The
+  architecture turns new internodes toward it (herb-architecture card). About 40 rays
+  per apex and a few apices a plant, under 1% of the leaf rays.
 
 Hourly (§3.2 hourly step 3), `absorbed_par`, per unit leaf area:
 
@@ -104,6 +113,7 @@ elevation; `α`: leaf PAR absorptance; `f_PAR`, `q` below.
 | in | direct and diffuse irradiance | W m⁻² | ps-weather hourly series |
 | out | 24 direct coefficients, 24 beam projections, diffuse coefficient (lenses), absorbed-diffuse coefficient, R:FR | 1 | `LightCoeffs` on each leaf |
 | out | absorbed PAR, sunlit and shaded | µmol m⁻² s⁻¹ | gas exchange (WP7) |
+| out | shoot apex light: 24 sun vectors and one sky vector per growing apex | 1 | herb architecture, phototropism (R1c) |
 
 ## Encoded or emergent
 Encoded: Beer's-law attenuation through foliage, one-leaf opacity within a footprint,
@@ -186,6 +196,9 @@ interception as it grows, and shade between neighboring plants.
   +5.6% and 51 of 74 with one G, decision 0019).
 - `ps_light::plot::tests`: `the_plot_grid_has_fixed_cells_and_starts_at_the_ground`,
   `neighbors_in_a_plot_shade_each_other`.
+- `apex_light_leans_away_from_a_wall` (R1c): in the open an apex sees every sun and a
+  sky vector of `(0, 0, 1)`; behind a wall to the east the morning sun is blocked and
+  the sky vector leans west.
 - `isolated_leaf_is_fully_lit` (also: a horizontal leaf in the open absorbs exactly the
   horizontal diffuse irradiance), `leaf_under_another_is_shaded`, `grid_respects_limits`,
   `sky_weights_sum_to_one` (also checks the absorption weights sum to 12/7),

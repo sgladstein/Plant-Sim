@@ -255,6 +255,21 @@ pub struct ShootAxis {
     /// Stem length made while upright and unsupported, m (vines).
     #[serde(default)]
     pub free_length: f64,
+    /// The light its apex has seen, for phototropism (R1c, decision 0041).
+    #[serde(default)]
+    pub sight: ApexSight,
+}
+
+/// What a shoot apex has seen of the light (R1c, decision 0041).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ApexSight {
+    /// The apex's light coefficients from the last light rebuild.
+    pub light: ps_light::ApexLight,
+    /// Vector irradiance summed over the hours since the axis' last node, W h m⁻²
+    /// (east, north, up).
+    pub seen: [f64; 3],
+    /// Hours summed into `seen`.
+    pub hours: u32,
 }
 
 /// Fate of an axillary bud.
@@ -1348,6 +1363,8 @@ impl Plant {
                 _ => wx.t_air,
             })
             .collect();
+        // Phototropism (R1c): each growing apex sums the hour's light.
+        self.sight_hour(ctx);
         // Nodules pay for the hour's fixation first (decision 0020).
         self.fix_hour();
         let respiring = self.phenology.stage != Stage::Mature;
@@ -1502,6 +1519,66 @@ impl Plant {
         self.shoot_demand = (d, u);
     }
 
+    /// The axes whose apex takes part in phototropism (R1c, decision 0041): growing
+    /// axes with a living apex, in axis order; none for a grass or with the weight 0.
+    fn sighted_axes(&self) -> Vec<usize> {
+        if self.params.phototropism_weight <= 0.0 || self.is_grass() {
+            return Vec::new();
+        }
+        (0..self.axes.len())
+            .filter(|&x| {
+                let ax = &self.axes[x];
+                !ax.terminated && self.arena.alive[ax.apex.index()]
+            })
+            .collect()
+    }
+
+    /// The tips of the growing shoot apices that cast light rays (R1c), in the soil
+    /// frame, in the order [`Plant::day_after_light`] takes their light back.
+    #[must_use]
+    pub fn apex_points(&self) -> Vec<V3> {
+        self.sighted_axes()
+            .iter()
+            .map(|&x| {
+                let i = self.axes[x].apex.index();
+                self.positions.get(i).map_or(self.collar_position, |p| p.1)
+            })
+            .collect()
+    }
+
+    /// Hands each growing apex its light for the coming day.
+    fn set_apex_light(&mut self, lights: &[ps_light::ApexLight]) {
+        debug_assert_eq!(lights.len(), self.sighted_axes().len(), "one per apex");
+        for (x, l) in self.sighted_axes().into_iter().zip(lights) {
+            self.axes[x].sight.light = *l;
+        }
+    }
+
+    /// One hour of phototropism (R1c): each growing apex adds the hour's vector
+    /// irradiance at its tip to what it has seen since its axis' last node.
+    fn sight_hour(&mut self, ctx: &HourCtx<'_>) {
+        if self.params.phototropism_weight <= 0.0 || self.is_grass() {
+            return;
+        }
+        let wx = ctx.weather;
+        let sin_e = if wx.sun.is_up() {
+            wx.sun.direction()[2]
+        } else {
+            0.0
+        };
+        for ax in &mut self.axes {
+            if ax.terminated {
+                continue;
+            }
+            let v = ax
+                .sight
+                .light
+                .vector(ctx.hour, wx.direct, wx.diffuse, sin_e);
+            ax.sight.seen = geometry::add(ax.sight.seen, v, 1.0);
+            ax.sight.hours += 1;
+        }
+    }
+
     /// The light model's input for this plant: its leaflet discs (see
     /// [`Plant::light_points`]) and the internode tips that bound the shoot, in the
     /// soil frame.
@@ -1518,14 +1595,15 @@ impl Plant {
     }
 
     /// The rest of the daily step after [`Plant::day_before_light`]: the light rebuild,
-    /// nitrogen and the day's report. `coeffs` holds one entry per leaflet of
-    /// [`Plant::light_inputs`] from a shared grid, or `None` to build this plant's own.
+    /// nitrogen and the day's report. `shared` holds, from a shared grid, one
+    /// coefficient per leaflet of [`Plant::light_inputs`] and one apex light per point
+    /// of [`Plant::apex_points`]; `None` builds this plant's own grid.
     pub fn day_after_light(
         &mut self,
         sun_path: &[Option<V3>; 24],
-        coeffs: Option<&[LightCoeffs]>,
+        shared: Option<(&[LightCoeffs], &[ps_light::ApexLight])>,
     ) -> DayReport {
-        self.rebuild_light(sun_path, coeffs);
+        self.rebuild_light(sun_path, shared);
         self.mark_expanded();
         let rep = self.report();
         self.close_nitrogen_day();
@@ -1593,7 +1671,11 @@ impl Plant {
         (points, owner)
     }
 
-    fn rebuild_light(&mut self, sun_path: &[Option<V3>; 24], shared: Option<&[LightCoeffs]>) {
+    fn rebuild_light(
+        &mut self,
+        sun_path: &[Option<V3>; 24],
+        shared: Option<(&[LightCoeffs], &[ps_light::ApexLight])>,
+    ) {
         // Absorbed PAR, for low-light acclimation of new organs: a running mean that
         // gives yesterday a weight of 1/3, so one dull day does not set a leaf's
         // thickness (decision 0018).
@@ -1614,12 +1696,21 @@ impl Plant {
         }
         let leaves: Vec<OrganId> = self.arena.alive_of(OrganKind::Leaf).collect();
         let (points, owner) = self.leaflets();
-        let coeffs = if let Some(c) = shared {
+        let coeffs = if let Some((c, apices)) = shared {
             debug_assert_eq!(c.len(), points.len(), "one coefficient per leaflet");
+            self.set_apex_light(apices);
             c.to_vec()
         } else {
             let extra = self.internode_tips();
-            ps_light::rebuild_daily_with(&points, &extra, &self.obstacles, sun_path, &self.sky).1
+            let (grid, c) =
+                ps_light::rebuild_daily_with(&points, &extra, &self.obstacles, sun_path, &self.sky);
+            let at = self.apex_points();
+            if let Some(g) = grid.as_ref().filter(|_| !at.is_empty()) {
+                let dirs = ps_light::DayDirections::new(sun_path, &self.sky);
+                let lights = ps_light::apex_light(g, &dirs, &self.sky, &at);
+                self.set_apex_light(&lights);
+            }
+            c
         };
         let mut sums: Vec<(LightCoeffs, f64)> = vec![(zero_coeffs(), 0.0); self.arena.len()];
         for (c, &i) in coeffs.iter().zip(&owner) {
