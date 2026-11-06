@@ -7,7 +7,7 @@ use ps_light::LeafPoint;
 use ps_soil::{RootCells, SoilGrid, SoilHour, Texture};
 use ps_units::{Celsius, M2, Meters, Millimeters, WPerM2};
 
-/// Plants in the M2 plot budget (design plan §7, WP21: 30 plants under 20 ms per sim-day).
+/// Plants in the M2 plot budget (design plan §7, WP21: 30 plants under 30 ms per sim-day, decision 0039).
 pub const PLOT_PLANTS: usize = 30;
 
 /// A summer hour with light rain: exercises infiltration, drainage and evaporation.

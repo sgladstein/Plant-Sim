@@ -498,7 +498,7 @@ M0 exit, all measured by the WP11 report:
 - Frost-night scenario: leaves die, no recovery. Heat-wave scenario at flowering: pod set falls.
 - Water and carbon ledgers close to 1e-9 relative every hour.
 - One hash across three Linux runs; Linux and Windows hashes recorded, each stable.
-- Under 2 ms per sim-day for the single plant, by instruction count on CI.
+- Under 2 ms per sim-day for the single plant, by instruction count on CI. (Re-baselined by the owner 2026-11-06 to under 4 ms, provisional until timed on the owner's PC; decision 0039.)
 - A model card for every §3 process; every parameter has a source or "\~".
 
 ### M1: the two-pot visible proof
@@ -522,7 +522,7 @@ M1 exit: the two-pot runs look right to the owner and the pot differences are th
 
 | WP | Work package | Size | Done when |
 | --- | --- | --- | --- |
-| 21 | Plot soil block (1 × 1 to 3 × 3 m, 5 cm cells), merged light grid, per-voxel light coefficients (measured and not used; decision 0019) | M | 30 plants under 20 ms per sim-day |
+| 21 | Plot soil block (1 × 1 to 3 × 3 m, 5 cm cells), merged light grid, per-voxel light coefficients (measured and not used; decision 0019) | M | 30 plants under 20 ms per sim-day (now 30 ms, decision 0039) |
 | 22 | Vine module and pole bean: habit locus, indeterminate growth, circumnutation, capture and twining, trellis objects (decisions 0021, 0023) | L | A pole bean reaches 1.5 m by day 60 and 2 m by day 75 at a 20 °C mean; without a trellis it flops and yields less |
 | 23 | Grass module and spring wheat: tillering, intercalary growth, fibrous roots (decisions 0022, 0023) | L | Tiller count and height inside a literature range chosen in WP23 (ranges and results in decision 0022) |
 | 24 | Nitrogen: soil mineral N, mineralization, leaching, uptake, leaf N drives Vcmax, remobilization, nodules for legumes, fertilize action | L | Nodulated beans grow in N-free soil and unnodulated ones do not; bottom-up senescence now emergent |
@@ -530,7 +530,7 @@ M1 exit: the two-pot runs look right to the owner and the pot differences are th
 | 26 | Save and load UI, replay scrubber with action markers, competition, temperature and nitrogen lenses, carbon flow arrows | M | Replay of a saved plot matches its hash |
 | 27 | Leaf energy balance (leaf temperature from radiation, wind and transpiration) | M | Leaf-air temperature difference within literature range on a hot still day |
 
-M2 exit: 30 plants at 60 fps and under 20 ms per sim-day; leaf area per unit ground plateaus with density as in §8.3; pruning releases branching; nodulation works; weather file import drives a run.
+M2 exit: 30 plants at 60 fps and under 20 ms per sim-day (re-baselined to 30 ms with the multi-fidelity simplified mode for big plots and fast-forward, decision 0039); leaf area per unit ground plateaus with density as in §8.3; pruning releases branching; nodulation works; weather file import drives a run.
 
 ### M3: seeds, breeding and challenges
 

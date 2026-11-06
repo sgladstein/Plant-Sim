@@ -5,13 +5,19 @@ project's earlier chats. It covers what the budgets are, how to measure, the
 rules for speedups, what has been done, and what is open. The live numbers are
 in docs/performance.md, and the STATUS perf line says where each budget stands.
 
-## Budgets (docs/design-plan.md §7)
+## Budgets (decision 0039, re-baselined by the owner 2026-11-06)
 
-| Scope | Budget | State after the 2026-11-05 bit-identical pass (4-core Xeon container about 15% slower than earlier ones) |
+| Scope | Budget | State at model 0.19.0 (4-core cloud container) |
 | --- | --- | --- |
-| One bush bean in a pot (M0) | under 2 ms per sim-day | 2.06 to 2.19 ms (main 2.66 in the same container): at the budget, likely under it on the earlier containers |
-| 30-bean plot (M2) | under 20 ms per sim-day | 22.7 ms (main 27.2 to 29.1 in the same container), about 2 ms over after scaling |
+| One bush bean in a pot (M0) | under 4 ms per sim-day (was 2) | about 3.5 ms |
+| 30-bean plot (M2) | under 30 ms per sim-day (was 20) | about 26 ms |
 | Viewer frame (M1) | under 16.7 ms on the owner's GTX 1070 at 2560 × 1440 | 6.55 ms mean, p99 9.61 (Vulkan uncapped, 2352 × 1325, real sim, f4bec25); re-time after #72 and #78 |
+
+The sim budgets are provisional until timed on the owner's PC. Big plots and
+fast-forward use the simplified mode of the multi-fidelity plan
+(docs/research/realism-plan/fidelity-levels.md); the budgets hold the full model.
+Do not pursue result-changing speedups just to hit a budget (decision 0039).
+Bit-identical speedups continue, and each realism step gets a cost measurement.
 
 There are no budgets for the pole beans (about 4 ms per plant per sim-day) or the
 wheat stand (about 110 ms per sim-day for about 200 plants on 1 m²). The wheat
@@ -103,14 +109,14 @@ docs/performance.md has the details of each, including measured floors.
    footprint depth per direction (sun-up hours plus 16 sky sectors, about 31). It
    costs about 6 to 7% on the single pot and the plot. Look for bit-identical cuts
    in the logs per distinct leaf area density and in the per-direction adds.
-2. **Plot over budget** (now 22.7 ms in a slower container, about 2 ms over). The
-   biggest bit-identical item left is the hourly growth section's overhead, about
+2. **Done 2026-11-06: plot over budget.** The owner re-baselined the budgets
+   (decision 0039) instead of taking result-changing cuts. For the record, the
+   remaining bit-identical item was the hourly growth section's overhead, about
    2.7 ms per sim-day of wake-up and scheduling across 2,160 short parallel
-   sections (spinner jobs were tried before and did not help). Was 24.5 ms against 20. Remaining cost per sim-day: daily
-   light and growth about 9.7 ms, hourly growth about 8.5 ms, demand 1.9, soil 1.7,
-   uptake 0.7. The daily hash is a latency-bound chain, about 3.6 ms of serial
-   time, and runs overlapped. Going clearly under 20 ms probably needs an owner
-   decision: fewer rays per leaf, or a cheaper hash definition (new golden hashes).
+   sections (spinner jobs were tried before and did not help). Shelved
+   result-changing options: sky light every third day
+   (/mnt/project-files/perf/option4-sky-every-3rd-day.patch, about 3%), class-table
+   row interpolation, fewer rays per leaf, a cheaper hash definition.
 3. **Wheat stand: open choice for the owner.** It runs at about 110 ms per sim-day,
    so it can't play live at a sim-week per second (that needs about 0.8 s of sim
    per wall second). Light rays are about 43% of instructions, hourly growth about
