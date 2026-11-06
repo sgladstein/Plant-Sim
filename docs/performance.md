@@ -228,6 +228,33 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+### R2a cost (model 0.20.0, 2026-11-06)
+
+R2a (decision 0037, #129) adds about 45% more organs (root segments) and moves the
+thickening potential to the daily step. Callgrind, one thread, 90 days:
+
+| Scenario | 0.19.0 (824eeb0) | 0.20.0 (3a55343) | with the pre-sized phloem edge list |
+| --- | --- | --- | --- |
+| single_pot | 3.10 G instructions | 3.61 G (+16.5%) | 3.61 G |
+| plot_30_beans | 55.8 G | 68.3 G (+22.3%) | 66.8 G (-2.1%) |
+
+Wall time, 4 cores, interleaved best of 3, in a container that ran 0.19.0's plot at
+33 ms where the previous container ran it at about 26: single_pot 3.3 to 3.9 ms per
+sim-day; plot_30_beans 32.9 to 38.2 ms, and 37.2 to 38.5 ms with the edge-list fix
+(main 39.4 to 41.2 in the same runs). Scaled to the earlier container the plot is
+about 30 ms and the pot about 3.5 to 4 ms: both at the edge of the decision 0039
+budgets. Timing on the owner's PC settles it.
+
+The extra cost is spread over the hourly per-organ loop in `allocation::hourly_recording`
+(about 700 instructions per organ per hour), the hourly wood build
+(`OrganArena::grow_secondary`, 17.5 M calls, 3%) and the daily hash, which hashes
+more organs but runs overlapped. The one cut with no change to results: the phloem
+step collected its edge list through a filter, which has no length hint, so the Vec
+grew by doubling every hour (about 3% of the plot's instructions in reallocation and
+copies); it is now sized to the organ count. Still open: cloning `PlantEntry` for the
+overlapped daily hash is about 2.6% of instructions (1.8 G); making it cheaper means
+sharing the plant's big vectors (for example behind `Arc`), a structural change.
+
 ## Breeding bench (WP30)
 
 One ten-seed generation (WP30 done-when: under 10 s of wall time), measured with
