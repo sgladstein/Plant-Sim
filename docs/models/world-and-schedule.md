@@ -24,6 +24,13 @@ replayed exactly.
   climbing).
 - Rain shelter: rain reaching a soil `= rain_fraction × rain` (scenario `rain_fraction`
   per soil, default 1; decision 0018). Irrigation and action water are not affected.
+- Root experiments (R2b, decision 0043): `dividers` lists pots with a watertight divider
+  across their center (north to south); `Irrigation::ToFieldCapacityStrip` waters only
+  the columns whose centers lie between two east offsets, by their own deficit to field
+  capacity; `nitrate_patches` multiply the starting nitrate of the cells whose centers
+  lie strictly inside a cube (center east, north and deep from the soil's center, edge
+  in cm). Before the plants' daily steps the world computes each soil's mean available
+  water and nitrate once and hands it to its plants for the root rules.
 - Plots (decision 0019): plants of one soil step in parallel and are collected in plant
   order. Each day a plot's leaves go into one shared light grid (`ps_light::rebuild_plot`)
   between `Plant::day_before_light` and `Plant::day_after_light`.

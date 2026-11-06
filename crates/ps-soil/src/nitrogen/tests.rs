@@ -7,6 +7,7 @@ fn hour(rain_mm: f64, t: f64) -> SoilHour {
         water_in: Millimeters(rain_mm),
         surface_radiation: WPerM2(0.0),
         t_air: Celsius(t),
+        strip: None,
     }
 }
 
@@ -84,17 +85,62 @@ fn rain_leaches_nitrate_and_the_ledger_closes() {
     assert!(g.nh4(0).0 < nh4_top.0 + 1e-6);
 }
 
+/// Nitrate moves sideways with the water that moves, at the concentration of the cell
+/// the water leaves, and otherwise only diffuses slowly (R2b, decision 0043).
 #[test]
-fn nitrate_spreads_sideways_with_the_water() {
-    let mut g = SoilGrid::new_box(3, 1, 1, Meters(0.05), Texture::Loam, Celsius(0.0)).unwrap();
+fn nitrate_moves_with_the_water_and_diffuses_slowly() {
+    // Equal water: diffusion alone, 4.6e-4 of the difference an hour between 2 cm cells.
+    let mut g = SoilGrid::new_box(3, 1, 1, Meters(0.02), Texture::Loam, Celsius(0.0)).unwrap();
     g.set_nitrogen(&SoilNitrogen::NONE);
     g.no3[0] = GramsN(1e-3);
     g.n_ledger.start = g.total_nitrogen();
     for _ in 0..200 {
         g.step_hour(&hour(0.0, 0.0));
     }
-    assert!(g.no3(2).0 > 1e-4, "{:?}", g.no3);
+    let moved = 1.0 - g.no3(0).0 / 1e-3;
+    assert!(moved > 0.05 && moved < 0.12, "{moved}");
+    assert!(g.no3(2).0 < 0.01e-3, "{:?}", g.no3);
     assert!((g.total_nitrogen().0 - 1e-3).abs() < 1e-15);
+    // A wet cell with nitrate next to a drier one: in the first hour the nitrate moves
+    // in the same share as the water (plus diffusion).
+    let mut g = SoilGrid::new_box(2, 1, 1, Meters(0.02), Texture::Loam, Celsius(0.0)).unwrap();
+    g.set_nitrogen(&SoilNitrogen::NONE);
+    g.fill_to(0.15);
+    g.water[0] = g.capacity(0.25);
+    g.no3[0] = GramsN(1e-3);
+    g.n_ledger.start = g.total_nitrogen();
+    let w0 = g.water(0).0;
+    g.redistribute_laterally();
+    let water_share = 1.0 - g.water(0).0 / w0;
+    let n_share = 1.0 - g.no3(0).0 / 1e-3;
+    let diffusion = g.nitrate_diffusion_fraction();
+    assert!(
+        (n_share - water_share - diffusion).abs() < 1e-12,
+        "{n_share} {water_share}"
+    );
+    assert!((g.total_nitrogen().0 - 1e-3).abs() < 1e-15);
+}
+
+/// A divider stops water and nitrate between the halves (a split pot, R2b).
+#[test]
+fn a_divider_stops_water_and_nitrate() {
+    let mut g = SoilGrid::new_box(4, 1, 1, Meters(0.02), Texture::Loam, Celsius(0.0)).unwrap();
+    g.set_nitrogen(&SoilNitrogen::NONE);
+    g.set_divider();
+    assert_eq!(g.divider(), Some(2));
+    g.fill_to(0.15);
+    g.water[0] = g.capacity(0.25);
+    g.no3[0] = GramsN(1e-3);
+    let east = (g.water(2), g.water(3));
+    for _ in 0..300 {
+        g.redistribute_laterally();
+    }
+    assert_eq!((g.water(2), g.water(3)), east);
+    assert_eq!((g.no3(2), g.no3(3)), (GramsN(0.0), GramsN(0.0)));
+    assert!(
+        (g.theta(0) - g.theta(1)).abs() < 1e-6,
+        "the west half evens out"
+    );
 }
 
 #[test]

@@ -118,6 +118,42 @@ pub fn scatter(z: f64, cv: f64) -> f64 {
     (1.0 + cv * z.clamp(-2.5, 2.5)).max(0.25)
 }
 
+/// How roots answer the soil around them (R2b, decision 0043). Every rule reads the
+/// relative available water or nitrate of the cell a root tip or parent segment is in,
+/// at the daily root step. The default does nothing (no plasticity).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RootPlasticity {
+    /// Relative available water at and above which a tip elongates at full rate.
+    pub dry_full: f64,
+    /// Least share of its rate a tip keeps in dry soil.
+    pub dry_floor: f64,
+    /// Relative available water below which no lateral cohort forms on a segment.
+    pub xerobranching: f64,
+    /// Weight of a cell's nitrate above the soil and root-zone means on its laterals.
+    pub proliferation_nitrate: f64,
+    /// Weight of a cell's available water above the soil and root-zone means on its
+    /// laterals.
+    pub proliferation_water: f64,
+    /// Whether a lateral cohort turns toward the wetter side of its parent.
+    pub hydropatterning: bool,
+    /// Weight of the available-water gradient in a tip's direction.
+    pub hydrotropism: f64,
+}
+
+impl Default for RootPlasticity {
+    fn default() -> Self {
+        Self {
+            dry_full: 0.0,
+            dry_floor: 1.0,
+            xerobranching: 0.0,
+            proliferation_nitrate: 0.0,
+            proliferation_water: 0.0,
+            hydropatterning: false,
+            hydrotropism: 0.0,
+        }
+    }
+}
+
 /// Everything the herb module reads, in model units.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::struct_field_names)]
@@ -201,6 +237,9 @@ pub struct HerbParams {
     /// Most a shoot turns toward the light per day of light seen (R1c).
     #[serde(default)]
     pub phototropism_max_per_day: Radians,
+    /// How roots answer the soil around them (R2b, decision 0043).
+    #[serde(default)]
+    pub root_plasticity: RootPlasticity,
     /// Base daily bud activation probability.
     pub bud_activation: f64,
     /// Reserve concentration of a fully fed bud, g C per g DM.
@@ -396,6 +435,15 @@ impl HerbParams {
             shoot_gravitropism: c.shoot_gravitropism.value,
             phototropism_weight: c.phototropism_weight.value,
             phototropism_max_per_day: Radians(c.phototropism_max_per_day.value.to_radians()),
+            root_plasticity: RootPlasticity {
+                dry_full: c.root_dry_full.value,
+                dry_floor: c.root_dry_floor.value,
+                xerobranching: c.xerobranching_threshold.value,
+                proliferation_nitrate: c.root_proliferation_nitrate.value,
+                proliferation_water: c.root_proliferation_water.value,
+                hydropatterning: c.hydropatterning.value > 0.5,
+                hydrotropism: c.hydrotropism_weight.value,
+            },
             bud_activation: t.bud_activation,
             bud_reserve_reference: c.bud_reserve_reference.value,
             pod_set_reserve_reference: c.pod_set_reserve_reference.value,

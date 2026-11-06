@@ -25,6 +25,8 @@
 //! | `leaf_area_cm2` | leaf area × 10⁴ |
 //! | `ndfa_season` | Σ N fixed / Σ (N fixed + N taken up) over the days so far |
 //! | `mean_internode_cm` | mean length of living stem internodes at the end, cm |
+//! | `root_length_west_east_ratio` | root length west of the soil's center / east of it, at the end (R2b split pot) |
+//! | `root_length_patch_m` | lateral and fine-root length in the soil's first nitrate patch at the end, m (R2b) |
 //! | `day_of_<Stage>` or `day_of(<Stage>)` | first day at or past the stage, days after sowing |
 
 use ps_arch::Role;
@@ -251,4 +253,53 @@ pub fn mean_internode_cm(state: &WorldState, plant: u32) -> Result<f64, String> 
     #[allow(clippy::cast_precision_loss)] // internode counts are small
     let n = lengths.len() as f64;
     ratio(lengths.iter().sum(), n, "the stem internode count")
+}
+
+/// Where `plant`'s roots are at the end (R2b): `root_length_west_east_ratio`, the root
+/// length in the columns west of its soil's center over that east of it (a split pot's
+/// watered half over its dry half), or `root_length_patch_m`, the lateral and fine-root
+/// length in the cells of its soil's first nitrate patch, m.
+///
+/// # Errors
+/// If the plant is missing, its soil has no patch, or the east half has no roots.
+pub fn root_length_where(state: &WorldState, plant: u32, variable: &str) -> Result<f64, String> {
+    let p = state
+        .plants
+        .iter()
+        .find(|p| p.id == plant)
+        .ok_or_else(|| format!("no plant {plant}"))?;
+    let soil = state
+        .soils
+        .get(p.soil)
+        .ok_or_else(|| format!("no soil for plant {plant}"))?;
+    let grid = &soil.grid;
+    let cells = p.plant.roots.cells();
+    if variable == "root_length_patch_m" {
+        // Laterals and fine roots only: the axes do not proliferate (R2b spec §4.1).
+        let laterals =
+            ps_arch::geometry::root_cells_from(&p.plant.arena, &p.plant.positions, grid, 1);
+        let patch = state
+            .scenario
+            .nitrate_patches
+            .iter()
+            .find(|n| n.soil == soil.id)
+            .ok_or_else(|| format!("soil {} has no nitrate patch", soil.id))?;
+        let inside = ps_world::patch_cells(grid, patch);
+        return Ok(laterals
+            .cells()
+            .iter()
+            .filter(|(i, _)| inside.binary_search(i).is_ok())
+            .map(|(_, l)| l.0)
+            .sum());
+    }
+    let (nx, _, _) = grid.dims();
+    let (mut west, mut east) = (0.0, 0.0);
+    for &(i, l) in cells {
+        if grid.cell_of(i).x < nx / 2 {
+            west += l.0;
+        } else {
+            east += l.0;
+        }
+    }
+    ratio(west, east, "root length in the east half")
 }

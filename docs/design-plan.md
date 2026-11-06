@@ -142,6 +142,8 @@ From R1c (decision 0041), with no change to the step list: daily step 6 also cas
 
 From R1d (decision 0042), with no change to the step list: from physiological maturity hourly step 12 grows nothing, so seeds stop filling at maturity.
 
+From R2b (decision 0043), with no change to the step list: in daily step 5 a root tip leans weakly up the water gradient, and a lateral or fine-root cohort forms only where its parent's soil is not too dry, turns toward the wetter side, and stands for more roots where its path is richer in nitrate or water than both the soil's and the root zone's mean; daily step 6, with the root cells, sets each growing root's expansion clock factor for the next day from its tip cell's available water, which hourly step 11 applies. Hourly step 4 moves nitrate sideways with the lateral water flux and slow diffusion, not at the water's exchange fraction.
+
 ### 3.3 Plant structure and organ state
 
 An MTG-like organ graph stored as structs-of-arrays indexed by integer ids, with parent pointers and per-node children lists kept in creation order so iteration is deterministic. Organ types: seed, cotyledon, internode, bud, leaf (blade plus petiole), root segment, flower, pod, seed-in-pod, and in M2 nodule. (Decision 0023: common bean twines, so there is no tendril organ; a twining internode carries its support and coil instead. `OrganKind::Tendril` stays unused until the next model bump removes it.)

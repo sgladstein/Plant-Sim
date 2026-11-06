@@ -54,6 +54,7 @@ fn run(species: &str, days: u32) -> (Plant, f64, f64) {
             water_in: Millimeters(0.0),
             surface_radiation: WPerM2(h.global.0 * libm::exp(-0.5 * lai)),
             t_air: h.t_air,
+            strip: None,
         });
         let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
         let u = &uptake.plants[0];

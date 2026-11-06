@@ -115,6 +115,30 @@ pub enum Irrigation {
         /// Interval in days (at least 1).
         every_days: u32,
     },
+    /// As [`Irrigation::ToFieldCapacity`], for a strip of columns only: those whose
+    /// centers lie from `east_cm.0` to `east_cm.1` east of the soil's center (a split
+    /// pot's watered half, R2b). Water lands on the strip alone.
+    ToFieldCapacityStrip {
+        /// Interval in days (at least 1).
+        every_days: u32,
+        /// West and east edge of the strip, cm east of the soil's center.
+        east_cm: (f64, f64),
+    },
+}
+
+/// A cube of soil whose starting nitrate is multiplied by `no3_factor` (a nitrate
+/// patch, R2b, decision 0043): every cell whose center lies inside it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NitratePatch {
+    /// Soil id.
+    pub soil: u32,
+    /// The cube's center: cm east and north of the soil's center, cm below the surface.
+    pub center_cm: (f64, f64, f64),
+    /// The cube's edge, cm.
+    pub size_cm: f64,
+    /// Factor on the cells' starting nitrate (1 leaves it, for a control that only
+    /// marks the region).
+    pub no3_factor: f64,
 }
 
 /// Which genotype a sown seed has.
@@ -326,6 +350,13 @@ pub struct Scenario {
     /// Automatic watering per soil; none if absent.
     #[serde(default)]
     pub irrigation: BTreeMap<u32, Irrigation>,
+    /// Soils with a watertight divider across their center, north to south: the west
+    /// and east halves exchange no water or nitrate (a split pot, R2b); none if absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dividers: Vec<u32>,
+    /// Nitrate patches set at the start (R2b); none if absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nitrate_patches: Vec<NitratePatch>,
     /// Ambient CO2, ppm.
     pub co2_ppm: f64,
     /// Seeds sown at tick 0.
@@ -472,9 +503,36 @@ impl Scenario {
                     *every_days
                 }
                 Irrigation::ToFieldCapacity { every_days } => *every_days,
+                Irrigation::ToFieldCapacityStrip {
+                    every_days,
+                    east_cm: (w, e),
+                } => {
+                    if !(w.is_finite() && e.is_finite() && w < e) {
+                        return bad(format!("irrigation strip {w} to {e} cm for soil {id}"));
+                    }
+                    *every_days
+                }
             };
             if !known(id) || every == 0 {
                 return bad(format!("irrigation for soil {id}"));
+            }
+        }
+        for id in &self.dividers {
+            if !known(id) {
+                return bad(format!("divider on unknown soil {id}"));
+            }
+        }
+        for p in &self.nitrate_patches {
+            let (x, y, z) = p.center_cm;
+            if !known(&p.soil)
+                || ![x, y, z, p.size_cm, p.no3_factor]
+                    .iter()
+                    .all(|v| v.is_finite())
+                || p.size_cm <= 0.0
+                || p.no3_factor < 0.0
+                || z < 0.0
+            {
+                return bad(format!("nitrate patch {p:?}"));
             }
         }
         if !(self.co2_ppm.is_finite() && self.co2_ppm > 0.0) {

@@ -331,6 +331,9 @@ pub struct HourInputs<'a> {
     /// Whether organs grow: false from physiological maturity, where seed growth stops
     /// as in CROPGRO's R7 and the annual's tissues dry (decision 0042).
     pub growing: bool,
+    /// Factor on each organ's expansion clock this hour, by organ id (a root tip in dry
+    /// soil, R2b, decision 0043); empty, or an id past its end, for 1.
+    pub clock: &'a [f64],
 }
 
 /// Number of organ kinds, for per-kind tables.
@@ -683,13 +686,14 @@ pub fn hourly_recording(
     rep.transported = transport_recording(arena, p, flows);
     // 11. Thermal time, and the expansion clock: thermal time scaled by the expansion
     // temperature factor, so cold delays expansion instead of destroying it
-    // (decision 0011).
+    // (decision 0011), and for a root tip by its soil's dryness (R2b).
     let mut dt_exp = vec![DegreeDays(0.0); arena.len()];
     for &id in &ids {
         let i = id.index();
         let dt = temp.cardinal.hourly(t_of(id));
         arena.thermal_age[i] += dt;
-        dt_exp[i] = DegreeDays(dt.0 * temp.growth.factor(t_of(id)));
+        let clock = inp.clock.get(i).copied().unwrap_or(1.0);
+        dt_exp[i] = DegreeDays(dt.0 * temp.growth.factor(t_of(id)) * clock);
         arena.expansion_age[i] += dt_exp[i];
     }
     // 12. Growth: a starch store short of reserve releases first (R1b); then primary

@@ -143,6 +143,7 @@ fn physio(c: &mut Criterion) {
                         secondary: &[],
                         filling: false,
                         growing: true,
+                        clock: &[],
                     };
                     black_box(
                         allocation::hourly(&mut g, &allometry, &cp, &temp, &inp, &mut ledger)

@@ -167,6 +167,8 @@ impl BenchPlan {
             rain_fraction: BTreeMap::new(),
             nitrogen: BTreeMap::new(),
             irrigation: BTreeMap::new(),
+            dividers: Vec::new(),
+            nitrate_patches: Vec::new(),
             co2_ppm: k.co2_ppm,
             sowings: Vec::new(),
             supports: Vec::new(),

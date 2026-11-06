@@ -9,11 +9,17 @@
 //!    capacity, then above it up to saturation; what does not fit runs off;
 //! 2. drainage: every cell's water above field capacity moves one cell down; the bottom
 //!    layer's excess leaves the grid;
-//! 3. lateral redistribution: 10% of the water difference to each horizontal neighbor;
+//! 3. lateral redistribution: 10% of the water difference to each horizontal neighbor
+//!    (none across a pot's divider); nitrate moves with that water at the concentration
+//!    of the cell it leaves, plus slow diffusion (R2b, decision 0043);
 //! 4. evaporation from the top layer only, reduced as it dries;
 //! 5. soil temperature by layer from lagged, damped air temperature;
 //! 6. nitrogen: mineralization and nitrification ([`nitrogen`]; nitrate also moves with
 //!    the drainage and lateral water of steps 2 and 3).
+//!
+//! Irrigation can water a strip of columns only ([`SoilHour::strip`]), and a pot can
+//! carry a watertight divider across its center ([`SoilGrid::set_divider`]): the
+//! split-root pot of R2b.
 //!
 //! Uptake (step 7) is [`SoilGrid::take_up`], one call per hour for every plant in the
 //! grid; FTSW and the stress factor (step 5) are [`SoilGrid::ftsw`] and
@@ -43,6 +49,13 @@ pub const LATERAL_REFERENCE_CELL_M: f64 = 0.02;
 pub const EVAPORATION_COEFFICIENT: f64 = 0.5;
 /// Diurnal damping depth of soil temperature, m ("~", typical moist loam 0.1 m).
 pub const DAMPING_DEPTH_M: f64 = 0.10;
+/// Share of a nitrate difference that diffuses between two neighboring 2 cm cells in
+/// an hour, scaled like [`LATERAL_FRACTION`] for other cells (R2b, decision 0043):
+/// `D_l θ f / Δx² · 3600 s` with nitrate's diffusivity in water `D_l` 1.9e-9 m² s⁻¹,
+/// `θ` 0.3 and the Millington–Quirk impedance `f = θ^(10/3) / θ_s²` (0.089 at a
+/// saturation of 0.45), so about 5e-11 m² s⁻¹ in the soil: nitrate spreads about a
+/// centimeter in a month by diffusion alone.
+pub const NITRATE_DIFFUSION_FRACTION: f64 = 4.6e-4;
 /// Relative conservation tolerance (CLAUDE.md).
 pub const CLOSURE_TOLERANCE: f64 = 1e-9;
 
@@ -179,6 +192,20 @@ pub struct SoilHour {
     pub surface_radiation: WPerM2,
     /// Air temperature.
     pub t_air: Celsius,
+    /// Water given to a strip of columns only (a split pot's watered half), on top of
+    /// `water_in`; `None` for none.
+    pub strip: Option<Strip>,
+}
+
+/// Water over a strip of columns `x0 ≤ x < x1` (every y), mm over those columns.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Strip {
+    /// Water, mm over the strip's surface.
+    pub water: Millimeters,
+    /// First column of the strip.
+    pub x0: usize,
+    /// One past its last column.
+    pub x1: usize,
 }
 
 /// One plant's root length per soil cell: `(cell index, length)` pairs sorted by cell,
@@ -300,6 +327,10 @@ pub struct SoilGrid {
     rhizobia: bool,
     /// Nitrogen fluxes since the nitrogen was set.
     n_ledger: NitrogenLedger,
+    /// A watertight divider between columns `x − 1` and `x` (a split pot, R2b): no water
+    /// or nitrate moves across it.
+    #[serde(default)]
+    divider: Option<usize>,
 }
 
 /// Water stress factor from FTSW: 1 above `threshold`, linear to 0 at FTSW 0 (§3.6).
@@ -398,9 +429,24 @@ impl SoilGrid {
             organic_n: vec![GramsN(0.0); n],
             rhizobia: false,
             n_ledger: NitrogenLedger::default(),
+            divider: None,
         };
         g.fill_to(texture.hydraulics().field_capacity);
         Ok(g)
+    }
+
+    /// Puts a watertight divider across the grid's center, north to south: the west
+    /// columns `x < nx / 2` and the east ones exchange no water or nitrate (a split
+    /// pot, R2b). Nothing happens on a grid one column wide.
+    pub fn set_divider(&mut self) {
+        let d = self.nx / 2;
+        self.divider = (d > 0).then_some(d);
+    }
+
+    /// The first column east of the divider, if there is one.
+    #[must_use]
+    pub fn divider(&self) -> Option<usize> {
+        self.divider
     }
 
     /// Sets every active cell to volumetric water content `theta`.
@@ -528,7 +574,7 @@ impl SoilGrid {
             },
             ..WaterLedger::default()
         };
-        self.infiltrate(h.water_in, &mut ledger);
+        self.infiltrate(h.water_in, h.strip, &mut ledger);
         self.drain(&mut ledger);
         self.redistribute_laterally();
         self.evaporate(h.surface_radiation, &mut ledger);
@@ -545,8 +591,18 @@ impl SoilGrid {
         ledger
     }
 
-    fn infiltrate(&mut self, water_in: Millimeters, ledger: &mut WaterLedger) {
-        let per_column = KgWater(water_in.0.max(0.0) * self.cell.0 * self.cell.0);
+    fn infiltrate(
+        &mut self,
+        water_in: Millimeters,
+        strip: Option<Strip>,
+        ledger: &mut WaterLedger,
+    ) {
+        let area = self.cell.0 * self.cell.0;
+        let everywhere = KgWater(water_in.0.max(0.0) * area);
+        let extra = |x: usize| match strip {
+            Some(s) if x >= s.x0 && x < s.x1 => KgWater(s.water.0.max(0.0) * area),
+            _ => KgWater(0.0),
+        };
         let fc = self.capacity(self.texture.hydraulics().field_capacity);
         let sat = self.capacity(self.texture.hydraulics().saturation);
         for y in 0..self.ny {
@@ -554,6 +610,7 @@ impl SoilGrid {
                 if !self.active[self.index(Cell { x, y, z: 0 })] {
                     continue;
                 }
+                let per_column = everywhere + extra(x);
                 ledger.applied += per_column;
                 let mut left = per_column;
                 // Fill to field capacity top-down, then to saturation top-down.
@@ -647,27 +704,65 @@ impl SoilGrid {
         (LATERAL_FRACTION * r * r).min(0.25)
     }
 
+    /// The share of a nitrate difference that diffuses between two neighboring cells
+    /// in an hour: [`NITRATE_DIFFUSION_FRACTION`] scaled like [`Self::lateral_fraction`].
+    #[must_use]
+    pub fn nitrate_diffusion_fraction(&self) -> f64 {
+        let r = LATERAL_REFERENCE_CELL_M / self.cell.0;
+        (NITRATE_DIFFUSION_FRACTION * r * r).min(0.25)
+    }
+
+    /// Step 3: each pair of active horizontal neighbors moves `fraction` of its water
+    /// difference; nitrate moves with that water at the concentration of the cell the
+    /// water leaves, and diffuses slowly on its own (decision 0043). Nothing crosses a
+    /// divider. Fluxes come from the start-of-step state.
     fn redistribute_laterally(&mut self) {
         let fraction = self.lateral_fraction();
+        let diffusion = self.nitrate_diffusion_fraction();
         let (nx, ny) = (self.nx, self.ny);
-        lateral_exchange(
-            &mut self.water,
-            &self.active,
-            nx,
-            ny,
-            fraction,
-            |w| w.0,
-            KgWater,
-        );
-        lateral_exchange(
-            &mut self.no3,
-            &self.active,
-            nx,
-            ny,
-            fraction,
-            |g| g.0,
-            GramsN,
-        );
+        let (wx, wy) = lateral_fluxes(&self.water, &self.active, nx, ny, self.divider, |a, b| {
+            (a.0 - b.0) * fraction
+        });
+        let (water, no3) = (&self.water, &self.no3);
+        // Nitrate per kg of water in cell i (zero in a dry cell, which sends no water).
+        let conc = |i: usize| {
+            if water[i].0 > 0.0 {
+                no3[i].0 / water[i].0
+            } else {
+                0.0
+            }
+        };
+        let carried = |f: f64, from: usize, to: usize| {
+            if f > 0.0 {
+                f * conc(from)
+            } else {
+                f * conc(to)
+            }
+        };
+        let (nxf, nyf) = lateral_fluxes(&self.no3, &self.active, nx, ny, self.divider, |a, b| {
+            (a.0 - b.0) * diffusion
+        });
+        // Flux k of the x list runs from cell k − 1 to k; of the y list from k − nx to k.
+        let mx: Vec<f64> = (0..wx.len())
+            .map(|k| {
+                if k == 0 || k >= self.water.len() {
+                    nxf[k]
+                } else {
+                    nxf[k] + carried(wx[k], k - 1, k)
+                }
+            })
+            .collect();
+        let my: Vec<f64> = (0..wy.len())
+            .map(|k| {
+                if k < nx || k >= self.water.len() {
+                    nyf[k]
+                } else {
+                    nyf[k] + carried(wy[k], k - nx, k)
+                }
+            })
+            .collect();
+        apply_fluxes(&mut self.water, nx, &wx, &wy, |w| w.0, KgWater);
+        apply_fluxes(&mut self.no3, nx, &mx, &my, |g| g.0, GramsN);
     }
 
     fn evaporate(&mut self, radiation: WPerM2, ledger: &mut WaterLedger) {
@@ -730,6 +825,21 @@ impl SoilGrid {
         } else {
             1.0
         })
+    }
+
+    /// The mean relative available water and nitrate (mg N per kg soil) over the active
+    /// cells, in cell order: the background a root judges a cell's richness against
+    /// (R2b, decision 0043).
+    #[must_use]
+    pub fn means(&self) -> (f64, f64) {
+        let (mut k, mut w, mut n) = (0.0_f64, 0.0_f64, 0.0_f64);
+        for i in (0..self.len()).filter(|&i| self.is_active(i)) {
+            k += 1.0;
+            w += self.cell_ftsw(i);
+            n += self.no3_ppm(i);
+        }
+        let k = k.max(1.0);
+        (w / k, n / k)
     }
 
     /// FTSW of a single cell (for germination).
@@ -906,35 +1016,29 @@ impl SoilGrid {
             f(self.organic_n[i].to_bits());
         }
         f(u64::from(self.rhizobia));
+        if let Some(d) = self.divider {
+            f(d as u64);
+        }
     }
 }
 
-/// One explicit step of lateral exchange between active +x and +y neighbors on each
-/// layer: every pair moves `fraction` of its difference, from the state at the start.
-///
-/// Each pair's flux is computed once, and each cell then adds its fluxes in the
-/// order a scatter over cells in index order would: in from the −y and −x
-/// neighbors, out to +x and +y. A missing pair's flux is +0, which leaves the sum
-/// unchanged (the running sum starts at +0 and is never −0), so the result is the
-/// same bits as the scatter. The loops have no data-dependent branches.
-fn lateral_exchange<T: Copy>(
-    v: &mut [T],
+/// The fluxes of one explicit step of lateral exchange between active +x and +y
+/// neighbors on each layer, `pair(v_from, v_to)` for every pair, from the state at the
+/// start: `fx[i + 1]` runs from cell `i` to `i + 1` and `fy[i + nx]` from `i` to
+/// `i + nx`. No pair across the end of a row or of a layer, or across a divider before
+/// column `divider`. A missing pair's flux is +0.
+fn lateral_fluxes<T: Copy>(
+    v: &[T],
     active: &[bool],
     nx: usize,
     ny: usize,
-    fraction: f64,
-    get: impl Fn(T) -> f64,
-    put: impl Fn(f64) -> T,
-) {
+    divider: Option<usize>,
+    pair: impl Fn(T, T) -> f64,
+) -> (Vec<f64>, Vec<f64>) {
     let n = v.len();
     let flux = |a: (&bool, &bool), w: (&T, &T)| {
-        if *a.0 && *a.1 {
-            (get(*w.0) - get(*w.1)) * fraction
-        } else {
-            0.0
-        }
+        if *a.0 && *a.1 { pair(*w.0, *w.1) } else { 0.0 }
     };
-    // fx[i + 1] is the flux from i to i + 1; fy[i + nx] the flux from i to i + nx.
     // Built by pushing rather than zeroed and then filled: a large zeroed allocation
     // costs a memset of fresh memory every call (the same values either way).
     let mut fx = Vec::with_capacity(n + 1);
@@ -958,13 +1062,31 @@ fn lateral_exchange<T: Copy>(
     );
     fy.resize(n + nx, 0.0);
     debug_assert_eq!((fx.len(), fy.len()), (n + 1, n + nx));
-    // No pairs across the end of a row or of a layer.
+    // No pairs across the end of a row or of a layer, or across the divider.
     for row in (0..n).step_by(nx) {
         fx[row] = 0.0;
+        if let Some(d) = divider.filter(|d| *d < nx) {
+            fx[row + d] = 0.0;
+        }
         if (row / nx) % ny == ny - 1 {
             fy[row + nx..row + 2 * nx].fill(0.0);
         }
     }
+    (fx, fy)
+}
+
+/// Applies the fluxes of [`lateral_fluxes`]: each cell adds its fluxes in the order a
+/// scatter over cells in index order would, in from the −y and −x neighbors, out to +x
+/// and +y. The running sum starts at +0 and is never −0, so a missing pair's +0 leaves
+/// it unchanged. The loop has no data-dependent branches.
+fn apply_fluxes<T: Copy>(
+    v: &mut [T],
+    nx: usize,
+    fx: &[f64],
+    fy: &[f64],
+    get: impl Fn(T) -> f64,
+    put: impl Fn(f64) -> T,
+) {
     let cells = v
         .iter_mut()
         .zip(fx.windows(2))

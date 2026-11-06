@@ -86,6 +86,7 @@ fn run_hour(
             secondary: &[],
             filling: false,
             growing: true,
+            clock: &[],
         },
         ledger,
     )
@@ -287,6 +288,7 @@ fn inputs_must_cover_every_organ() {
             secondary: &[],
             filling: false,
             growing: true,
+            clock: &[],
         },
         &mut ledger,
     );
@@ -404,6 +406,7 @@ fn secondary_growth_is_a_low_priority_sink() {
         secondary: &pot,
         filling: false,
         growing: true,
+        clock: &[],
     };
     let rep = allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
     // A large potential is limited by the priority share of the reserve above the
@@ -495,6 +498,7 @@ fn shedding_does_not_resorb_wood() {
         secondary: &pot,
         filling: false,
         growing: true,
+        clock: &[],
     };
     allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
     let wood = g.secondary(i).0;
@@ -630,6 +634,7 @@ fn filling_empties_the_store() {
                 secondary: &[],
                 filling: true,
                 growing: true,
+                clock: &[],
             },
             &mut ledger,
         )
@@ -677,6 +682,7 @@ fn nothing_grows_after_maturity() {
                 secondary: &[],
                 filling: false,
                 growing: false,
+                clock: &[],
             },
             &mut ledger,
         )

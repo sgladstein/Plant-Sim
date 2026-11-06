@@ -9,6 +9,7 @@ fn dry_hour() -> SoilHour {
         water_in: Millimeters(0.0),
         surface_radiation: WPerM2(0.0),
         t_air: T20,
+        strip: None,
     }
 }
 
@@ -110,6 +111,28 @@ fn lateral_redistribution_smooths_and_conserves() {
     }
     assert!((g.total_water() - before).0.abs() < 1e-15);
     assert!(g.theta(0) - g.theta(4) < 0.2 * spread0);
+}
+
+/// A strip's water lands on its own columns only (a split pot's watered half, R2b).
+#[test]
+fn a_strip_waters_its_columns_only() {
+    let mut g = SoilGrid::new_box(4, 1, 2, Meters(0.02), Texture::Loam, T20).unwrap();
+    g.set_divider();
+    let dry = Texture::Loam.hydraulics().wilting_point;
+    g.fill_to(dry);
+    let l = g.step_hour(&SoilHour {
+        strip: Some(Strip {
+            water: Millimeters(5.0),
+            x0: 0,
+            x1: 2,
+        }),
+        ..dry_hour()
+    });
+    // 5 mm over two 2 cm columns is 2 × 2e-3 kg.
+    assert!((l.applied.0 - 4e-3).abs() < 1e-15);
+    assert!(g.theta(0) > dry + 1e-3 && g.theta(1) > dry + 1e-3);
+    assert!((g.theta(2) - dry).abs() < 1e-12 && (g.theta(3) - dry).abs() < 1e-12);
+    assert!(l.relative_residual() < 1e-12);
 }
 
 #[test]
@@ -280,7 +303,7 @@ proptest! {
         let roots = RootCells::from_pairs((0..g.len()).filter(|i| i % 3 == 0).map(|i| (i, Meters(0.5))).collect());
         let sat = texture.hydraulics().saturation;
         for (mm, rad, t, demand) in hours {
-            let l = g.step_hour(&SoilHour { water_in: Millimeters(mm), surface_radiation: WPerM2(rad), t_air: Celsius(t) });
+            let l = g.step_hour(&SoilHour { water_in: Millimeters(mm), surface_radiation: WPerM2(rad), t_air: Celsius(t), strip: None });
             prop_assert!(l.relative_residual() < 1e-9, "{l:?}");
             let u = g.take_up(&[one(demand, &roots, 1e-3), one(demand, &roots, 1e-4)]).unwrap();
             prop_assert!(u.ledger.relative_residual() < 1e-9);

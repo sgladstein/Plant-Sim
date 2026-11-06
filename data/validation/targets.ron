@@ -416,6 +416,18 @@ ValidationTargets(
       note: "Defined by order, not diameter. Second-order branching is negligible in field bean at 43 DAP (Miller 2003); OpenSimRoot bean geometry gives about 10 to 30%; soybean's higher orders hold 39% and 34% (Jin 2013) (R2 numbers, research thread).",
     ),
     Target(
+      id: "split_pot_foraging",
+      scenario: "m2/split_pot",
+      variable: "root_length_west_east_ratio",
+      at: Final,
+      expect: Range(min: 1.5, max: 10.0),
+      unit: "-",
+      basis: Some("root length in the watered west half over the dry east half at day 45; watering of the east half stops on day 20 (R2b, decision 0043)"),
+      sources: ["wang2005"],
+      gate: Info,
+      note: "No bean or dicot wet:dry length ratio was found; roots concentrate in the wet half in Brassica napus (Wang 2005) and Sitka spruce (Coutts 1982). Expected 2 to 4 from the arithmetic of a dry half that stops near its day-20 length (R2 numbers, research thread). The band's top is a sanity bound.",
+    ),
+    Target(
       id: "biomass_logistic",
       scenario: "single_pot",
       variable: "total_dry_mass_g",

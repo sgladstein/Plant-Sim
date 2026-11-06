@@ -62,7 +62,10 @@ fn topping_releases_buds(name: &str, day: u32) {
 
 #[test]
 fn topping_a_bush_bean_releases_its_buds() {
-    topping_releases_buds("single_pot.ron", 30);
+    // Cut on day 28: from R2b (decision 0043) the untopped twin's last lower bud grows
+    // a few days sooner (by day 34 in three of eight world seeds against none), so a cut
+    // on day 30 no longer leaves it a dormant bud to compare against.
+    topping_releases_buds("single_pot.ron", 28);
 }
 
 #[test]

@@ -215,6 +215,26 @@ impl SoilGrid {
         };
     }
 
+    /// Multiplies the nitrate of cells `cells` by `factor` and restarts the ledger: a
+    /// nitrate patch set at the start (R2b). Out-of-range cells are skipped; a negative
+    /// or non-finite factor counts as 1.
+    pub fn scale_nitrate_cells(&mut self, cells: &[usize], factor: f64) {
+        let f = if factor.is_finite() && factor >= 0.0 {
+            factor
+        } else {
+            1.0
+        };
+        for &i in cells {
+            if let Some(n) = self.no3.get_mut(i) {
+                *n = GramsN(n.0 * f);
+            }
+        }
+        self.n_ledger = NitrogenLedger {
+            start: self.total_nitrogen(),
+            ..NitrogenLedger::default()
+        };
+    }
+
     /// Whether the soil can nodulate a legume.
     #[must_use]
     pub fn has_rhizobia(&self) -> bool {

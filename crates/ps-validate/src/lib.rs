@@ -322,6 +322,12 @@ pub fn plant_value(state: &WorldState, plant: u32, variable: &str, at: &At) -> R
         }
         return derived::mean_internode_cm(state, plant);
     }
+    if variable == "root_length_west_east_ratio" || variable == "root_length_patch_m" {
+        if !matches!(at, At::Final) {
+            return Err(format!("{variable} is only available at Final"));
+        }
+        return derived::root_length_where(state, plant, variable);
+    }
     let one = |i: usize| derived::row_value(state, &rows, i, variable);
     match at {
         At::Final => one(rows.len() - 1),
