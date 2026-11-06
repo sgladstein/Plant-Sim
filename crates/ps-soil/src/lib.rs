@@ -51,11 +51,13 @@ pub const EVAPORATION_COEFFICIENT: f64 = 0.5;
 pub const DAMPING_DEPTH_M: f64 = 0.10;
 /// Share of a nitrate difference that diffuses between two neighboring 2 cm cells in
 /// an hour, scaled like [`LATERAL_FRACTION`] for other cells (R2b, decision 0043):
-/// `D_l θ f / Δx² · 3600 s` with nitrate's diffusivity in water `D_l` 1.9e-9 m² s⁻¹,
-/// `θ` 0.3 and the Millington–Quirk impedance `f = θ^(10/3) / θ_s²` (0.089 at a
-/// saturation of 0.45), so about 5e-11 m² s⁻¹ in the soil: nitrate spreads about a
-/// centimeter in a month by diffusion alone.
-pub const NITRATE_DIFFUSION_FRACTION: f64 = 4.6e-4;
+/// `D_l f / (θ Δx²) · 3600 s` with nitrate's diffusivity in water `D_l` 1.9e-9 m² s⁻¹,
+/// `θ` 0.3 and the Millington–Quirk factor `f = θ^(10/3) / θ_s²` (0.089 at a
+/// saturation of 0.45). `D_l f`, about 1.7e-10 m² s⁻¹, is the flux per area of soil
+/// for a gradient in the soil solution; dividing by `θ` turns it into the rate at
+/// which a cell's nitrate evens out, about 5.7e-10 m² s⁻¹: nitrate spreads about 5 cm
+/// in a month by diffusion alone.
+pub const NITRATE_DIFFUSION_FRACTION: f64 = 5.1e-3;
 /// Relative conservation tolerance (CLAUDE.md).
 pub const CLOSURE_TOLERANCE: f64 = 1e-9;
 

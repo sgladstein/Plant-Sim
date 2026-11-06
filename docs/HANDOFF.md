@@ -95,9 +95,10 @@ one at a time, with options and a recommendation.
   weather files, plant-to-plant variation all landed.
 - **M3 (breeding) and M4 (tree, fields): not started.**
 - **Validation (model 0.24.0, mean of four world seeds, decision 0026):** 96 checks,
-  72 pass (0.23.0: 69 of 94; R2b brought mean_seed_mass, fine_root_share and
-  harvest_index_tops back in, took density_leaf_area_per_plant out and added two root
-  checks, decision 0043), every M0 gate passes; the pole bean height targets pass since decision 0029.
+  70 pass (0.23.0: 69 of 94; R2b brought mean_seed_mass and harvest_index_tops back
+  in, took density_leaf_area_per_plant out and added two root checks that miss at their
+  bands' edges, decision 0043), every M0 gate passes (nearest: shade total mass −49.1%
+  against −50%); the pole bean height targets pass since decision 0029.
   One bean spans 21 to 39 g by world seed alone, so every target reads the seed mean.
   Don't tune "~" parameters on one seed. Main misses: thermal-time phenology, wheat
   stand height and yield,

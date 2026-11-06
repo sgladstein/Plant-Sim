@@ -89,12 +89,12 @@ fn rain_leaches_nitrate_and_the_ledger_closes() {
 /// the water leaves, and otherwise only diffuses slowly (R2b, decision 0043).
 #[test]
 fn nitrate_moves_with_the_water_and_diffuses_slowly() {
-    // Equal water: diffusion alone, 4.6e-4 of the difference an hour between 2 cm cells.
+    // Equal water: diffusion alone, 5.1e-3 of the difference an hour between 2 cm cells.
     let mut g = SoilGrid::new_box(3, 1, 1, Meters(0.02), Texture::Loam, Celsius(0.0)).unwrap();
     g.set_nitrogen(&SoilNitrogen::NONE);
     g.no3[0] = GramsN(1e-3);
     g.n_ledger.start = g.total_nitrogen();
-    for _ in 0..200 {
+    for _ in 0..20 {
         g.step_hour(&hour(0.0, 0.0));
     }
     let moved = 1.0 - g.no3(0).0 / 1e-3;

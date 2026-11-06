@@ -132,13 +132,13 @@ fn bean_stems_and_roots_widen_and_taper() {
     // tapers to the tip. Daily thickening (decision 0037) builds from the midnight
     // reserve, so on day 56 the hypocotyl is about 1.15 times the tip (R1a's hourly
     // rule: more than 1.2) and the epicotyl about 1.5 times. From R2b (decision 0043)
-    // nitrate no longer spreads sideways at the water's rate, so this garden pot is
-    // shorter of nitrogen: on day 56 its hypocotyl is about 1.06 times the tip and the
-    // epicotyl about 1.35 times.
+    // nitrate no longer spreads sideways at the water's rate, so this garden pot is a
+    // little shorter of nitrogen: on day 56 its hypocotyl is about 1.09 times the tip
+    // and the epicotyl about 1.39 times.
     let widest = hyp.max(d[0]);
     assert!(d.iter().all(|x| *x <= widest + 1e-9), "{d:?}");
-    assert!(hyp > 1.03 * d[d.len() - 1], "hypocotyl {hyp} vs tip {d:?}");
-    assert!(d[0] > 1.3 * d[d.len() - 1], "no taper: {d:?}");
+    assert!(hyp > 1.05 * d[d.len() - 1], "hypocotyl {hyp} vs tip {d:?}");
+    assert!(d[0] > 1.35 * d[d.len() - 1], "no taper: {d:?}");
     // Stem mass still rises in the last week.
     let n = stem.len();
     assert!(stem[n - 1] > stem[n - 8], "stem mass {:?}", &stem[n - 8..]);

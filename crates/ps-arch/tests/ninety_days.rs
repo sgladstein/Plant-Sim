@@ -156,11 +156,7 @@ fn ninety_day_counts_are_in_the_bean_ranges() {
         "branches {}",
         last.branches
     );
-    // §3.16 gives 10 to 20 pods. World seed 7 alone is one draw from a spread of 5 to
-    // 15 over seeds 1 to 8 in this garden pot; from R2b (decision 0043) it sets 9 (14
-    // with the root rules off; the eight-seed mean 10.0 against 11.3), so the floor here
-    // is 8 and `counts_hold_across_world_seeds` keeps the §8.2 range.
-    assert!((8..=20).contains(&last.pods), "pods {}", last.pods);
+    assert!((10..=20).contains(&last.pods), "pods {}", last.pods);
     // §3.16 gives no root count; the seed-borne axes are the species' type counts.
     assert_eq!(last.root_axes, 19);
     assert!(

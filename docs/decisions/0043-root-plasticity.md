@@ -14,13 +14,14 @@ within 5% of R2a.
 
 Two soil changes were needed first. Nitrate spread sideways at the water's exchange
 fraction, 0.1 per hour in pot cells, an effective diffusivity of about 1e-8 m² s⁻¹, some
-200 times nitrate's in moist soil; a patch evened out within days. And the scenarios had
+20 times nitrate's in moist soil; a patch evened out within days. And the scenarios had
 no way to split a pot or to make a patch.
 
 ## Decision
 1. **Soil.** Laterally, nitrate now moves with the water's flux at the concentration of
-   the cell the water leaves, plus diffusion at 4.6e-4 per hour in 2 cm cells (about
-   5e-11 m² s⁻¹, Millington–Quirk at field capacity). A scenario can give a pot a
+   the cell the water leaves, plus diffusion at 5.1e-3 per hour in 2 cm cells,
+   `D_l θ^{7/3} / θ_s² / Δx²` (Millington–Quirk at field capacity, about 5.7e-10 m² s⁻¹,
+   Barber's value for nitrate in moist soil). A scenario can give a pot a
    watertight divider across its center (`dividers`), water a strip of columns
    (`Irrigation::ToFieldCapacityStrip`, the strip's own deficit) and scale the starting
    nitrate of a cube of cells (`nitrate_patches`; a cell is in when its center lies
@@ -56,7 +57,9 @@ no way to split a pot or to make a patch.
    6 and read at hourly step 11; the rules sit in daily step 5.
 
 ### Tried and not kept
-Six world seeds unless noted; "uniform" is single_pot against the rules off.
+Six world seeds unless noted; "uniform" is single_pot against the rules off. These runs
+used the first diffusion fraction, 4.6e-4, which counted `θ` twice (11 times too slow;
+Code review found it).
 - **The root-weighted mean alone** (the spec's root-zone mean): in world seed 7 the
   uniform pot grew 21% more root length by day 45, and most new cohorts anywhere in the
   garden-soil pot stood for 1.5 to 3.6 times their roots once the roots had depleted the
@@ -76,39 +79,47 @@ Six world seeds unless noted; "uniform" is single_pot against the rules off.
 ## Consequences
 - Model 0.24.0, species schema 16; every golden hash moves.
 - Six world seeds (7 to 12), day 45:
-  - nitrate patch: lateral and fine-root length in the cube 1.49 times the control (1.32
-    to 1.67); without the rules 1.01;
-  - split pot: wet:dry root length 1.46 (1.29 to 1.64); without the rules 1.13 (0.78 to
+  - nitrate patch: lateral and fine-root length in the cube 1.48 times the control (1.33
+    to 1.65); without the rules 1.01;
+  - split pot: wet:dry root length 1.45 (1.28 to 1.62); without the rules 1.13 (0.78 to
     1.35). The unwatered half falls only to about 0.4 of available water by day 45, so
     the dry-soil rules act late; the watered half supplies about two thirds of the
-    water from day 20 (seed 9).
-- Uniform soil (single_pot, six seeds) against 0.23.0: root mass +2 to +3%, root length
-  +7% at day 45 and at maturity, fine roots +23% at day 45 and +4% at maturity, total
-  mass 0 to −5%, seed −6%. Root length is just past the 5% the spec asked for: the plant
-  makes its own differences (dry and depleted cells around its roots), and proliferation
-  moves root carbon into laterals, which carry more length per gram. The nitrate
-  transport alone (rules off): root length +2%, total mass −3%.
-- Validation on four-seed means: **96 checks, 72 pass, every M0 gate passes** (0.23.0:
-  69 of 94). `nitrate_patch_proliferation` +51% (pass; seeds +35 to +59%);
-  `split_pot_foraging` 1.497 (miss at the band's 1.5; seeds 1.31 to 1.61). Back in:
-  `mean_seed_mass` 0.153 → 0.170 g, `fine_root_share` 0.086 → 0.102,
-  `harvest_index_tops` 0.397 → 0.421. Out: `density_leaf_area_per_plant` −35% → −29%
-  (band from −35%). Near-edge M0: shade total mass −46% → −48% (gate −50%), shade
-  internodes +27% → +28%, heat seeds −34% (weakest seed −27%). The nitrogen checks
-  (`ndfa_*`, `nfree_nodulation_shoot_mass`) move by under 2%.
-- Garden-soil pots (20 mg N/kg, six seeds, rain shelter) are shorter of nitrogen now
-  that nitrate no longer spreads at the water's rate: plant N −10% and total mass −7%
-  at day 45, −3 to −4% at maturity, seed unchanged (5.9 → 6.0 g). Three single-seed
-  tests moved with it and were re-pointed, with notes: `thickening` (garden pot, day 56:
-  hypocotyl 1.06 and epicotyl 1.35 times the tip, from 1.15 and 1.5; bounds 1.03 and
-  1.3, a transport effect, the same with the rules off), `ninety_days` pod count at world
-  seed 7 (9 against §3.16's 10 to 20; 14 with the rules off; eight-seed mean 10.0
-  against 11.3, spread 5 to 15; floor 8, the across-seed test keeps 6 to 20) and the
-  bush topping test (cut on day 28, not 30: the untopped twin's last lower bud grows by
-  day 34 in three of eight seeds, against none with the rules off).
+    water from day 20 (seed 9). Code review: stopping the east half's water on day 10
+    or 15 gives 1.51 and 1.48, so the rules' strength, not late drying, sets the ratio.
+- Uniform soil (single_pot, six seeds) against 0.23.0: root length +7% at day 45 and
+  +9% at maturity, root mass +2% and +7%, fine roots +18% and +5%, total mass 0 to −4%,
+  seed unchanged (7.94 → 7.90 g). Root length is past the 5% the spec asked for: the
+  plant makes its own differences (dry and depleted cells around its roots),
+  proliferation only ever adds roots (`r` is clamped at 0), and it moves root carbon
+  into laterals, which carry more length per gram. The nitrate transport alone (rules
+  off) stays within 1% of 0.23.0 in root length and total mass.
+- Code review found the first diffusion fraction (4.6e-4) 11 times too slow: it
+  multiplied by `θ` where the grid's exchange of amounts divides by it. Part of the
+  first build's patch pass (1.49 over six seeds, +51% in validation) and of its
+  fine-root share came from that: with nitrate held in place, it gathered in the rooted
+  cells and stayed in the patch longer.
+- Validation on four-seed means: **96 checks, 70 pass, every M0 gate passes** (0.23.0:
+  69 of 94). Both new checks are Info misses at their band's edge:
+  `nitrate_patch_proliferation` +48.8% (seeds +40 to +64%; band from +50%) and
+  `split_pot_foraging` 1.495 (seeds 1.32 to 1.59; band from 1.5). Back in:
+  `mean_seed_mass` 0.153 → 0.189 g and `harvest_index_tops` 0.397 → 0.435. Still out:
+  `fine_root_share` 0.086 → 0.097 (band from 0.1). Out: `density_leaf_area_per_plant`
+  −35% → −30% (band from −35%). Nearest M0 edge: shade total mass −46% → −49.1% (gate
+  −50%); pods at maturity 11 (6 to 20), heat seeds −33%. The nitrogen checks (`ndfa_*`,
+  `nfree_nodulation_shoot_mass`) move by under 2%.
+- Garden-soil pots (20 mg N/kg, six seeds, rain shelter) are a little shorter of
+  nitrogen now that nitrate no longer spreads at the water's rate: plant N −4% and total
+  mass −4% at day 45; at maturity plant N unchanged, mass −3%, seed +9% (5.9 → 6.4 g).
+  Two single-seed tests moved with it and were re-pointed, with notes: `thickening`
+  (garden pot, day 56: hypocotyl 1.09 and epicotyl 1.39 times the tip, from 1.15 and
+  1.5; bounds 1.05 and 1.35, from 1.1 and 1.4) and the bush topping test (cut on day 28,
+  not 30: the untopped twin's last lower bud grows a few days sooner and has grown by
+  day 34). Before the diffusion fix the garden pot was shorter of nitrogen (plant N
+  −10% at day 45) and `ninety_days` set 9 pods at world seed 7; it sets 13 now, inside
+  main's bounds again.
 - Where water flows to roots whose nitrate uptake saturates (the 300 ppm pots), nitrate
-  now gathers in the rooted cells, to about three times the bulk soil around the split
-  pot's roots by day 45 (nitrogen card).
+  now gathers in the rooted cells: by day 45 the split pot's roots sit in about 2.3
+  times the nitrate of its rootless cells (root-length weighted, seed 9; nitrogen card).
 - Cost: the world computes each soil's mean once a day for all its plants (a plant run
   alone computes it itself; the values are the same). One container, best of three:
   single_pot 3.85 → 3.95 ms per sim-day, plot_30_beans (30 days) 12.5 → 11.9 ms; a pass
