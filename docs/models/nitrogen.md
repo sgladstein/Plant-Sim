@@ -7,7 +7,8 @@ Rain and watering wash nitrate down and out of the pot. Roots take nitrate and a
 from the soil around them. A bean can also grow root nodules: bacteria in them fix
 nitrogen from the air, paid for with the plant's sugar. When the plant runs short, it
 moves nitrogen out of its oldest, most shaded leaves, which yellow and drop from the
-bottom up. Fertilizer adds nitrogen to the topsoil.
+bottom up. Once the seeds start filling, they take nitrogen from the leaves first,
+however rich the soil. Fertilizer adds nitrogen to the topsoil.
 
 ## Equations
 Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
@@ -44,16 +45,23 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 11. Expansion stress = water stress × N status (step 18).
 12. Top-up, after allocation: deficits `d_i = max(0, c_initial,i W_i − N_i)` of growing
     organs; each gets `d_i · min(1, pool / Σd)`. `growth += max(0, Σd − residual)`, with
-    residual the deficit left the hour before.
+    residual the deficit left the hour before; the seeds' share is tracked the same way
+    as `seed_growth` (R1b).
 
 **Plant, daily step 0** (`Plant::nitrogen_day`):
 
-13. Demand `D = Σ d_i + growth(yesterday)`.
-14. The soil request is `max(0, D − pool + fixed(yesterday))`.
-15. Mining, if still short: each non-growing organ (not seeds, seeds in pods or nodules) gives up to
+13. Demand `D = Σ d_i + growth(yesterday)`. From seed fill (stage R5) on, with
+    `seed_fill_mining_first`, the seeds come first: `M₁ = min(D_seeds, capacity)`, with
+    `D_seeds` the filling seeds' deficits plus `seed_growth(yesterday)` and capacity the
+    day's mining caps of step 15 (R1b, decision 0040; CROPGRO's order after R5, the
+    "self-destruction" of Sinclair and de Wit 1975). Before seed fill `M₁ = 0`.
+14. The soil request is `max(0, D − pool + fixed(yesterday) − M₁)`.
+15. Mining: `M₁` plus whatever the pool and the soil still leave short. Each
+    non-growing organ (not seeds, seeds in pods or nodules) gives up to
     `rate · w · (N − c_final W)`, with `rate = 0.12 d⁻¹` during seed fill and
     `0.12 × 0.36` before, and leaf weight `w = clamp(2 (1 − L / L_max), 0.1, 1)` by light
-    index (1 for other organs). All give the same share of their cap.
+    index (1 for other organs). All give the same share of their cap. This reorders the
+    supply inside daily step 0 only, not the §3.2 step list.
 16. Fixation for tomorrow: `need = max(0, D − pool)`; nodule rates
     `f_k = W_k · a · f_T,fix · f_drought · min(1, need / capacity)`, with
     `a = 0.05 g N g⁻¹ d⁻¹`.
@@ -86,7 +94,8 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 | leaf_n_area_base | 0.3 | g N/m2 | ~ Kattge 2009, Walker 2014 |
 | uptake_capacity | 6.0e-4 | g N/m/day | CROPGRO RTNO3 = RTNH4, each form (decision 0037; was 25× with a 4 cm reach, decision 0020 amendment) |
 | mobilization_rate, vegetative_mobilization | 0.12, 0.36 | 1/day, - | CROPGRO NMOBMX, NVSMOB |
-| leaf_drop_mobile | 0.1 | - | ~ |
+| leaf_drop_mobile | 0.1 | - | ~ (0.3 dropped lower leaves in a fertilized pot but cost 12% of seed mass; decision 0040) |
+| seed_fill_mining_first | 1 | - | CROPGRO order after R5 (archive m2-m3 science); wheat ~ (Kichey et al. 2007, to verify) |
 | nodule_activity | 0.05 | g N/g DM/day | CROPGRO SNACTM |
 | nodule_relative_growth | 0.17 | 1/day | CROPGRO NODRGM |
 | nodule_initial_mass, nodule_mass | 0.014, 0.002 | g DM | CROPGRO DWNODI; ~ |
@@ -112,8 +121,8 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 
 ## Encoded or emergent
 Encoded: the soil rates, the uptake law, the order of supply (pool, soil, mining,
-fixation), the mining weight by light, the nitrate factor on nodulation, the drop
-threshold.
+fixation; seeds mine first in seed fill), the mining weight by light, the nitrate
+factor on nodulation, the drop threshold.
 
 Emergent:
 
@@ -145,6 +154,10 @@ Emergent:
 - An unfertilized 24 cm pot holds far less N per plant than a field, so it is N-limited
   (seed mass 0.17 g against 0.25 fed).
 - Seed N during seed fill can dilute to 0.02 g/g, which is a guess.
+- A fertilized pot mines its leaves through seed fill (R1b) but keeps them to maturity:
+  its lowest leaves end with 16 to 21% of their mobile N, above the 10% drop threshold.
+  CROPGRO instead sheds leaf mass in proportion to the protein mined (`SENRTE`, to
+  verify); a candidate follow-up (decision 0040).
 
 ## Validation
 - `ps_soil::nitrogen::tests::*`: rates to 1e-9 relative, factor shapes, leaching closes
@@ -156,7 +169,10 @@ Emergent:
   done-when): nodulated over unnodulated shoot mass above 3 at day 57; the
   unnodulated plant took up and fixed nothing and holds at most its seed N.
 - `ps-arch/tests/ninety_days.rs::seed_fill_drops_leaves_from_the_bottom_up` (WP24
-  done-when): leaves dropped during seed fill sit at nodes 2 to 5, survivors at 6 to 8.
+  done-when): leaves dropped during seed fill sit at nodes 2 to 6, survivors at 7 to 8.
+- `ps-arch/tests/ninety_days.rs::seed_fill_mines_first_in_a_fertilized_pot` (R1b): at
+  300 ppm nitrate the plant mines 5 mg before seed fill and 0.27 g during it, against
+  0.37 g taken up.
 - Validation report: `nfree_nodulation_shoot_mass` (Info). `ndfa_garden_plot` (Info):
   season Ndfa in the 30-bean plot is 18% against the 30 to 60% band (Palmero 2022), a
   miss. `ndfa_low_n_bed` (Info): the same plot at 5 ppm nitrate gives 56% against 50 to
@@ -170,3 +186,6 @@ Emergent:
   m2-m3-bean-science.md.
 - Kattge J. et al. (2009); Walker A.P. et al. (2014): Vcmax and leaf N per area.
 - Hirose T., Werger M.J.A. (1987): leaf N per area and photosynthetic capacity in a canopy.
+- Sinclair T.R., de Wit C.T. (1975). Photosynthate and nitrogen requirements for seed
+  production by various crops. Science 189: seed fill strips leaf nitrogen
+  ("self-destruction").

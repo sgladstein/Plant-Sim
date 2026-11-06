@@ -152,8 +152,10 @@ shade, and where roots end up.
 - No phototropism or hydrotropism yet; roots bend only by gravity and noise.
 - Laterals are lumped into cohorts; their fine roots are one more cohort each, in the
   cells next to the lateral, without geometry of their own (decision 0037).
-- Leaves senesce from the base during seed fill only through nitrogen mining (nitrogen
-  card); the seeds' own nitrogen demand does not yet strip them at a capped rate (R1b).
+- Leaves senesce from the base during seed fill through nitrogen mining (nitrogen
+  card). Since R1b the seeds mine first whatever the soil holds (decision 0040), but a
+  fertilized pot's lower leaves still end above the drop threshold, so it keeps its
+  leaves to maturity; an N-limited plot drops about 16 of 23 in seed fill.
 - At maturity all leaves drop at once.
 - Branches carry no axillary buds or racemes except their terminal one.
 

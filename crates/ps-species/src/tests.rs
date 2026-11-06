@@ -107,12 +107,12 @@ fn locus_must_name_a_heritable_trait() {
 
 #[test]
 fn schema_version_checked() {
-    let bad = BEAN.replacen("schema: 13,", "schema: 6,", 1);
+    let bad = BEAN.replacen("schema: 14,", "schema: 6,", 1);
     assert!(matches!(
         Species::from_ron(&bad),
         Err(SpeciesError::Schema {
             found: 6,
-            expected: 13
+            expected: 14
         })
     ));
 }
@@ -294,6 +294,44 @@ fn thickening_keys_are_checked() {
         assert!(BEAN.contains(from), "{from}");
         let e = Species::from_ron(&BEAN.replacen(from, to, 1)).unwrap_err();
         assert!(e.to_string().starts_with(at), "{e}");
+    }
+}
+
+/// The storage group (schema 14, R1b): rates and shares lie in [0, 1], the store
+/// releases below where it refills, and the mining-first flag is 0 or 1.
+#[test]
+fn storage_keys_are_checked() {
+    let cases = [
+        (
+            "storage_release_rate: (value: 0.02,",
+            "storage_release_rate: (value: 1.5,",
+            "storage.storage_release_rate:",
+        ),
+        (
+            "storage_capacity: (value: 0.25,",
+            "storage_capacity: (value: -0.25,",
+            "storage.storage_capacity:",
+        ),
+        (
+            "storage_off: (value: 0.06,",
+            "storage_off: (value: 0.2,",
+            "storage.storage_off:",
+        ),
+        (
+            "seed_fill_mining_first: (value: 1.0,",
+            "seed_fill_mining_first: (value: 0.5,",
+            "nitrogen.seed_fill_mining_first:",
+        ),
+        (
+            "exudation_fraction: (value: 0.4, unit: \"-\"",
+            "exudation_fraction: (value: 0.4, unit: \"1/h\"",
+            "storage.exudation_fraction",
+        ),
+    ];
+    for (from, to, at) in cases {
+        assert!(BEAN.contains(from), "{from}");
+        let e = Species::from_ron(&BEAN.replacen(from, to, 1)).unwrap_err();
+        assert!(e.to_string().contains(at), "{e}");
     }
 }
 

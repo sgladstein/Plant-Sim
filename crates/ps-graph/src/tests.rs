@@ -191,3 +191,40 @@ fn secondary_growth_keeps_length_and_widens() {
     assert_eq!(old.secondary.len(), old.len());
     assert_eq!(old.secondary(l), GramsDM(0.0));
 }
+
+/// The starch store (R1b): carbon moves between reserve and store without loss, the
+/// store never goes negative, a death returns it to the reserve, and it is hashed.
+#[test]
+fn store_moves_carbon_and_returns_it_at_death() {
+    let a = allom();
+    let mut g = OrganArena::new();
+    let seed = g.add(&organ(OrganKind::Seed, None), &a).unwrap();
+    let stem = g.add(&organ(OrganKind::Internode, Some(seed)), &a).unwrap();
+    let before = g.reserve[stem.index()].0 + g.storage(stem).0;
+    let bits = |g: &OrganArena| {
+        let mut v = Vec::new();
+        g.visit_bits(|b| v.push(b));
+        v
+    };
+    let h0 = bits(&g);
+    g.store(stem, GramsC(0.0006)).unwrap();
+    assert_ne!(bits(&g), h0, "the store is part of the state hash");
+    g.store(stem, GramsC(-0.0002)).unwrap();
+    assert!((g.storage(stem).0 - 0.0004).abs() < 1e-15);
+    assert!((g.reserve[stem.index()].0 + g.storage(stem).0 - before).abs() < 1e-15);
+    assert!(matches!(
+        g.store(stem, GramsC(-0.001)),
+        Err(GraphError::NegativeStore { .. })
+    ));
+    assert!(matches!(
+        g.store(stem, GramsC(f64::NAN)),
+        Err(GraphError::NegativeStore { .. })
+    ));
+    g.kill(stem, Hours(5)).unwrap();
+    assert!(g.storage(stem).0.abs() < 1e-15);
+    assert!((g.reserve[stem.index()].0 - before).abs() < 1e-15);
+    assert!(
+        g.store(stem, GramsC(0.0001)).is_err(),
+        "a dead organ stores nothing"
+    );
+}

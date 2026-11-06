@@ -17,6 +17,16 @@ fn run(days: u32, seed: u64) -> (Plant, Vec<DayReport>) {
 
 /// Runs one plant for `days`, refilling the pot to volumetric water `theta` each night.
 fn run_watered(days: u32, seed: u64, theta: f64) -> (Plant, Vec<DayReport>) {
+    run_soil(days, seed, theta, &ps_soil::SoilNitrogen::GARDEN)
+}
+
+/// As [`run_watered`], with the pot's soil nitrogen `n`.
+fn run_soil(
+    days: u32,
+    seed: u64,
+    theta: f64,
+    n: &ps_soil::SoilNitrogen,
+) -> (Plant, Vec<DayReport>) {
     let species = Species::from_ron(include_str!("../../../data/species/bush_bean.ron")).unwrap();
     let traits = species
         .phenotype(&species.default_genotype())
@@ -40,7 +50,7 @@ fn run_watered(days: u32, seed: u64, theta: f64) -> (Plant, Vec<DayReport>) {
     )
     .unwrap();
     soil.fill_to(theta);
-    soil.set_nitrogen(&ps_soil::SoilNitrogen::GARDEN);
+    soil.set_nitrogen(n);
     let (nx, ny, _) = soil.dims();
     #[allow(clippy::cast_precision_loss)]
     let center = [nx as f64 * cell * 0.5, ny as f64 * cell * 0.5, -0.03];
@@ -305,5 +315,39 @@ fn seed_fill_drops_leaves_from_the_bottom_up() {
     assert!(
         mean(&dropped) < mean(&kept),
         "dropped {dropped:?} kept {kept:?}"
+    );
+}
+
+/// R1b (decision 0040): in a fertilized pot the seeds' nitrogen still comes first
+/// from the plant's own organs, so mining runs through seed fill, though the soil holds
+/// plenty (before R1b it ran only when the soil fell short).
+#[test]
+fn seed_fill_mines_first_in_a_fertilized_pot() {
+    use ps_physio::Stage;
+    let fed = ps_soil::SoilNitrogen {
+        no3_ppm: 300.0,
+        ..ps_soil::SoilNitrogen::GARDEN
+    };
+    let (_, reports) = run_soil(DAYS, 7, Texture::Loam.hydraulics().field_capacity, &fed);
+    let before: f64 = reports
+        .iter()
+        .filter(|r| r.stage.is_some_and(|s| s < Stage::SeedFill))
+        .map(|r| r.n_mined)
+        .sum();
+    let fill: Vec<&DayReport> = reports
+        .iter()
+        .filter(|r| r.stage == Some(Stage::SeedFill))
+        .collect();
+    let mined: f64 = fill.iter().map(|r| r.n_mined).sum();
+    let uptake: f64 = fill.iter().map(|r| r.n_uptake).sum();
+    println!("mined before fill {before:.4} g, in fill {mined:.4} g; uptake in fill {uptake:.4} g");
+    assert!(fill.len() > 10);
+    assert!(
+        before < 0.01,
+        "a fed plant mines little before seed fill: {before}"
+    );
+    assert!(
+        mined > 10.0 * before && mined > 0.3 * (mined + uptake),
+        "mined {mined} against uptake {uptake}"
     );
 }

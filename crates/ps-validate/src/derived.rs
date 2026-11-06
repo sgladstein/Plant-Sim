@@ -8,6 +8,8 @@
 //! | `root_shoot_ratio` | root mass / (leaf + stem + fruit mass) |
 //! | `vegetative_shoot_mass_g` | leaf + stem mass, g |
 //! | `stem_share` | stem mass / (stem + leaf mass) (R1a) |
+//! | `stem_change_from_peak` | (stem mass − its highest value so far) / that highest value (R1b) |
+//! | `feedback_loss_seed_fill` | mean daily feedback loss over the seed-fill days so far (R1b) |
 //! | `fine_root_share` | second-order lateral length / root length (R2a) |
 //! | `shoot_mass_g` | leaf + stem + fruit mass (living tops), g |
 //! | `harvest_index_tops` | seed mass / living tops (DSSAT HIAD) |
@@ -95,6 +97,23 @@ pub fn row_value(
             .iter()
             .map(|x| ((x.env.t_min_c + x.env.t_max_c) * 0.5 - b).max(0.0))
             .sum());
+    }
+    if variable == "stem_change_from_peak" {
+        let peak = rows[..=i]
+            .iter()
+            .map(|x| x.report.stem_mass)
+            .fold(0.0, f64::max);
+        return ratio(r.stem_mass - peak, peak, "peak stem mass");
+    }
+    if variable == "feedback_loss_seed_fill" {
+        let fill: Vec<f64> = rows[..=i]
+            .iter()
+            .filter(|x| x.report.stage == Some(Stage::SeedFill))
+            .map(|x| x.report.feedback_loss)
+            .collect();
+        #[allow(clippy::cast_precision_loss)] // a season of rows
+        let n = fill.len() as f64;
+        return ratio(fill.iter().sum(), n, "seed-fill days");
     }
     if variable == "ndfa_season" {
         let (fixed, uptake) = rows[..=i].iter().fold((0.0, 0.0), |(f, u), x| {
