@@ -41,7 +41,8 @@ pub enum Origin {
 pub struct LibrarySeed {
     /// Library id, unique and increasing.
     pub id: u64,
-    /// Species id; a seed's species is its mother's.
+    /// Species id: the file the seed grows by. That is its mother's file, unless its
+    /// growth habit differs from that file's own line (see [`SeedLibrary::add_lots`]).
     pub species: String,
     /// Genotype, in the species' locus order.
     pub genotype: Genotype,
@@ -66,6 +67,33 @@ pub struct LibrarySeed {
     pub coat: Option<SeedLook>,
     /// Where it came from.
     pub origin: Origin,
+}
+
+/// Every species file in `data_dir/species`, by species id: the kin that
+/// [`SeedLibrary::add_lots`] picks a seed's file from.
+///
+/// # Errors
+/// [`BreedError::File`] for an unreadable folder or a file that does not parse.
+pub fn load_species(data_dir: &Path) -> Result<BTreeMap<String, Species>, BreedError> {
+    let dir = data_dir.join("species");
+    let file = |path: &Path, why: String| BreedError::File {
+        path: path.display().to_string(),
+        why,
+    };
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .map_err(|e| file(&dir, e.to_string()))?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "ron"))
+        .collect();
+    files.sort();
+    let mut out = BTreeMap::new();
+    for path in files {
+        let text = std::fs::read_to_string(&path).map_err(|e| file(&path, e.to_string()))?;
+        let sp = Species::from_ron(&text).map_err(|e| file(&path, e.to_string()))?;
+        out.insert(sp.id.clone(), sp);
+    }
+    Ok(out)
 }
 
 /// Seed-colour tables by species id (data/genetics, decision 0031 item 9).
@@ -228,13 +256,23 @@ impl SeedLibrary {
     /// Returns the new ids in lot and organ order. A caller that imports a running
     /// garden passes the number of lots it has already imported.
     ///
+    /// A seed's species is the file it will grow by (decision 0038 item 7). It is the
+    /// mother's file while the seed's growth habit (climbing when `habit` is 0.5 or
+    /// more, as the plant model reads it) matches that file's own line. Otherwise it is
+    /// the first file in `kin`, in id order, that shares her genome layout and whose
+    /// line has the seed's habit. So a climbing F1 on a bush bean grows as a pole bean,
+    /// and a bush F2 seed on that F1 as a bush bean. Without such a file in `kin` the
+    /// seed keeps the mother's file.
+    ///
     /// # Errors
-    /// [`BreedError::Species`] if a lot names a plant or species the world lacks.
+    /// [`BreedError::Species`] if a lot names a plant or species the world lacks, or a
+    /// phenotype cannot be built.
     pub fn add_lots(
         &mut self,
         state: &WorldState,
         from: usize,
         run: &str,
+        kin: &BTreeMap<String, Species>,
         looks: &Looks,
     ) -> Result<Vec<u64>, BreedError> {
         let mut ids = Vec::new();
@@ -260,7 +298,7 @@ impl SeedLibrary {
                 let father = entry(g.father)?;
                 let seed = LibrarySeed {
                     id: 0,
-                    species: mother.species.clone(),
+                    species: species_of(&mother.species, species, &g.genotype, kin)?,
                     genotype: g.genotype.clone(),
                     mother: mother.seed_id,
                     father: father.seed_id,
@@ -281,6 +319,38 @@ impl SeedLibrary {
         }
         Ok(ids)
     }
+}
+
+/// Whether a plant of `species` with genotype `g` climbs (`habit` ≥ 0.5, the rule
+/// ps-arch and ps-world read).
+fn climbs(species_id: &str, species: &Species, g: &Genotype) -> Result<bool, BreedError> {
+    species
+        .phenotype(g)
+        .traits()
+        .map(|t| t.habit >= 0.5)
+        .map_err(|e| BreedError::Species(format!("{species_id}: {e}")))
+}
+
+/// The file a seed of genotype `g` borne on a `mother_id` plant grows by; see
+/// [`SeedLibrary::add_lots`].
+fn species_of(
+    mother_id: &str,
+    mother: &Species,
+    g: &Genotype,
+    kin: &BTreeMap<String, Species>,
+) -> Result<String, BreedError> {
+    let true_to = |id: &str, sp: &Species| -> Result<bool, BreedError> {
+        Ok(climbs(id, sp, g)? == climbs(id, sp, &sp.default_genotype())?)
+    };
+    if true_to(mother_id, mother)? {
+        return Ok(mother_id.to_owned());
+    }
+    for (id, sp) in kin {
+        if id != mother_id && mother.can_cross(sp) && true_to(id, sp)? {
+            return Ok(id.clone());
+        }
+    }
+    Ok(mother_id.to_owned())
 }
 
 fn founder(
