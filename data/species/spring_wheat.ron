@@ -2,7 +2,7 @@
 // Every number has a unit and a source; "~" means a guess to validate. Bean-only
 // constants the grass module does not read say so in their source.
 Species(
-  schema: 12,
+  schema: 13,
   id: "spring_wheat",
   name: "Spring wheat",
   growth_form: Grass,
@@ -92,7 +92,7 @@ Species(
     reserve_feedback_onset: (value: 0.10, unit: "g C / g DM", source: "~ leaf reserve where end-product inhibition starts, about 18% non-structural carbohydrate in total dry mass (L-PEACH style feedback, Allen et al. 2005; decision 0013)"),
     reserve_feedback_full: (value: 0.30, unit: "g C / g DM", source: "~ leaf reserve where photosynthetic capacity reaches zero, about 40% non-structural carbohydrate in total dry mass (decision 0013)"),
     root_uptake_rate: (value: 1e-05, unit: "m2/h", source: "~ (1 cm/cm3 of roots gives 10% of available water per hour)"),
-    root_uptake_max: (value: 1.25e-4, unit: "kg/m/h", source: "~ (0.03 cm3 water per cm of root per day, research thread pending its cited report; decision 0012)"),
+    root_uptake_max: (value: 3.0e-4, unit: "kg/m/h", source: "~ CERES RWUMX 0.03 cm3 water per cm of root per day, a daily ceiling, over the 10 hours that carry nearly all of a day's transpiration (a 14 to 15 h day with a sine-shaped demand: total over peak is about 9.5 h); was the same over 24 h, which held midday uptake to the 24 h mean (R2a, decision 0037, issue #116)"),
     stem_density: (value: 150000.0, unit: "g/m3", source: "~"),
     root_density: (value: 94000.0, unit: "g/m3", source: "OpenSimRoot bean root tissue density 0.094 g/cm3 (research review item 16)"),
     bulk_density: (value: 300000.0, unit: "g/m3", source: "~"),
@@ -161,8 +161,7 @@ Species(
     seed_n_final: (value: 0.015, unit: "g N / g DM", source: "~"),
     nodule_n: (value: 0.048, unit: "g N / g DM", source: "CROPGRO-Drybean BNGRO048.SPE PRONOD 0.30 x 0.16"),
     leaf_n_area_base: (value: 0.3, unit: "g N / m2", source: "~ Kattge 2009 and Walker 2014 intercept, Vcmax25 = b (Na - 0.3) (research m2-m3 notes row 21, to verify)"),
-    uptake_capacity: (value: 1.5e-2, unit: "g N / m / day", source: "~ 25 x CROPGRO-Drybean BNGRO048.SPE RTNO3 = RTNH4 (0.006 mg N per cm root per day, each form): the sim draws a twentieth to a thirtieth of a bean's root length at 30 to 45 days (5.7 m at day 40; no second-order laterals or root hairs, decision 0013), so each modelled meter stands for many (decision 0020, WP24 review)"),
-    root_reach: (value: 3.0, unit: "cm", source: "~ wheat roots are thinner and denser than bean roots"),
+    uptake_capacity: (value: 6.0e-4, unit: "g N / m / day", source: "~ CROPGRO-Drybean BNGRO048.SPE RTNO3 = RTNH4 (0.006 mg N per cm of root per day, each form) until a wheat value is read; applied to the sim's own root length in each cell, without the old 25x factor or reach (R2a, decision 0037)"),
     mobilization_rate: (value: 0.12, unit: "1/day", source: "CROPGRO-Drybean BNGRO048.SPE NMOBMX"),
     vegetative_mobilization: (value: 0.36, unit: "-", source: "CROPGRO-Drybean BNGRO048.SPE NVSMOB"),
     leaf_drop_mobile: (value: 0.1, unit: "-", source: "~ a leaf mined to within a tenth of its mobile nitrogen drops (CROPGRO drops at the final concentration)"),

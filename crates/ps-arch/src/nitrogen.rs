@@ -67,8 +67,6 @@ pub struct NitrogenParams {
     pub leaf_area_reference: f64,
     /// Uptake capacity, g N per m of root per day, per form.
     pub uptake_capacity: f64,
-    /// Uptake reach around each drawn root.
-    pub root_reach: Meters,
     /// Mobilization rate during seed fill, per day.
     pub mobilization_rate: f64,
     /// Mobilization before seed fill, relative.
@@ -136,7 +134,6 @@ impl NitrogenParams {
             leaf_area_base: n.leaf_n_area_base.value,
             leaf_area_reference: n.leaf_n_initial.value / sla,
             uptake_capacity: n.uptake_capacity.value,
-            root_reach: Meters(n.root_reach.value * 0.01),
             mobilization_rate: n.mobilization_rate.value,
             vegetative_mobilization: n.vegetative_mobilization.value,
             leaf_drop_mobile: n.leaf_drop_mobile.value,
@@ -401,7 +398,6 @@ impl Plant {
             demand: (self.nitrogen_demand() - self.pool_without_fixation()).max(GramsN(0.0)),
             roots: &self.roots,
             capacity_per_length: self.params.nitrogen.uptake_capacity,
-            reach: self.params.nitrogen.root_reach,
         }
     }
 
@@ -627,8 +623,8 @@ impl Plant {
         } else {
             np.nodule_initial_mass.0
         };
-        // The same cells the roots take up from (the reach; WP24 review).
-        let ppm = soil.root_zone_no3_ppm(&soil.reached_cells(&self.roots, np.root_reach))?;
+        // The same cells the roots take up from (WP24 review).
+        let ppm = soil.root_zone_no3_ppm(&self.roots)?;
         let add = (target - potential).min(step) * np.nitrate_factor(ppm);
         let per = np.nodule_mass.0.max(1e-9);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]

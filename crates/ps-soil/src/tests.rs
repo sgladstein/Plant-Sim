@@ -186,6 +186,11 @@ fn uptake_is_proportional_and_limited() {
     g.fill_to(Texture::Loam.hydraulics().field_capacity);
     let j = g.take_up(&[one(1.0, &roots, 1e-6)]).unwrap();
     assert!((j.plants[0].actual.0 - 1e-6).abs() < 1e-18);
+    // The capacity is what the roots could take, whatever was asked (R2a).
+    assert!((j.plants[0].capacity.0 - 1e-6).abs() < 1e-18);
+    let j = g.take_up(&[one(1e-7, &roots, 1e-6)]).unwrap();
+    assert!((j.plants[0].actual.0 - 1e-7).abs() < 1e-18);
+    assert!((j.plants[0].capacity.0 - 1e-6).abs() < 1e-18);
 }
 
 /// Decision 0012: plants share a cell from the same state, so their order does not

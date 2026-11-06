@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 12;
+pub const SCHEMA: u32 = 13;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -272,9 +272,6 @@ param_group!(
         leaf_n_area_base: "g N / m2",
         /// Uptake per length of root per day when soil mineral nitrogen is high.
         uptake_capacity: "g N / m / day",
-        /// How far around each drawn root the plant takes up nitrogen: its unresolved
-        /// fine roots and the nitrate the soil water carries to them.
-        root_reach: "cm",
         /// Share of an organ's mobile nitrogen that can move out per day once seeds fill.
         mobilization_rate: "1/day",
         /// Mobilization rate before seed fill, relative to the rate above.

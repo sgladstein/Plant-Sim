@@ -85,7 +85,8 @@ schema 12: the `thickening` group, the `root_secondary_rate` table and each root
 type's `secondary_factor` table, decision 0036. A table is a list of `(x, y)` points
 with an x unit, a unit and a source, read by linear interpolation and held level past
 its ends; the loader checks its units, that x rises and that every value is finite and not
-negative);
+negative; schema 13: `root_reach` removed, since nitrogen uptake reads each cell's own
+root length, and the beans gain a `fine_lateral` root type of order 2, decision 0037);
 the expected units are in `crates/ps-species/src/schema.rs`. The loader rejects a wrong
 unit, an empty source, an unknown or missing key, a non-finite value, and a default
 outside its bounds.

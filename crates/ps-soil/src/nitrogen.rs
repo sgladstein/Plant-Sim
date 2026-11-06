@@ -8,18 +8,17 @@
 //!
 //! Nitrate moves with water (drainage and lateral flow, inside
 //! [`SoilGrid::step_hour`]); ammonium and humus do not. Roots take up both mineral forms
-//! once a day ([`SoilGrid::take_up_nitrogen`]), each root cell drawing on the cells
-//! within the plant's root reach ([`SoilGrid::reached_cells`]). Fertilizer adds to the
-//! top layer.
+//! once a day ([`SoilGrid::take_up_nitrogen`]), each root cell drawing on its own
+//! nitrogen (R2a, decision 0037). Fertilizer adds to the top layer.
 //! Every flux is booked in the grid's [`NitrogenLedger`]; debug builds assert closure
 //! to 1e-9 relative.
 //!
 //! Model card: docs/models/nitrogen.md.
 
-use ps_units::{GramsN, Meters};
+use ps_units::GramsN;
 use serde::{Deserialize, Serialize};
 
-use crate::{CLOSURE_TOLERANCE, Cell, RootCells, SoilError, SoilGrid};
+use crate::{CLOSURE_TOLERANCE, RootCells, SoilError, SoilGrid};
 
 /// Humus N mineralization rate at 30 °C and optimal water, per day ("~", APSIM `SoilN`
 /// humic pool 1.5e-4 d⁻¹; about 2% a year in a temperate summer).
@@ -125,12 +124,9 @@ pub struct NitrogenRequest<'a> {
     pub demand: GramsN,
     /// Its roots.
     pub roots: &'a RootCells,
-    /// Uptake capacity per meter of root per day at high soil N, g N m⁻¹ d⁻¹.
+    /// Uptake capacity per meter of root per day at high soil N, g N m⁻¹ d⁻¹, each
+    /// form; the roots draw from the cells they occupy (R2a, decision 0037).
     pub capacity_per_length: f64,
-    /// How far around a drawn root its unresolved fine roots and the soil water's
-    /// nitrate reach (decision 0020). Each root cell's length is spread evenly over
-    /// the active cells within this distance on each axis.
-    pub reach: Meters,
 }
 
 /// What one plant got from the joint nitrogen uptake.
@@ -342,88 +338,6 @@ impl SoilGrid {
         );
     }
 
-    /// The cells a plant's roots draw nitrogen from: each root cell's length spread
-    /// evenly over the active cells within `reach` of it on each axis (a cube of
-    /// `2r + 1` cells a side, with `r` the reach in whole cells, rounded).
-    #[must_use]
-    pub fn reached_cells(&self, roots: &RootCells, reach: Meters) -> RootCells {
-        let ratio = (reach.0 / self.cell_size().0).max(0.0);
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let r = libm::round(ratio).min(8.0) as usize;
-        if r == 0 {
-            return roots.clone();
-        }
-        let (nx, ny, nz) = self.dims();
-        // Active cells per box from a summed-volume table: `count[(z·(ny+1) + y)·(nx+1)
-        // + x]` is the number of active cells with coordinates below (x, y, z).
-        let (sx, sy) = (nx + 1, (nx + 1) * (ny + 1));
-        let mut count = vec![0_i64; sy * (nz + 1)];
-        for z in 0..nz {
-            for y in 0..ny {
-                for x in 0..nx {
-                    let a = i64::from(self.active[self.index(Cell { x, y, z })]);
-                    let o = (z + 1) * sy + (y + 1) * sx + (x + 1);
-                    count[o] = a + count[o - 1] + count[o - sx] + count[o - sy]
-                        - count[o - 1 - sx]
-                        - count[o - 1 - sy]
-                        - count[o - sx - sy]
-                        + count[o - 1 - sx - sy];
-                }
-            }
-        }
-        let boxed = |lo: Cell, hi: Cell| {
-            let at = |x: usize, y: usize, z: usize| count[z * sy + y * sx + x];
-            let (x0, y0, z0, x1, y1, z1) = (lo.x, lo.y, lo.z, hi.x + 1, hi.y + 1, hi.z + 1);
-            at(x1, y1, z1) - at(x0, y1, z1) - at(x1, y0, z1) - at(x1, y1, z0)
-                + at(x0, y0, z1)
-                + at(x0, y1, z0)
-                + at(x1, y0, z0)
-                - at(x0, y0, z0)
-        };
-        // Lengths summed per cell on a dense scratch grid, in the same order
-        // `RootCells::from_pairs` would add them (its sort is stable), without the sort.
-        // An untouched cell stays +0, and `0 + share` is `share`.
-        let mut length = vec![0.0_f64; self.water.len()];
-        for &(i, l) in roots.cells() {
-            let c = self.cell_of(i);
-            let lo = Cell {
-                x: c.x.saturating_sub(r),
-                y: c.y.saturating_sub(r),
-                z: c.z.saturating_sub(r),
-            };
-            let hi = Cell {
-                x: (c.x + r).min(nx - 1),
-                y: (c.y + r).min(ny - 1),
-                z: (c.z + r).min(nz - 1),
-            };
-            let near = boxed(lo, hi);
-            if near <= 0 {
-                continue;
-            }
-            #[allow(clippy::cast_precision_loss)] // at most 17³ cells
-            let share = l.0 / near as f64;
-            for z in lo.z..=hi.z {
-                for y in lo.y..=hi.y {
-                    let row = self.index(Cell { x: lo.x, y, z });
-                    let cells = row..=row + (hi.x - lo.x);
-                    for (len, &a) in length[cells.clone()].iter_mut().zip(&self.active[cells]) {
-                        if a {
-                            *len += share;
-                        }
-                    }
-                }
-            }
-        }
-        let pairs: Vec<(usize, Meters)> = length
-            .iter()
-            .enumerate()
-            .filter(|(_, l)| **l > 0.0)
-            .map(|(j, l)| (j, Meters(*l)))
-            .collect();
-        // Already sorted and merged; `from_pairs` keeps them as they are.
-        RootCells::from_pairs(pairs)
-    }
-
     /// The day's root nitrogen uptake for every plant in the grid (§3.6, decision
     /// 0020), CROPGRO NUPTAK style. All plants see the same soil, so their order does
     /// not matter.
@@ -452,12 +366,12 @@ impl SoilGrid {
             let ppm = g * 1e3 / kg;
             1.0 - libm::exp(-UPTAKE_PPM_RESPONSE * ppm)
         };
-        // Per plant, from the same state: its reached cells, its potential per cell
-        // (no3, nh4), and its request per cell, (no3, nh4). Plants are independent and
-        // collect keeps plant order.
+        // Per plant, from the same state: its potential per root cell (no3, nh4), and
+        // its request per root cell, (no3, nh4). Plants are independent and collect
+        // keeps plant order.
         let plan = |p: &NitrogenRequest<'_>| {
-            let roots = self.reached_cells(p.roots, p.reach);
-            let pot: Vec<(f64, f64)> = roots
+            let pot: Vec<(f64, f64)> = p
+                .roots
                 .cells()
                 .iter()
                 .map(|&(i, l)| {
@@ -478,18 +392,17 @@ impl SoilGrid {
             let want = p.demand.0.max(0.0).min(total);
             let share = if total > 0.0 { want / total } else { 0.0 };
             let req: Vec<(f64, f64)> = pot.iter().map(|x| (x.0 * share, x.1 * share)).collect();
-            (roots, req)
+            req
         };
-        let planned: Vec<(RootCells, Vec<(f64, f64)>)> = if plants.len() > 1 {
+        let asked: Vec<Vec<(f64, f64)>> = if plants.len() > 1 {
             use rayon::prelude::*;
             plants.par_iter().map(plan).collect()
         } else {
             plants.iter().map(plan).collect()
         };
-        let (reached, asked): (Vec<RootCells>, Vec<Vec<(f64, f64)>>) = planned.into_iter().unzip();
         let mut cell_total: Vec<(usize, f64, f64)> = Vec::new();
-        for (roots, req) in reached.iter().zip(&asked) {
-            for (&(i, _), r) in roots.cells().iter().zip(req) {
+        for (p, req) in plants.iter().zip(&asked) {
+            for (&(i, _), r) in p.roots.cells().iter().zip(req) {
                 if r.0 > 0.0 || r.1 > 0.0 {
                     cell_total.push((i, r.0, r.1));
                 }
@@ -518,9 +431,9 @@ impl SoilGrid {
                 .map_or((1.0, 1.0), |k| (scale[k].1, scale[k].2))
         };
         let mut out = Vec::with_capacity(plants.len());
-        for (roots, req) in reached.iter().zip(&asked) {
+        for (p, req) in plants.iter().zip(&asked) {
             let mut got = NitrogenUptake::default();
-            for (&(i, _), r) in roots.cells().iter().zip(req) {
+            for (&(i, _), r) in p.roots.cells().iter().zip(req) {
                 let (f3, f4) = factor(i);
                 let (u3, u4) = (GramsN(r.0 * f3), GramsN(r.1 * f4));
                 self.no3[i] -= u3;

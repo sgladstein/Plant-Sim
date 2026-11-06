@@ -8,6 +8,7 @@
 //! | `root_shoot_ratio` | root mass / (leaf + stem + fruit mass) |
 //! | `vegetative_shoot_mass_g` | leaf + stem mass, g |
 //! | `stem_share` | stem mass / (stem + leaf mass) (R1a) |
+//! | `fine_root_share` | second-order lateral length / root length (R2a) |
 //! | `shoot_mass_g` | leaf + stem + fruit mass (living tops), g |
 //! | `harvest_index_tops` | seed mass / living tops (DSSAT HIAD) |
 //! | `days_since_emergence` | days since sowing minus its value on the first emerged row |
@@ -108,6 +109,7 @@ pub fn row_value(
         "root_shoot_ratio" => ratio(r.root_mass, shoot(r), "shoot mass"),
         "vegetative_shoot_mass_g" => Ok(r.leaf_mass + r.stem_mass),
         "stem_share" => ratio(r.stem_mass, r.stem_mass + r.leaf_mass, "stem and leaf mass"),
+        "fine_root_share" => ratio(r.fine_root_length, r.root_length, "root length"),
         "shoot_mass_g" => Ok(shoot(r)),
         "harvest_index_tops" => ratio(r.seed_mass, shoot(r), "shoot mass"),
         "mean_seed_mass_g" => ratio(r.seed_mass, f64::from(r.seeds), "seed count"),

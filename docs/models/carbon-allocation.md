@@ -41,18 +41,27 @@ concentration nor raises the reserve floor.
    clock, so it delays expansion instead of cutting the organ short. Demand
    `D = ΔW · 0.45 · 1.25` g C. Available `A = max(0, R − 0.05 W_p)`. Spent
    `S = min(D, p · A)` with priority `p` (seeds in pods 1.0, pods 0.9, roots
-   0.6 + 0.4 (1 − FTSW), everything else 0.7). Unmet `D − S` is booked; `S / 1.25` becomes
-   structure and the rest is growth respiration.
+   0.6 + 0.4 (1 − min(FTSW, g)), everything else 0.7, with `g` the stomatal supply
+   factor of the gas-exchange card). Unmet `D − S` is booked; `S / 1.25` becomes
+   structure and the rest is growth respiration. A growing root draws on its own
+   reserve and on its parent root's (or the seed's), `S = min(D, p (A + A_parent))`, own
+   first (tip feeding, R2a, decision 0037): a queued root segment starts as a tiny
+   primordium, and phloem unloads at the tip from the root behind it.
    Then secondary growth (R1a, decision 0036; organ-growth card), in the same hour from
    what is left: each stem or root organ with a thickening potential `ΔW_s` spends
    `S_s = min(ΔW_s · 0.45 · cc, 0.4 · max(0, R − 0.05 W_p))` at priority 0.4; `S_s / cc`
    becomes secondary structure (wider, same length) and the rest growth respiration.
    Unmet secondary demand is not booked: wood is a sink that takes only surplus.
+   Since R2a the potential is set once a day for the coming day (daily step 5b,
+   decision 0037), scaled by the day's share of the expanding shoot's carbon demand
+   that was met (leaves and internodes, `Plant::carbon_met`), so wood is the first sink
+   to yield when carbon is short.
 6. No catch-up: demand always follows the species potential, and a shortfall is lost, so
    a fully expanded organ ends at `(1 − unmet / potential demand) × potential`.
 7. Starvation (daily step 4): an organ with at least `24 × starvation_window` starving
    hours dies; a stem segment takes its whole subtree with it (an axis dies with its
-   basal internode). 30% of each dead organ's structural carbon moves to the nearest
+   basal internode). 30% of each dead organ's primary (not woody) structural carbon
+   moves to the nearest
    living ancestor's reserve, which also pays the dead organ's debt (a negative reserve
    is carbon already respired, so litter is never negative; decision 0011). The rest of
    its structure and any positive reserve become litter. With no living ancestor
@@ -107,8 +116,17 @@ late leaves, smaller leaves after a dull week.
 - Priority is the share of an organ's own available reserve it spends per hour, so at
   an hourly step it is a weak lever (decision 0009). If fruit does not starve late
   leaves in WP12, make priority shape the transport to the receiving organ.
-- Secondary thickening is a sink at priority 0.4 (decision 0036); the reserve refill
-  sink (§3.9 priority 0.2) is not separate yet (R1b).
+- Secondary thickening is a sink at priority 0.4 (decision 0036), scaled by the
+  previous day's shoot carbon (decision 0037); the reserve refill sink (§3.9 priority
+  0.2) is not separate yet (R1b).
+- Root tip feeding lets a growing root spend its parent's reserve at its own priority,
+  so a fast-growing root system can draw on the reserve of the root behind it within
+  the hour; there is no unloading limit at the tip (decision 0037).
+- No functional balance on light: shaded plants keep the root share of a sunlit one
+  (shade_root_mass passes at about −30%, but the root share of total mass rises a
+  little in shade, where Poorter et al. 2012 find it falls). Scaling root growth by the
+  shoot's carbon was tried in R2a and cut nitrogen and water uptake more than it
+  helped the shoot (decision 0037).
 - Secondary mass is phloem-free: thickening raises neither an organ's conductance nor
   its capacity to hold sugar. Real secondary phloem grows with the cambium, so old
   stems carry more than the model lets them.
@@ -123,7 +141,9 @@ and the final size matches the reduced potential within 5%),
 `cold_delays_expansion_without_loss`, `starved_debt_is_charged_to_the_ancestor`,
 `inputs_must_cover_every_organ`, `implicit_transport_crosses_a_chain_in_one_hour`, and the
 property tests `transport_conserves_and_clamps` and
-`implicit_transport_is_conservative_and_monotone` (random trees).
+`implicit_transport_is_conservative_and_monotone` (random trees),
+`secondary_growth_is_a_low_priority_sink` (R1a),
+`root_tip_draws_on_its_parent` and `shedding_does_not_resorb_wood` (R2a).
 
 ## References
 - Allen, M. T., Prusinkiewicz, P. and DeJong, T. M. (2005). Using L-systems for modeling

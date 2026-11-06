@@ -128,11 +128,13 @@ fn bean_stems_and_roots_widen_and_taper() {
     println!("main stem, base to tip: {d:.2?} mm");
     // The hypocotyl and the epicotyl carry nearly the whole shoot and are the widest
     // (the thin hypocotyl draws less carbon and catches up by maturity); the stem
-    // tapers to the tip.
+    // tapers to the tip. Daily thickening (decision 0037) builds from the midnight
+    // reserve, so on day 56 the hypocotyl is about 1.15 times the tip (R1a's hourly
+    // rule: more than 1.2) and the epicotyl about 1.5 times.
     let widest = hyp.max(d[0]);
     assert!(d.iter().all(|x| *x <= widest + 1e-9), "{d:?}");
-    assert!(hyp > 1.2 * d[d.len() - 1], "hypocotyl {hyp} vs tip {d:?}");
-    assert!(d[0] > 1.5 * d[d.len() - 1], "no taper: {d:?}");
+    assert!(hyp > 1.1 * d[d.len() - 1], "hypocotyl {hyp} vs tip {d:?}");
+    assert!(d[0] > 1.4 * d[d.len() - 1], "no taper: {d:?}");
     // Stem mass still rises in the last week.
     let n = stem.len();
     assert!(stem[n - 1] > stem[n - 8], "stem mass {:?}", &stem[n - 8..]);

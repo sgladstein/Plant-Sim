@@ -360,6 +360,12 @@ pub struct RootAxis {
     pub done: bool,
     /// Lateral cohorts made.
     pub laterals: u32,
+    /// Planned end of the newest segment: where the next one starts (R2a).
+    #[serde(default)]
+    pub end: V3,
+    /// Where the axis starts, the base of its first segment (R2a).
+    #[serde(default)]
+    pub base: V3,
 }
 
 /// Weather and soil seen during the current day, for daily rules.
@@ -389,6 +395,10 @@ pub struct DayStats {
     /// Water taken from the soil today, which the plant transpires, kg.
     #[serde(default)]
     pub transpiration: f64,
+    /// Sum of the hourly expansion stress factors (water times nitrogen), for the
+    /// day's thickening (decision 0037).
+    #[serde(default)]
+    pub stress_sum: f64,
 }
 
 fn lowest() -> f64 {
@@ -397,6 +407,26 @@ fn lowest() -> f64 {
 
 fn one() -> f64 {
     1.0
+}
+
+/// Next hour's water supply factor on stomatal conductance (R2a, issue #116): this
+/// hour's factor `g` times what the roots could deliver over what the leaves asked for,
+/// at most 1. Transpiration scales about in proportion to conductance, so this is the
+/// factor at which the last hour's demand would have been met; a one-hour lag, as
+/// CROPGRO's SWFAC is a one-day lag. What the roots could deliver is the actual uptake
+/// when some demand went unmet (other plants may have shared the cells), else the
+/// roots' capacity. With no demand (night) the factor resets to 1.
+pub(crate) fn supply_factor(g: f64, u: &Uptake) -> f64 {
+    let demand = (u.actual + u.shortfall).0;
+    if demand <= 1e-12 {
+        return 1.0;
+    }
+    let met = if u.shortfall.0 > 1e-12 * demand {
+        u.actual.0
+    } else {
+        u.capacity.0.max(u.actual.0)
+    };
+    (g * met / demand).clamp(0.0, 1.0)
 }
 
 impl Default for DayStats {
@@ -412,6 +442,7 @@ impl Default for DayStats {
             gross_lost: 0.0,
             assimilation: 0.0,
             transpiration: 0.0,
+            stress_sum: 0.0,
         }
     }
 }
@@ -501,6 +532,9 @@ pub struct DayReport {
     /// Diameter of the tap root 5 cm below its base, m (R1a; 0 while it is shorter).
     #[serde(default)]
     pub tap_root_diameter: f64,
+    /// Living length of second-order (fine) laterals, m (R2a).
+    #[serde(default)]
+    pub fine_root_length: f64,
     /// Water taken from the soil today, which the plant transpires, kg (the demand less
     /// the shortfall).
     #[serde(default)]
@@ -653,6 +687,27 @@ pub struct Plant {
     pub ftsw: f64,
     /// Stress factors on conductance and expansion.
     pub stress: (f64, f64),
+    /// Water supply factor on stomatal conductance, from the last hour's uptake: the
+    /// share of the potential demand the roots could meet (R2a, issue #116).
+    #[serde(default = "one")]
+    pub supply: f64,
+    /// Share of the expanding shoot's carbon demand met yesterday, the factor on
+    /// secondary growth: wood is the last sink, so it yields first when carbon is
+    /// short (R2a, decision 0037).
+    #[serde(default = "one")]
+    pub carbon_met: f64,
+    /// Lifetime carbon demand and unmet demand of the expanding shoot (leaves and
+    /// internodes) at the last daily step, g C, for [`Plant::carbon_met`].
+    #[serde(default)]
+    pub shoot_demand: (f64, f64),
+    /// Root segments that thicken today, with their radius rate in m h⁻¹ (segment
+    /// age times distance factor, set at the daily step; R2a, decision 0037).
+    #[serde(default)]
+    pub(crate) wood_rates: Vec<(OrganId, f64)>,
+    /// Each organ's potential secondary growth per hour for the day, g DM, set at the
+    /// daily step and built hourly (R2a, decision 0037); empty when nothing thickens.
+    #[serde(default)]
+    pub(crate) wood_potential: Vec<GramsDM>,
     /// This hour's leaf income, indexed like the arena (scratch between the two
     /// hourly calls; empty at the daily boundary).
     #[serde(skip)]
@@ -892,6 +947,11 @@ impl Plant {
             today: DayStats::default(),
             shortfall: KgWater(0.0),
             ftsw: 1.0,
+            supply: 1.0,
+            carbon_met: 1.0,
+            shoot_demand: (0.0, 0.0),
+            wood_rates: Vec::new(),
+            wood_potential: Vec::new(),
             stress: (1.0, 1.0),
             income: Vec::new(),
             sky: ps_light::sky_sectors().to_vec(),
@@ -989,7 +1049,7 @@ impl Plant {
         };
         let hp = &self.params;
         self.stress = (
-            stress_factor(self.ftsw, hp.ftsw_conductance),
+            stress_factor(self.ftsw, hp.ftsw_conductance) * self.supply,
             stress_factor(self.ftsw, hp.ftsw_expansion),
         );
         Ok(())
@@ -1240,6 +1300,7 @@ impl Plant {
         if let Some(u) = uptake {
             self.shortfall += u.shortfall;
             self.today.transpiration += u.actual.0;
+            self.supply = supply_factor(self.supply, u);
         }
         let seed_t = Self::soil_temperature(soil, self.collar_position[2]);
         // Germination (§3.10): hours with the seed cell above the FTSW threshold and
@@ -1274,7 +1335,6 @@ impl Plant {
         self.fix_hour();
         let respiring = self.phenology.stage != Stage::Mature;
         let stress = self.stress.1 * self.nitrogen.status;
-        let secondary = self.secondary_potential(&temps, ctx.tick, stress);
         let (flows, lens_temps) = match lens {
             Some(l) => (Some(&mut l.phloem_import), Some(&mut l.temperature)),
             None => (None, None),
@@ -1287,11 +1347,11 @@ impl Plant {
             &HourInputs {
                 temperature: &temps,
                 income: &self.income,
-                ftsw: self.ftsw,
+                ftsw: self.ftsw.min(self.supply),
                 stress,
                 respiring,
                 n_floor: Some(&self.params.nitrogen.growth_floor),
-                secondary: &secondary,
+                secondary: &self.wood_potential,
             },
             &mut self.ledger,
             flows,
@@ -1315,6 +1375,7 @@ impl Plant {
         let d = &mut self.today;
         d.hours += 1;
         d.t_sum += wx.t_air.0;
+        d.stress_sum += stress;
         d.t_min = d.t_min.min(wx.t_air.0);
         d.t_max = d.t_max.max(wx.t_air.0);
         d.ftsw_min = d.ftsw_min.min(self.ftsw);
@@ -1387,14 +1448,39 @@ impl Plant {
         // 4. Senescence and shedding.
         self.senescence(now)?;
         self.rot_pods(now)?;
+        self.update_carbon_met();
         // 5. Root elongation and branching.
         if stage < Stage::Mature {
             self.root_elongation(now, soil)?;
         }
+        self.set_wood_rates(now);
+        // 5b. Tomorrow's stem and root thickening potential (decision 0037).
+        self.set_wood_potential();
         // 6. Light geometry, root cells, nitrogen, expansion records.
         self.positions = geometry::layout(&self.arena, &self.meta, self.collar_position);
         self.roots = geometry::root_cells(&self.arena, &self.positions, soil);
         Ok(())
+    }
+
+    /// Yesterday's share of the expanding shoot's carbon demand that was met (R2a,
+    /// decision 0037), from the lifetime demand records of leaves and internodes.
+    fn update_carbon_met(&mut self) {
+        let a = &self.arena;
+        let (mut d, mut u) = (0.0, 0.0);
+        for i in 0..a.len() {
+            if matches!(a.kind[i], OrganKind::Leaf | OrganKind::Internode) {
+                d += a.potential_demand[i].0;
+                u += a.unmet[i].0;
+            }
+        }
+        let (d0, u0) = self.shoot_demand;
+        let dd = d - d0;
+        self.carbon_met = if dd > 1e-12 {
+            (1.0 - (u - u0) / dd).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        self.shoot_demand = (d, u);
     }
 
     /// The light model's input for this plant: its leaflet discs (see
@@ -1735,6 +1821,11 @@ impl Plant {
         let root_length: f64 = alive(OrganKind::Root)
             .map(|id| a.size[id.index()].length.0)
             .sum();
+        // A fold from +0, so a plant without fine roots reports 0, not −0.
+        let fine_root_length = alive(OrganKind::Root)
+            .filter(|id| a.axis_order[id.index()] >= 2)
+            .map(|id| a.size[id.index()].length.0)
+            .fold(0.0, |s, l| s + l);
         DayReport {
             day: self.day,
             stage: Some(self.phenology.stage),
@@ -1796,6 +1887,7 @@ impl Plant {
                 0.0
             },
             tap_root_diameter: self.tap_root_diameter(TAP_ROOT_DEPTH),
+            fine_root_length,
             transpiration: self.today.transpiration,
         }
     }
