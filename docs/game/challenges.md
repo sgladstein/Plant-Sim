@@ -27,15 +27,16 @@ on a model version other than the scenario's pin is flagged.
 ## The first three challenges
 
 Medal thresholds come from strategy sweeps on world seed 7: on model 0.23.0 (re-swept
-after the PR #137 review), checked again on 0.24.0 (R2b, decision 0043), where only
-hungry soil's medals moved. Pod counts are noisy from one strategy to the next (each
+after the PR #137 review), checked again on 0.24.0 (R2b, decision 0043), where hungry
+soil's medals moved and thirsty summer's silver and gold came down a pod each (its best
+bloom schedules made 6 to 10 pods, so gold at 11 was out of reach). Pod counts are noisy from one strategy to the next (each
 flower's set is a draw), so thresholds sit where a sound strategy usually lands, not at
 the best single draw. The review's eight-seed sweep is in the project files
 (reviews/wp32-challenges-137-review.md).
 
 | Challenge | Setting | Player controls | Sweep (seed 7) | Medals (B / S / G) |
 | --- | --- | --- | --- | --- |
-| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | 0.23.0: 6 L spread over the whole season 2 to 5 pods; the same 6 L in bloom (days 40 to 75, every 1 to 4 days) 9 to 14. 0.24.0: no water 4, spread daily 1, bloom every 1 to 4 days 6 to 10 | 5 / 8 / 11 pods |
+| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | 0.23.0: 6 L spread over the whole season 2 to 5 pods; the same 6 L in bloom (days 40 to 75, every 1 to 4 days) 9 to 14. 0.24.0: no water 4, spread daily 1, bloom every 1 to 4 days 6 to 10 | 5 / 7 / 10 pods (0.23.0: 5 / 8 / 11) |
 | Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | 0.23.0: sown days 0 to 20 (blooms into the heat) 1 to 8 pods; days 22 to 40 6 to 18, mostly 11 to 18. 0.24.0: days 0 to 16 2 to 7; days 20 to 36 10 to 15; day 40 6 | 9 / 12 / 15 pods |
 | Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | 0.23.0: none 0.5 g seed; all at sowing 4.0; all on day 45 2.1; split or mid-season (days 25 to 35, or several doses from day 15 to 55) 4.9 to 7.4. 0.24.0: none 0.8; all on day 45 4.9; days 20 and 35 6.7; days 15, 30 and 45 7.3; all at sowing 8.0; days 25 and 40 8.2 | 5.5 / 7 / 8.5 g seed (0.23.0: 4.5 / 6 / 7) |
 

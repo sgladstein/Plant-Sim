@@ -186,6 +186,10 @@ fn lens_data_never_changes_the_hash() {
         let leaf = e.plant.arena.alive_of(OrganKind::Leaf).next().unwrap();
         assert!(p.organ_n[leaf.index()] > 0.0);
     }
+    // One water potential per soil layer, none wetter than saturation (R3a).
+    let psi = &lens.soils[0].layer_water_potential;
+    assert_eq!(psi.len(), lens.soils[0].layer_temperature.len());
+    assert!(psi.iter().all(|p| p.0 <= 0.0 && p.0.is_finite()), "{psi:?}");
     // The lens reads each plant's own light, so plants differ. (Whether a crowd
     // shades its interior is the model's business, tested on the state in
     // ps-world's neighbors_in_a_plot_take_each_others_light; the canopy is still

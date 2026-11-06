@@ -292,6 +292,36 @@ fn pot_mask_area_is_close_to_circle() {
     );
 }
 
+/// R3a: a pot at field capacity reads −33 kPa in every active cell and layer, nothing
+/// outside the pot, and a dried top layer reads drier than the rest.
+#[test]
+fn pot_water_potential_follows_the_water() {
+    let mut g =
+        SoilGrid::new_pot(Meters(0.20), Meters(0.20), Meters(0.02), Texture::Loam, T20).unwrap();
+    let outside = (0..g.len()).find(|&i| !g.is_active(i)).unwrap();
+    assert_eq!(g.water_potential(outside), None);
+    for i in (0..g.len()).filter(|&i| g.is_active(i)) {
+        let psi = g.water_potential(i).unwrap();
+        assert!((psi.0 + 33.0).abs() < 1e-9, "cell {i}: {psi:?}");
+    }
+    let layers = g.layer_water_potentials();
+    assert_eq!(layers.len(), 10);
+    assert!(
+        layers.iter().all(|p| (p.0 + 33.0).abs() < 1e-9),
+        "{layers:?}"
+    );
+    // Evaporation dries the top layer only.
+    for _ in 0..48 {
+        g.step_hour(&SoilHour {
+            surface_radiation: WPerM2(600.0),
+            ..dry_hour()
+        });
+    }
+    let layers = g.layer_water_potentials();
+    assert!(layers[0].0 < -100.0, "{layers:?}");
+    assert!((layers[9].0 + 33.0).abs() < 1e-6, "{layers:?}");
+}
+
 proptest! {
     /// Random weather in a pot: every hour closes to 1e-9, water stays within [0, saturation].
     #[test]
