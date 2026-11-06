@@ -938,6 +938,7 @@ pub(crate) fn sync_scene(
         // Templated organs.
         let options = InstanceOptions {
             water_stress_factor: pot.water_stress,
+            wilt: Some(pot.wilt),
             ..InstanceOptions::default()
         };
         let list = instances(&pot.skeleton, options);

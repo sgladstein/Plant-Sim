@@ -84,13 +84,18 @@ impl CameraRig {
         (center, distance)
     }
 
-    /// Target and distance that fit `bounds` in a view of `aspect` (width over height)
-    /// seen from `yaw` and `pitch`, with some margin: each corner of the box is kept
-    /// inside both the vertical and the horizontal field of view. Tighter than
-    /// [`CameraRig::framing`] for a wide, low garden on a wide screen, where a bounding
-    /// sphere leaves most of the frame empty.
+    /// Target and distance that fit `bounds` in a view whose visible half-angles have
+    /// tangents `(tan_h, tan_v)` (see [`visible_tans`]), seen from `yaw` and `pitch`, with
+    /// some margin: each corner of the box is kept inside both the vertical and the
+    /// horizontal field of view. Tighter than [`CameraRig::framing`] for a wide, low
+    /// garden on a wide screen, where a bounding sphere leaves most of the frame empty.
     #[must_use]
-    pub fn framing_fit(bounds: (Vec3, Vec3), yaw: f32, pitch: f32, aspect: f32) -> (Vec3, f32) {
+    pub fn framing_fit(
+        bounds: (Vec3, Vec3),
+        yaw: f32,
+        pitch: f32,
+        (tan_h, tan_v): (f32, f32),
+    ) -> (Vec3, f32) {
         let (lo, hi) = bounds;
         let center = 0.5 * (lo + hi);
         let back = Vec3::new(
@@ -100,13 +105,9 @@ impl CameraRig {
         );
         let right = Vec3::Y.cross(back).normalize_or(Vec3::X);
         let up = back.cross(right);
-        let tan_v = (0.5 * FOV_Y).tan();
-        let tan_h = tan_v
-            * if aspect.is_finite() && aspect > 0.1 {
-                aspect
-            } else {
-                1.0
-            };
+        let full = (0.5 * FOV_Y).tan();
+        let sane = |t: f32| if t.is_finite() && t > 0.01 { t } else { full };
+        let (tan_h, tan_v) = (sane(tan_h), sane(tan_v));
         let mut distance: f32 = 0.05;
         for k in 0..8_u8 {
             let corner = Vec3::new(
@@ -209,19 +210,17 @@ type RigCamera = (
 pub(crate) fn apply_rig(
     mut rig: ResMut<CameraRig>,
     time: Res<Time>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     mut cameras: Query<RigCamera, With<OrbitCamera>>,
 ) {
-    let aspect = cameras
-        .iter()
-        .find_map(|(_, _, p)| match p {
-            Some(Projection::Perspective(p)) => Some(p.aspect_ratio),
-            _ => None,
-        })
-        .unwrap_or(16.0 / 9.0);
+    let tans = windows.single().map_or_else(
+        |_| visible_tans(Vec2::new(16.0, 9.0), [0.0; 4]),
+        |w| visible_tans(Vec2::new(w.width(), w.height()), rig.insets),
+    );
     if rig.auto_frame
         && let Some(bounds) = rig.frame_bounds
     {
-        let (target, distance) = CameraRig::framing_fit(bounds, rig.yaw, rig.pitch, aspect);
+        let (target, distance) = CameraRig::framing_fit(bounds, rig.yaw, rig.pitch, tans);
         let distance = distance * rig.zoom * rig.cue_zoom;
         let k = 1.0 - (-3.0 * time.delta_secs()).exp();
         rig.target = rig.target.lerp(target, k);
@@ -247,6 +246,20 @@ pub fn fog_falloff(distance: f32) -> bevy::pbr::FogFalloff {
         start: d + 0.5,
         end: d + 58.5,
     }
+}
+
+/// Tangents of the half-angles `(horizontal, vertical)` of the part of the view that
+/// the UI panels leave uncovered, for a window of `size` with panel `insets` (left, top,
+/// right, bottom) in the same units. [`off_center`] renders a larger image of which the
+/// window is a crop, so the uncovered area sees less than the full field of view.
+#[must_use]
+pub fn visible_tans(size: Vec2, insets: [f32; 4]) -> (f32, f32) {
+    let [l, t, r, b] = insets.map(|v| v.max(0.0));
+    let (full, _) = off_center(size, [l, t, r, b]);
+    let free = Vec2::new(size.x - l - r, size.y - t - b).max(Vec2::splat(1.0));
+    // Pixels per unit tangent: the full image's height spans the vertical field of view.
+    let per_tan = 0.5 * full.y.max(1.0) / (0.5 * FOV_Y).tan();
+    (0.5 * free.x / per_tan, 0.5 * free.y / per_tan)
 }
 
 /// The off-center view that puts the center of the uncovered area at the image center:
@@ -310,7 +323,10 @@ mod tests {
     fn a_fitted_frame_keeps_every_corner_in_view_and_is_tighter_for_wide_scenes() {
         let bounds = (Vec3::new(-0.45, -0.2, -0.1), Vec3::new(0.45, 0.15, 0.1));
         let (yaw, pitch, aspect) = (0.0, 0.28, 16.0 / 9.0);
-        let (c, d) = CameraRig::framing_fit(bounds, yaw, pitch, aspect);
+        let tans = visible_tans(Vec2::new(1600.0, 900.0), [0.0; 4]);
+        assert!((tans.0 / tans.1 - aspect).abs() < 1e-4);
+        assert!((tans.1 - (0.5 * FOV_Y).tan()).abs() < 1e-5);
+        let (c, d) = CameraRig::framing_fit(bounds, yaw, pitch, tans);
         let rig = CameraRig {
             target: c,
             distance: d,
@@ -333,6 +349,11 @@ mod tests {
             assert!(p.dot(right).abs() <= z * th + 1e-4 && p.dot(up).abs() <= z * tv + 1e-4);
         }
         assert!(d < CameraRig::framing(bounds).1 * 0.8);
+        // Panels over the right and top of the window leave less to fit into, so the
+        // camera backs off.
+        let covered = visible_tans(Vec2::new(1280.0, 720.0), [0.0, 78.0, 300.0, 22.0]);
+        assert!(covered.0 < tans.0 * 0.8 && covered.1 < tans.1);
+        assert!(CameraRig::framing_fit(bounds, yaw, pitch, covered).1 > d * 1.2);
     }
 
     #[test]

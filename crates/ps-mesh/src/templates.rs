@@ -34,7 +34,7 @@ use glam::{Affine3A, Quat, Vec2, Vec3};
 use crate::{MeshData, TubeNode, tube};
 
 /// Number of prebuilt droop variants per leaf template (0 = turgid, last = fully wilted).
-pub const DROOP_LEVELS: u8 = 5;
+pub const DROOP_LEVELS: u8 = 9;
 
 /// Number of prebuilt unfolding variants per leaf template (0 = folded shut, last = open).
 pub const UNFOLD_LEVELS: u8 = 4;
