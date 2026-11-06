@@ -415,7 +415,8 @@ fn settle(c: &Challenge, o: &Outcome, log: &[Action], captures: &Path, r: &mut C
         let each: Vec<String> = o.season_scores.iter().map(|v| fmt_score(c, *v)).collect();
         r.seasons = format!(
             "Mean of {} seasons, each a new draw of weather and chance: {}. The season you \
-             watched is the first; the debrief below is that season.",
+             watched is the first; the debrief below is that season. Harvests and pruning count \
+             only in that one; the plan (sowing, water, fertilizer) runs in all.",
             o.season_scores.len(),
             each.join(", ")
         );

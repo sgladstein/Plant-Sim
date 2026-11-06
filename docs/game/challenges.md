@@ -35,7 +35,8 @@ every 4 days, the reverse of the lesson. So each shipped challenge is scored ove
 (`ps_game::season_scenario`), and the score is the mean of the eight. Actions on one
 particular organ (harvest, prune, pollinate) are dropped from seasons 2 and on
 (`ps_game::season_log`), since another seed grows other organs; the plan (sowing,
-watering, fertilizer) carries over. The first season is the scenario as written, and it
+watering, fertilizer) carries over, so a harvest counts in one season of the eight; the
+result card says so. The first season is the scenario as written, and it
 is the one the viewer shows and the debrief explains. The other seven run on threads,
 about 2 s in a release build.
 
@@ -44,8 +45,8 @@ about 2 s in a release build.
 Medal thresholds come from strategy sweeps of the 8-season mean (world seeds 7 to 14)
 on model 0.25.0 (R3b). Single-seed sweeps on 0.23.0 to 0.25.0 are in the git history of
 this file; the review's eight-seed sweep is in the project files
-(reviews/wp32-challenges-137-review.md). Even the mean of 8 moves by about half a pod
-from one strategy to its neighbour, so thresholds sit where a sound strategy lands.
+(reviews/wp32-challenges-137-review.md). Even the mean of 8 moves from one strategy to its neighbour (by about a pod in the heat
+wave, whose seasons spread about 3 pods), so thresholds sit where a sound strategy lands.
 
 | Challenge | Setting | Player controls | Sweep, mean of 8 seasons (0.25.0) | Medals (B / S / G) |
 | --- | --- | --- | --- | --- |
@@ -56,6 +57,11 @@ from one strategy to its neighbour, so thresholds sit where a sound strategy lan
 On the mean the lessons hold: water in bloom beats water spread thin by about five pods,
 sowing after day 25 beats blooming into the heat by six, and feeding before and through
 early bloom beats feeding late by four grams.
+
+Daily watering in bloom is no longer the best thirsty plan on 0.25.0 (bronze, 5.4 pods
+for days 40 to 75): pod abortion still reads the root zone's lowest FTSW of the day,
+which under any bloom schedule sits at 0.25 to 0.45 most afternoons against the 0.5
+threshold (decision 0044), so larger doses every 3 or 4 days do better.
 
 The tests in `crates/ps-game/tests/challenges.rs` replay a good and a poor strategy for
 each challenge (tests/fixtures/challenges) and check the good one beats the poor one and
@@ -70,7 +76,7 @@ Each week gets a 0-to-1 pressure per factor, averaged over its days:
 
 | Factor | Daily pressure | Source of the threshold |
 | --- | --- | --- |
-| Water | `shortfall / (transpiration + shortfall)`: demand the roots could not meet; while any flower is open, at least `1 − FTSW / drought_abortion_ftsw` (end-of-day FTSW; the model uses the day's minimum) | the model's own uptake; species `drought_abortion_ftsw` |
+| Water | `1 − predawn leaf turgor` (R3b: the stress the plant carries through the night; a midday dip in wet soil is grown back that night), at least `shortfall / (transpiration + shortfall)` (demand the soil could not meet); while any flower is open, at least `1 − FTSW / drought_abortion_ftsw` (end-of-day FTSW; the model uses the day's minimum) | the model's water network; species `turgor_loss_point`, `turgor_full`, `drought_abortion_ftsw` |
 | Heat, cool weather | while any flower is open, one minus the model's pod-set response (quadratic ramps) at the day's peak; otherwise one minus the growth trapezoid at the day's mean | species `pod_set_t_*`, `growth_t_*` |
 | Light | one minus radiation at the soil over a full-sun reference, times one minus the sink-feedback loss | `data/game/debrief.ron` (guess, 25 MJ m⁻² d⁻¹) |
 | Nitrogen | one minus the nitrogen factor on expansion | the model's `n_status` |
