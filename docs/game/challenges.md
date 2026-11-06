@@ -73,7 +73,7 @@ Reading rules:
   backdrop ("All season, mildly: cool weather and light"), not as an event.
 - "During bloom" is added when the quoted spans are bloom weeks.
 
-Known limits: the temperature pressure uses the daily mean, while the model steps
+Known limits: outside bloom the temperature pressure uses the daily mean, while the model steps
 hourly; light ignores shade from neighbours; the debrief names pressures, it does not
 count the pods each one cost; weekly means dilute a short heat wave that straddles two
 weeks. On `response/heat_at_flowering` heat leads the summary for 7 of 8 plants; on
