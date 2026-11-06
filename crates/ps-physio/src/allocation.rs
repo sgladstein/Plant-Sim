@@ -773,15 +773,29 @@ fn transport_recording(
             conductance(arena, pa, ch, p.phloem_conductance),
         )
     }));
-    let mut diag = vec![0.0; n];
-    let mut rhs = vec![0.0; n];
-    for id in arena.alive_ids() {
-        let i = id.index();
-        // Concentration is reserve over primary mass: secondary tissue is a sink, not
-        // part of the phloem's volume (R1a).
-        diag[i] = arena.primary(id).0.max(MIN_MASS);
-        rhs[i] = arena.reserve[i].0.max(0.0);
-    }
+    // Built in one pass rather than zeroed and then filled (a zeroed allocation pays a
+    // memset of fresh memory every hour); dead organs keep 0.
+    // Concentration is reserve over primary mass: secondary tissue is a sink, not
+    // part of the phloem's volume (R1a).
+    let mut diag: Vec<f64> = arena
+        .ids()
+        .map(|id| {
+            if arena.alive[id.index()] {
+                arena.primary(id).0.max(MIN_MASS)
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    let mut rhs: Vec<f64> = (0..n)
+        .map(|i| {
+            if arena.alive[i] {
+                arena.reserve[i].0.max(0.0)
+            } else {
+                0.0
+            }
+        })
+        .collect();
     for &(pa, ch, k) in &edges {
         debug_assert!(pa < ch, "parent {pa} after child {ch}");
         diag[pa] += k;
@@ -794,11 +808,15 @@ fn transport_recording(
         rhs[pa] += f * rhs[ch];
     }
     // Root-to-leaf substitution. Roots (no living parent) solve directly.
-    let mut conc = vec![0.0; n];
-    for id in arena.alive_ids() {
-        let i = id.index();
-        conc[i] = rhs[i] / diag[i];
-    }
+    let mut conc: Vec<f64> = (0..n)
+        .map(|i| {
+            if arena.alive[i] {
+                rhs[i] / diag[i]
+            } else {
+                0.0
+            }
+        })
+        .collect();
     for &(pa, ch, k) in &edges {
         conc[ch] = (rhs[ch] + k * conc[pa]) / diag[ch];
     }

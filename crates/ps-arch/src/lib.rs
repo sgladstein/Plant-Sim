@@ -787,6 +787,10 @@ pub struct Plant {
     /// The root zone's soil water potential at the last solve (scratch; R3b).
     #[serde(skip)]
     root_zone_potential: ps_units::MPa,
+    /// Memo of each root segment's axial conductivity by organ index (scratch; R3b):
+    /// rebuilt on demand, never compared or saved.
+    #[serde(skip)]
+    axial_memo: hydraulics::AxialMemo,
     #[serde(skip)]
     sky: Vec<SkySector>,
 }
@@ -1035,6 +1039,7 @@ impl Plant {
             income: Vec::new(),
             leaf_water: Vec::new(),
             root_zone_potential: ps_units::MPa(0.0),
+            axial_memo: hydraulics::AxialMemo::default(),
             sky: ps_light::sky_sectors().to_vec(),
         };
         p.positions = geometry::layout(&p.arena, &p.meta, p.collar_position);

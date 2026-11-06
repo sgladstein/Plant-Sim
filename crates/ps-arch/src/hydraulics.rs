@@ -48,6 +48,21 @@ const MIN_EDGE_LENGTH: f64 = 1e-3;
 /// share one class table in a plot (decision 0044).
 pub const STOMATAL_STEPS: f64 = 50.0;
 
+/// Memo of root segments' axial conductivity, m⁴ s⁻¹ MPa⁻¹ per m of root, by organ
+/// index: the bits of its inputs (distance from the tip, mature value, tip value,
+/// maturation length) and the conductivity, as last computed. A
+/// segment's distance from its axis's tip changes only when the axis grows, so most
+/// hours reuse the `pow` (bit-identical: the same inputs give the same value).
+/// Scratch: it compares equal to any other memo and is not saved.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct AxialMemo(Vec<Option<([u64; 4], f64)>>);
+
+impl PartialEq for AxialMemo {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
 /// Rhizosphere drying factor on a root's radial conductance: 1 at and above the
 /// wilting point, falling linearly to 0 at air-dry, where the soil next to the root
 /// no longer conducts (R3b spec §4.1).
@@ -110,7 +125,12 @@ impl Plant {
     }
 
     /// Axial conductance of the edge from organ `i`'s parent to it, kg h⁻¹ MPa⁻¹.
-    fn edge_conductance(&self, i: usize, main: &[Option<(f64, bool)>]) -> f64 {
+    fn edge_conductance(
+        &self,
+        i: usize,
+        main: &[Option<(f64, bool)>],
+        memo: &mut AxialMemo,
+    ) -> f64 {
         let hp = &self.params.hydraulics;
         let a = &self.arena;
         let size = a.size[i];
@@ -125,8 +145,24 @@ impl Plant {
                         } else {
                             hp.root_axial_basal
                         };
-                        let s = (d / hp.root_axial_maturation.max(1e-9)).clamp(0.0, 1.0);
-                        hp.root_axial_tip * libm::pow(base / hp.root_axial_tip, s)
+                        let key = [
+                            d.to_bits(),
+                            base.to_bits(),
+                            hp.root_axial_tip.to_bits(),
+                            hp.root_axial_maturation.to_bits(),
+                        ];
+                        match memo.0.get(i).copied().flatten() {
+                            Some((k, kx)) if k == key => kx,
+                            _ => {
+                                let s = (d / hp.root_axial_maturation.max(1e-9)).clamp(0.0, 1.0);
+                                let kx = hp.root_axial_tip * libm::pow(base / hp.root_axial_tip, s);
+                                if memo.0.len() <= i {
+                                    memo.0.resize(i + 1, None);
+                                }
+                                memo.0[i] = Some((key, kx));
+                                kx
+                            }
+                        }
                     }
                     None => hp.root_axial_tip,
                 };
@@ -230,15 +266,16 @@ impl Plant {
             nodes[i].sink = *w;
         }
         let main = self.main_root_positions();
-        let edges: Vec<Edge> = self
-            .arena
-            .edges()
-            .map(|(p, c)| Edge {
-                parent: p.index(),
-                child: c.index(),
-                conductance: KgPerHourMPa(self.edge_conductance(c.index(), &main)),
-            })
-            .collect();
+        // Sized up front: the filtered edge iterator has no length hint, and growing
+        // the list by doubling every hour showed in profiles.
+        let mut memo = core::mem::take(&mut self.axial_memo);
+        let mut edges: Vec<Edge> = Vec::with_capacity(n);
+        edges.extend(self.arena.edges().map(|(p, c)| Edge {
+            parent: p.index(),
+            child: c.index(),
+            conductance: KgPerHourMPa(self.edge_conductance(c.index(), &main, &mut memo)),
+        }));
+        self.axial_memo = memo;
         // The root zone's soil potential, weighted by radial conductance: what the
         // leaves read at night, and the fallback.
         let (mut kw, mut ksum) = (0.0, 0.0);
