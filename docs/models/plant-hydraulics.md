@@ -134,11 +134,21 @@ stomata closing through a drought before the soil reaches its wilting point.
 - No stomatal memory after severe stress: real bean stomata take up to 8 days to reopen
   after −1.6 to −2.5 MPa (Trujillo 2013); here they reopen in the hour the potential
   recovers.
-- Radial conductance is the same in both directions (no rectification), so roots in dry
-  soil leak water at the rate they would take it up; in the split pot about 18% of what
-  the roots take goes back into drier soil at night. Real roots pass water outward
-  less readily, so this is likely on the high side. It keeps a drying half wetter, so
-  R2b's dry-soil rules act less (`split_pot_foraging` 1.25).
+- Radial conductance is the same in both directions (no rectification), and the soil
+  around a root conducts in full down to the wilting point (no soil conductance in
+  series with the root's), so roots in dry soil leak water at the rate they would take
+  it up: in the split pot about 18% of what the roots take goes back into drier soil at
+  night. Real roots pass water outward less readily and dry soil conducts far less than
+  a root, so this is on the high side (R3c's first change).
+- The split pot's wet-to-dry root ratio fell from 1.50 to 1.25 at 0.25.0, and not
+  through redistribution: in a review test a soil conductance in series cut the water
+  given to the dry half by 58% and left the ratio at 1.25. The likelier cause is
+  compensation: as the dry half's potential falls, uptake moves to the wet half, so the
+  dry half dries more slowly than under the old split by root length, and R2b's
+  dry-soil rules, which read relative available water, act less.
+- Drought delays expansion but never cuts an organ's final size through turgor: the
+  expansion clock runs at the turgor, so a leaf held at turgor 0 for days still reaches
+  its full size once watered. Drought cuts size only through carbon and nitrogen.
 - A pod or seed draws no water; fruit growth reads no turgor.
 - Roots don't sense potential yet: their dry-soil rules (R2b) read relative available
   water.

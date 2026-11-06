@@ -107,9 +107,12 @@ Four world seeds of the validation suite unless noted.
   70). In: `wheat_height_spaced` 0.689 → 0.753 m, `density_leaf_area_per_plant` −30% →
   −36%. Out: `stem_share_peak` 0.357 → 0.346 (band from 0.35). Further from their
   bands: `split_pot_foraging` 1.495 → 1.248 (seeds 1.15 to 1.39) and
-  `nitrate_patch_proliferation` +48.8% → +34.1%: the split pot's east half stays wetter,
-  plausibly fed by the roots' redistribution, so the dry-soil rules (which read relative
-  available water) act less.
+  `nitrate_patch_proliferation` +48.8% → +34.1%. The split pot's east half dries more
+  slowly, so the dry-soil rules (which read relative available water) act less. Not
+  through redistribution: in code review a soil conductance in series cut the water
+  the roots gave the east half by 58% (0.62 → 0.26 kg) and left the ratio at 1.25.
+  Compensation is the likelier cause: as the east half's potential falls, uptake moves
+  west, where 0.24.0 split it by root length.
 - Headline numbers, 0.24.0 → 0.25.0: total dry mass at maturity 25.28 → 26.36 g, peak
   leaf area 0.175 → 0.191 m², pods 11 → 11.5, seed per plant 7.31 → 7.49 g, mean seed
   0.189 → 0.187 g, harvest index 0.435 → 0.422, basal stem 5.62 → 5.44 mm, tap root
@@ -121,9 +124,13 @@ Four world seeds of the validation suite unless noted.
 - At noon on day 50 a pole bean's potential runs from −0.057 MPa in the soil to −0.544
   at the stem base, −0.72 at the top and −1.26 at the lowest leaf: the roots' axial
   drop dominates; the stem takes about 0.18 MPa.
-- The viewer still draws wilting from the plant's stress pair, whose first entry is now
-  the stomatal factor; it should read the lens's `leaf_turgor` (a watered leaf's mean
-  turgor at noon is about 0.2 to 0.3, so the drawing needs its own scale).
+- The viewer draws wilting from the leaves' mean turgor (`ps_mesh::wilt_of_turgor`:
+  none above 0.1, full at turgor loss), not from the plant's stress pair, whose first
+  entry is now the stomatal factor (0.80 to 0.82 at noon in a watered pot, which the
+  old scale drew as a slight droop). A watered leaf's mean turgor at a bright noon is
+  about 0.1 to 0.4.
+- Drought no longer cuts an organ's final size through turgor (stored growth): it
+  delays expansion, and cuts size only through carbon and nitrogen.
 - Challenges, re-swept over world seeds 7 to 14 (docs/game/challenges.md): thirsty
   summer's gold 10 → 9 pods, and its test's bloom strategy waters every 4 days from day
   40 (over the seeds daily doses average 5.4 pods and 4-day doses 7.3; on seed 7 the

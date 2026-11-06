@@ -69,6 +69,18 @@ pub fn wilt_of_stress(water_stress_factor: f32) -> f32 {
     1.0 - smoothstep(0.45, 0.92, water_stress_factor)
 }
 
+/// Wilting for a plant's leaf-area-mean relative turgor (0 at the turgor loss point, 1
+/// at full turgor; R3b, decision 0044): none above 0.1, full at turgor loss. A watered
+/// bean's leaves sit at about 0.1 to 0.4 at a bright noon and near 1 at night; a bean in
+/// drying soil falls to 0 through the afternoon.
+#[must_use]
+pub fn wilt_of_turgor(turgor: f32) -> f32 {
+    if !turgor.is_finite() {
+        return 0.0;
+    }
+    1.0 - smoothstep(0.0, 0.1, turgor)
+}
+
 /// Hours over which drawn wilting follows the sim's stress: leaves lose turgor over about
 /// half a day, so the hour-to-hour and day-night swings of the stress factor do not make
 /// them twitch.
@@ -83,7 +95,7 @@ pub const RECOVERY_HOURS: f32 = 2.0;
 pub const RECOVERY_STEP: f32 = 0.25;
 
 /// The drawn wilt `hours` sim hours after it was `shown`, moving toward `target` (both
-/// 0 to 1, from [`wilt_of_stress`]): a first-order lag, fast when the target drops by more
+/// 0 to 1, from [`wilt_of_turgor`]): a first-order lag, fast when the target drops by more
 /// than [`RECOVERY_STEP`].
 #[must_use]
 pub fn turgor_step(shown: f32, target: f32, hours: f32) -> f32 {
@@ -434,6 +446,11 @@ mod tests {
         assert!(wilt_of_stress(0.93).abs() < 1e-6);
         assert!(wilt_of_stress(0.7) > 0.3 && wilt_of_stress(0.7) < 0.7);
         assert!((wilt_of_stress(0.4) - 1.0).abs() < 1e-6);
+        assert!(wilt_of_turgor(1.0).abs() < 1e-6);
+        assert!(wilt_of_turgor(0.12).abs() < 1e-6);
+        assert!(wilt_of_turgor(0.05) > 0.3 && wilt_of_turgor(0.05) < 0.7);
+        assert!((wilt_of_turgor(0.0) - 1.0).abs() < 1e-6);
+        assert!(wilt_of_turgor(f32::NAN).abs() < 1e-6);
         assert!(wilt_of_stress(f32::NAN).abs() < 1e-6);
         assert!(crate::droop_level(1.0) == 0 && crate::droop_level(0.3) == crate::DROOP_LEVELS - 1);
     }

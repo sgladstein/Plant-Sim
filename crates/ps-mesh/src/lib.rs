@@ -49,6 +49,7 @@ pub use instances::{
 pub use mesh::MeshData;
 pub use moments::{
     Pose, lean_from_light, own_lean, pose, residual_lean, turgor_step, wilt_of_stress,
+    wilt_of_turgor,
 };
 pub use skeleton::{Coil, Container, Hook, MAX_COPIES, Placement, Skeleton};
 pub use templates::{
