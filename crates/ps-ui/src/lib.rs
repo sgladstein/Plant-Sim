@@ -15,6 +15,7 @@
 //! - A custom theme so the panels match the diorama rather than a debug tool (§4).
 
 mod breeding;
+mod challenge;
 mod charts;
 mod experiment;
 mod inspector;
@@ -23,6 +24,9 @@ mod saves;
 mod tools;
 
 pub use breeding::{BenchResults, Breeding, Coat, LibraryRow, MAX_POTS, Request, ResultRow, Trait};
+pub use challenge::{
+    ChallengeResult, ChallengeRow, Challenges, Dose, Live, MAX_DOSES, Plan, PlantStory, WeekCell,
+};
 pub use charts::{Chart, Charts, Series, nearest, nice_max};
 pub use experiment::{CardRow, Experiment, ExperimentSetup, Running, Variable, held_same};
 pub use inspector::{Field, Inspector};
@@ -132,9 +136,10 @@ impl Plugin for PlantUiPlugin {
             .init_resource::<ModelCards>()
             .init_resource::<Experiment>()
             .init_resource::<SaveLoad>()
+            .init_resource::<Challenges>()
             .add_systems(
                 EguiPrimaryContextPass,
-                (panels, breeding::window_system).chain(),
+                (panels, breeding::window_system, challenge::window_system).chain(),
             )
             .add_systems(PreUpdate, block_camera_under_panels);
     }
@@ -184,6 +189,7 @@ fn panels(
     mut cards: ResMut<ModelCards>,
     mut experiment: ResMut<Experiment>,
     mut saves: ResMut<SaveLoad>,
+    challenges: Res<Challenges>,
     moments: Res<ps_view::Moments>,
     mut themed: Local<bool>,
 ) -> Result {
@@ -227,6 +233,7 @@ fn panels(
         .exact_size(300.0)
         .show(&mut root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
+                challenge::section(ui, &challenges);
                 experiment::section(ui, &mut experiment);
                 lens_panel(ui, &mut lens, &garden, &mut cards);
                 ui.separator();
@@ -486,6 +493,13 @@ fn run_buttons(
         .clicked()
     {
         experiment.open = true;
+    }
+    if ui
+        .button("Challenges…")
+        .on_hover_text("A scored season: a goal, a limit and a medal")
+        .clicked()
+    {
+        tools.challenges = true;
     }
     if ui
         .button("Breeding…")

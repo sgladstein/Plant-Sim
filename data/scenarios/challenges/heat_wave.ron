@@ -1,0 +1,18 @@
+// Challenge "Dodge the heat wave" (data/challenges/heat_wave.ron): one 24 cm loam pot,
+// watered to field capacity every morning, temperate summer at 45 N, with a forecast
+// heat wave on days 55 to 61. The player sows the seed.
+Scenario(
+  schema: 1,
+  model_version: "0.23.0",
+  world_seed: 7,
+  latitude_deg: 45.0,
+  start: (year: 2026, month: 5, day: 1, hour: 0),
+  weather: Preset("temperate_summer"),
+  soils: [ Pot(id: 0, diameter_cm: 24.0, depth_cm: 24.0, texture: Loam, position_m: (0.0, 0.0)) ],
+  irrigation: { 0: ToFieldCapacity(every_days: 1) },
+  nitrogen: { 0: (no3_ppm: 300.0, nh4_ppm: 2.0, organic_g_per_kg: 1.0, rhizobia: true) },
+  co2_ppm: 420.0,
+  sowings: [],
+  duration_days: 120,
+  heat_wave: Some((start_day: 55, days: 7, t_max_c: 37.0, t_min_c: 24.0)),
+)

@@ -1,0 +1,13 @@
+// The water challenge: pods per litre of a fixed budget (design plan §2.5 card
+// "most pods with the least water", made scored).
+Challenge(
+  schema: 1,
+  id: "thirsty_summer",
+  title: "Thirsty summer",
+  brief: "One bean, one pot, a rain shelter and 6 litres of water for the whole summer. Grow as many pods as you can.",
+  hint: "A bean drinks little as a seedling and most while it flowers and fills pods; a dry spell in bloom drops flowers.",
+  scenario: "challenges/thirsty_summer",
+  score: (metric: PeakSum("pods"), label: "pods", higher_is_better: true),
+  rules: (allowed: [Water, Harvest], water_budget: Some(6.0)),
+  medals: (bronze: 5.0, silver: 8.0, gold: 11.0),
+)

@@ -1,0 +1,6 @@
+// 0.5 g N split over days 15, 30 and 45.
+[
+  (tick: 368, kind: Fertilize(soil: 0, form: Nitrate, g_per_m2: 3.684142201201281)),
+  (tick: 728, kind: Fertilize(soil: 0, form: Nitrate, g_per_m2: 3.684142201201281)),
+  (tick: 1088, kind: Fertilize(soil: 0, form: Nitrate, g_per_m2: 3.684142201201281)),
+]

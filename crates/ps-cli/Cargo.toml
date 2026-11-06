@@ -16,6 +16,7 @@ ps-world.workspace = true
 ps-export.workspace = true
 ps-validate.workspace = true
 ps-breed.workspace = true
+ps-game.workspace = true
 ps-species.workspace = true
 anyhow.workspace = true
 mimalloc.workspace = true
