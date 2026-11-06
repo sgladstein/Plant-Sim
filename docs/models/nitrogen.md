@@ -54,7 +54,10 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
     `seed_fill_mining_first`, the seeds come first: `M₁ = min(D_seeds, capacity)`, with
     `D_seeds` the filling seeds' deficits plus `seed_growth(yesterday)` and capacity the
     day's mining caps of step 15 (R1b, decision 0040; CROPGRO's order after R5, the
-    "self-destruction" of Sinclair and de Wit 1975). Before seed fill `M₁ = 0`.
+    "self-destruction" of Sinclair and de Wit 1975). Before seed fill `M₁ = 0`. The
+    mined nitrogen goes into the pool, which every growing organ shares pro rata, so
+    the rule sets how much is mined, not who gets it; in seed fill the seeds hold
+    nearly all the demand.
 14. The soil request is `max(0, D − pool + fixed(yesterday) − M₁)`.
 15. Mining: `M₁` plus whatever the pool and the soil still leave short. Each
     non-growing organ (not seeds, seeds in pods or nodules) gives up to

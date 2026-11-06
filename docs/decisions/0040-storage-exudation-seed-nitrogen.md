@@ -52,9 +52,11 @@ research thread's R1 numbers set `exudation_fraction` to 0.3 to 0.5 and the whea
    (the spec's "0.25 bean stem and root"), 0 for wheat: grass roots have no secondary
    tissue to hold starch (with a root store the spaced wheat plants also made 5% less
    grain, on one seed).
-5. **At death the store joins the reserve** (`OrganArena::kill`), so a shed or starved
-   organ books it like reserve: litter, or carried to the parent where the shedding
-   rule moves reserve.
+5. **At death the store joins the reserve** (`OrganArena::kill`), so a dying organ
+   books it like reserve. A shed organ's reserve moves to its parent before `kill`
+   merges the store, so shed starch always becomes litter (the spec's rule, §4.1); a
+   cut organ's starch leaves with the harvest. In the scenarios the starch that dies
+   with an organ is about 1e-7 g C (review).
 6. **Root exudation.** After paying maintenance `Rm` in step 8, each root organ exudes
    `e · Rm` from what positive reserve it has left (never into debt), booked as the
    ledger's new `exudation` line. `e = 0.4` for all three species. Nothing exudes after
@@ -98,6 +100,15 @@ Species schema 14 adds the `storage` group (`storage_capacity`,
   seed (9.0); total dry mass 26.7 g (24.6). Shade gates: internodes +25% (−13% to +42% over
   the seeds), total mass −47%, pods −47%; heat_seeds' weakest seed is now −15% (−1.1%
   at 0.20.0).
+- **The pot's seed gain is the four validation seeds' (7 to 10)** (review). Over seeds 7
+  to 14 pot seed is unchanged (10.72 → 10.63 g; seeds 11 to 14 fall 12.43 → 10.74 g),
+  pods rise 12.4 → 13.3, and the harvest index at maturity is 0.407 → 0.415, inside its
+  band either way. On seeds 7 to 10 the stands lose seed: plot_30_beans −3.0%,
+  response/control −5.8%. Taken piece by piece, mining-first costs 1 to 7% of seed
+  (leaf nitrogen mined in seed fill lowers the leaves' capacity) and the store adds 0
+  to 28%; the seed-fill release changes pot seed by 0.0 g, since the leaves' feedback
+  takes back the sugar sink-limited seeds cannot use, but under drought from flowering
+  it adds 2.2% seed and the stem falls 10.8% from its peak, inside the band.
 - **Three R1b goals are not met.**
   - `stem_decline_fill` −0.7% against −10 to −35%. The stores empty in seed fill
     (0.51 to 0.07 g of starch in the default-seed pot's stems), but stem wood keeps
@@ -112,10 +123,21 @@ Species schema 14 adds the `storage` group (`storage_capacity`,
   - `feedback_loss_fill` 0.44 against at most 0.35 (about 0.63 before; Info). The lone
     pot plant has more sugar than its seeds can take.
 
-  Follow-ups: the stem band without petioles (research), whether cambial growth yields
-  to the seeds in seed fill, and CROPGRO-style leaf senescence in proportion to the
-  nitrogen mined (`SENRTE`, to verify).
-- Exudation is up to about 2 mg C a day in the pot bean, 0.06 g over the season.
+  Follow-ups: first, seeds keep filling 8 to 10 days after maturity (before R1b too;
+  review): late pods finish their 74 + 350 °C·day after the 965 °C·day maturity, so seed
+  mass grows 35% from maturity to day 89 with no assimilation. That is the likeliest
+  reason the pot stays sink-limited in seed fill, behind `feedback_loss_fill` and
+  `stem_decline_fill`; look at it before tuning R1b further. Then the stem band without
+  petioles (research), whether cambial growth yields to the seeds in seed fill, and
+  CROPGRO-style leaf senescence in proportion to the nitrogen mined (`SENRTE`, to
+  verify).
+- Exudation is up to about 2 mg C a day in the pot bean, 0.06 g over the season: 0.3 to
+  0.5% of assimilation, against the 2.7% (exudates) and 5 to 10% (rhizodeposition) its
+  sources cite, because the sim's root maintenance is under 1% of assimilation, not the
+  20% or so the spec assumed (review).
+- Wheat's stem store peaks at 12 to 15% of stem dry mass near anthesis, below the cited
+  25 to 38%, since refill stops at seed fill; the pole bean's stores all stop refilling
+  once its first seeds start filling (R5) (review).
 - `stem_mass` and `root_mass` now include starch, so they read higher than before by
   up to about 25% of structure; the structural columns keep the old numbers.
 
