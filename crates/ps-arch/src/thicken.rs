@@ -211,7 +211,10 @@ impl Plant {
         }
         let hours = f64::from(d.hours);
         let t_mean = Celsius(d.t_sum / hours);
-        let stress = d.stress_sum / hours * self.carbon_met;
+        // Stems and roots thicken mostly at night, when the tissues rehydrate (R3b): the
+        // water factor is the leaves' predawn turgor, not the midday low.
+        let water = d.turgor_predawn.unwrap_or(1.0);
+        let stress = d.stress_sum / hours * water * self.carbon_met;
         self.wood_potential = self.secondary_potential(t_mean, stress);
     }
 

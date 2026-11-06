@@ -25,13 +25,12 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
   PAR, α electrons per absorbed photon, θ curvature.
 - Demand: `Ac = Vcmax (Ci − Γ*)/(Ci + Km) − Rd`; `Aj = (J/4)(Ci − Γ*)/(Ci + 2Γ*) − Rd`.
 - Medlyn conductance to CO2: `gc = g0/1.57 + s · (1 + g1/√max(D, 0.5)) A / Ca`, where `s`
-  is the water stress factor (0 to 1): the soil's FTSW factor times the plant's supply
-  factor `g`, from the previous hour's uptake (R2a, decision 0037):
-  `g_{t+1} = clamp(g_t · met / demand, 0, 1)`, with `met` the actual uptake when some
-  demand went unmet and the roots' capacity otherwise, and `g = 1` in an hour with no
-  demand. Transpiration scales about with conductance, so this is the factor at which
-  the last hour's demand would have been met: a one-hour lag, as CROPGRO's SWFAC is a
-  one-day lag.
+  is the water stress factor (0 to 1): since R3b (decision 0044) the Tuzet et al.
+  (2003) factor of the previous hour's leaf-area-weighted mean leaf water potential,
+  `(1 + e^(s_f ψ_f)) / (1 + e^(s_f (ψ_f − ψ_leaf)))`, rounded to steps of 1/50 so that
+  plants of a plot can share one class table (plant-hydraulics card). It replaced the
+  soil's FTSW factor and R2a's supply factor (decision 0037). The one-hour lag removes
+  the iteration between stomata and water potential.
 - Supply: `A = gc (Ca − Ci)`. For each limitation, the residual
   `F(Ci) = A(Ci)(1 − m(Ca − Ci)) − (g0/1.57)(Ca − Ci)`, with `m = s(1 + g1/√D)/Ca`, is
   solved by safeguarded Newton on `[Ca − 1/m, Ca]` (bisection whenever a Newton step
@@ -95,7 +94,7 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
 | --- | --- | --- | --- |
 | in | absorbed PAR, sunlit and shaded | µmol m⁻² s⁻¹ | ps-light `absorbed_par` |
 | in | leaf temperature and leaf-to-air VPD (energy balance), CO2, pressure | °C, kPa, ppm, kPa | ps-physio::energy, ps-weather |
-| in | water stress factor | 1 | ps-soil |
+| in | stomatal factor (Tuzet, last hour's leaf potential) | 1 | plant hydraulics |
 | out | net assimilation, conductance, transpiration, Ci, limitation | µmol m⁻² s⁻¹, mol m⁻² s⁻¹, mol m⁻² s⁻¹, ppm | leaf income (allocation), water uptake (soil) |
 
 ## Encoded or emergent
@@ -110,8 +109,10 @@ old leaves.
 - No mesophyll conductance, no triose-phosphate limit, no boundary layer for CO2 (the
   boundary layer for water vapor is in the energy balance).
 - Water stress acts on the stomatal slope only, not on photosynthetic capacity.
-- The supply factor lags uptake by one hour and has no leaf water potential behind it;
-  R3's hydraulics replaces it with a Tuzet-style closure (decision 0037).
+- The stomatal factor reads the plant's mean leaf potential, one hour late: every leaf
+  of a plant closes by the same factor, and stomata reopen in the hour the potential
+  recovers, with none of the days a severely stressed bean takes (plant-hydraulics
+  card).
 - The light-class table costs up to 4.6% in A between nodes since the nodes were spread
   to 0.1 for nitrogen-poor leaves (decision 0020; it was 3.0% with nodes down to 0.4),
   and up to 7% with leaf temperature coupled (WP27).
@@ -143,3 +144,5 @@ old leaves.
   model of photosynthesis. II. Plant, Cell and Environment 25.
 - Medlyn, B. E. et al. (2011). Reconciling the optimal and empirical approaches to
   modelling stomatal conductance. Global Change Biology 17.
+- Tuzet, A., Perrier, A. and Leuning, R. (2003). A coupled model of stomatal conductance,
+  photosynthesis and transpiration. Plant, Cell and Environment 26 (R3b).

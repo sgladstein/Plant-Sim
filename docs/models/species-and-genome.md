@@ -94,7 +94,13 @@ schema 15: `phototropism_weight` (0 to 1) and `phototropism_max_per_day` (0 to 9
 decision 0041; schema 16: the root plasticity constants `root_dry_full`,
 `root_dry_floor`, `xerobranching_threshold`, `hydrotropism_weight` (0 to 1),
 `root_proliferation_nitrate`, `root_proliferation_water` (0 to 5) and `hydropatterning`
-(0 or 1), decision 0043);
+(0 or 1), decision 0043; schema 17: the plant hydraulics constants
+`root_radial_conductivity` and `_thickened`, `root_axial_conductance_tip`, `_tap` and
+`_basal`, `root_axial_maturation`, `stem_xylem_conductivity`, `xylem_area_fraction`
+(above 0, at most 1), `leaf_hydraulic_conductance`, `tuzet_sensitivity`,
+`tuzet_reference` (negative), `turgor_loss_point` and `turgor_full` (loss point below
+full, full at most 0), all positive where not said otherwise, replacing
+`ftsw_threshold`, `root_uptake_rate` and `root_uptake_max`, decision 0044);
 the expected units are in `crates/ps-species/src/schema.rs`. The loader rejects a wrong
 unit, an empty source, an unknown or missing key, a non-finite value, and a default
 outside its bounds.

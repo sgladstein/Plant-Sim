@@ -1,6 +1,5 @@
 use super::*;
 use proptest::prelude::*;
-use ps_units::{KgPerMH, M2PerHour};
 
 const T20: Celsius = Celsius(20.0);
 
@@ -181,60 +180,66 @@ fn ftsw_and_stress() {
     assert!((g.ftsw(&none).unwrap() - 1.0).abs() < 1e-15);
 }
 
-fn one(demand: f64, roots: &RootCells, max: f64) -> PlantUptake<'_> {
-    PlantUptake {
+fn plant(demand: f64, flows: &[(usize, KgWater)]) -> PlantFlows<'_> {
+    PlantFlows {
         demand: KgWater(demand),
-        roots,
-        rate: M2PerHour(1e-5),
-        max_per_length: KgPerMH(max),
+        flows,
     }
 }
 
+/// R3b: a plant's network flows are granted as asked while the cells hold the water,
+/// a withdrawal stops at air-dry, and water given back to a dry cell lands there.
 #[test]
-fn uptake_is_proportional_and_limited() {
+fn flows_are_granted_down_to_air_dry() {
+    let hy = Texture::Loam.hydraulics();
     let mut g = column(Texture::Loam, 2);
-    let roots = RootCells::from_pairs(vec![(0, Meters(1.0))]);
-    let j = g.take_up(&[one(1e-5, &roots, 1.0)]).unwrap();
+    g.fill_to(hy.field_capacity);
+    let w1 = g.water(1);
+    let flows = [(0, KgWater(2e-5)), (1, KgWater(-1e-5))];
+    let j = g.take_flows(&[plant(1e-5, &flows)]).unwrap();
     let u = &j.plants[0];
     assert!((u.actual.0 - 1e-5).abs() < 1e-18);
-    assert_eq!(u.per_cell.len(), 1);
+    assert!(u.shortfall.0.abs() < 1e-18);
+    assert_eq!(u.per_cell, flows.to_vec());
+    assert!(((g.water(1) - w1).0 - 1e-5).abs() < 1e-18);
     assert!(j.ledger.relative_residual() < 1e-9);
-    // Huge demand: limited to the potential, never below wilting point.
-    for _ in 0..10_000 {
-        let j = g.take_up(&[one(1.0, &roots, 1.0)]).unwrap();
-        assert!(j.plants[0].shortfall.0 > 0.0);
-    }
-    assert!(g.theta(0) >= Texture::Loam.hydraulics().wilting_point - 1e-12);
-    // The per-length ceiling binds in wet soil.
-    g.fill_to(Texture::Loam.hydraulics().field_capacity);
-    let j = g.take_up(&[one(1.0, &roots, 1e-6)]).unwrap();
-    assert!((j.plants[0].actual.0 - 1e-6).abs() < 1e-18);
-    // The capacity is what the roots could take, whatever was asked (R2a).
-    assert!((j.plants[0].capacity.0 - 1e-6).abs() < 1e-18);
-    let j = g.take_up(&[one(1e-7, &roots, 1e-6)]).unwrap();
-    assert!((j.plants[0].actual.0 - 1e-7).abs() < 1e-18);
-    assert!((j.plants[0].capacity.0 - 1e-6).abs() < 1e-18);
+    // Asking for more than the cell holds: the cell goes to air-dry, not below, and the
+    // plant's deposit is cut by the same share, so its net uptake is that share of its
+    // demand.
+    g.fill_to(hy.field_capacity);
+    let avail = (g.water(0) - g.capacity(hy.air_dry)).0;
+    let big = [(0, KgWater(4.0 * avail)), (1, KgWater(-2.0 * avail))];
+    let j = g.take_flows(&[plant(2.0 * avail, &big)]).unwrap();
+    let u = &j.plants[0];
+    assert!((g.theta(0) - hy.air_dry).abs() < 1e-12);
+    assert!((u.actual.0 - 0.5 * avail).abs() < 1e-12 * avail);
+    assert!((u.shortfall.0 - 1.5 * avail).abs() < 1e-12 * avail);
+    assert!(j.ledger.relative_residual() < 1e-9);
+    assert!(matches!(
+        g.take_flows(&[plant(0.0, &[(2, KgWater(1e-6))])]),
+        Err(SoilError::RootCell { cell: 2, cells: 2 })
+    ));
 }
 
-/// Decision 0012: plants share a cell from the same state, so their order does not
-/// matter, and together they never take more than its available water.
+/// Decision 0012 with R3b's flows: plants share a cell from the same state, so their
+/// order does not matter, and together they never take more than it holds.
 #[test]
-fn joint_uptake_shares_cells_fairly() {
+fn joint_flows_share_cells_fairly() {
+    let hy = Texture::Loam.hydraulics();
     let mut a = column(Texture::Loam, 2);
-    a.fill_to(Texture::Loam.hydraulics().field_capacity);
+    a.fill_to(hy.field_capacity);
     let mut b = a.clone();
-    let wp = a.capacity(Texture::Loam.hydraulics().wilting_point);
-    let avail = (a.water(0) - wp).0;
-    let p = RootCells::from_pairs(vec![(0, Meters(1e4)), (1, Meters(1.0))]);
-    let q = RootCells::from_pairs(vec![(0, Meters(1e4))]);
-    let ja = a.take_up(&[one(1.0, &p, 1.0), one(1.0, &q, 1.0)]).unwrap();
-    let jb = b.take_up(&[one(1.0, &q, 1.0), one(1.0, &p, 1.0)]).unwrap();
+    let avail = (a.water(0) - a.capacity(hy.air_dry)).0;
+    let p = [(0, KgWater(avail)), (1, KgWater(1e-6))];
+    let q = [(0, KgWater(avail))];
+    let ja = a.take_flows(&[plant(avail, &p), plant(avail, &q)]).unwrap();
+    let jb = b.take_flows(&[plant(avail, &q), plant(avail, &p)]).unwrap();
     assert_eq!(ja.plants[0], jb.plants[1]);
     assert_eq!(ja.plants[1], jb.plants[0]);
     assert_eq!(a.water(0), b.water(0));
     // Both asked for all of cell 0; each gets half of it.
     assert!((ja.plants[1].actual.0 - 0.5 * avail).abs() < 1e-12 * avail);
-    assert!((a.water(0) - wp).0.abs() < 1e-12 * avail);
+    assert!((a.theta(0) - hy.air_dry).abs() < 1e-12);
     assert!(ja.ledger.relative_residual() < 1e-9);
 }
 
@@ -330,12 +335,16 @@ proptest! {
         texture in prop_oneof![Just(Texture::Loam), Just(Texture::Sand), Just(Texture::Clay)],
     ) {
         let mut g = SoilGrid::new_pot(Meters(0.12), Meters(0.10), Meters(0.02), texture, T20).unwrap();
-        let roots = RootCells::from_pairs((0..g.len()).filter(|i| i % 3 == 0).map(|i| (i, Meters(0.5))).collect());
+        let cells: Vec<usize> = (0..g.len()).filter(|&i| i % 3 == 0 && g.is_active(i)).collect();
         let sat = texture.hydraulics().saturation;
         for (mm, rad, t, demand) in hours {
             let l = g.step_hour(&SoilHour { water_in: Millimeters(mm), surface_radiation: WPerM2(rad), t_air: Celsius(t), strip: None });
             prop_assert!(l.relative_residual() < 1e-9, "{l:?}");
-            let u = g.take_up(&[one(demand, &roots, 1e-3), one(demand, &roots, 1e-4)]).unwrap();
+            // Two plants drawing their demand evenly from every third cell.
+            #[allow(clippy::cast_precision_loss)]
+            let each = KgWater(demand / cells.len() as f64);
+            let flows: Vec<(usize, KgWater)> = cells.iter().map(|&i| (i, each)).collect();
+            let u = g.take_flows(&[plant(demand, &flows), plant(demand, &flows)]).unwrap();
             prop_assert!(u.ledger.relative_residual() < 1e-9);
             for i in 0..g.len() {
                 let th = g.theta(i);

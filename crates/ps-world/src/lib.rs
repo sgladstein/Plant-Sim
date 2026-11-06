@@ -30,7 +30,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.24.0";
+pub const MODEL_VERSION: &str = "0.25.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -567,6 +567,38 @@ fn shaded(h: &HourWeather, f: f64) -> HourWeather {
     }
 }
 
+/// Hourly step 7 for one soil's plants: each plant's water network against the soil
+/// as it stands after step 4 (plants in parallel; collect keeps plant order), then the
+/// joint uptake, whose ledger the soil entry keeps (R3b, decision 0044).
+fn network_uptake(
+    members: &mut [&mut PlantEntry],
+    entry: &mut SoilEntry,
+    demand: &[KgWater],
+) -> Result<ps_soil::JointUptake, WorldError> {
+    let soil = &entry.grid;
+    let flows: Vec<ps_arch::WaterFlows> = members
+        .par_iter_mut()
+        .map(|e| e.plant.water_flows(soil))
+        .collect();
+    debug_assert!(
+        flows
+            .iter()
+            .zip(demand)
+            .all(|(f, d)| f.demand.0.to_bits() == d.0.to_bits()),
+        "the network's demand is the gas exchange's"
+    );
+    let requests: Vec<ps_soil::PlantFlows<'_>> = flows
+        .iter()
+        .map(|f| ps_soil::PlantFlows {
+            demand: f.demand,
+            flows: &f.flows,
+        })
+        .collect();
+    let joint = entry.grid.take_flows_lean(&requests)?;
+    entry.ledger.accumulate(&joint.ledger);
+    Ok(joint)
+}
+
 /// Hourly steps 8 to 12 for one soil's plants, in parallel. With `out` (lens
 /// recording, WP26) the growth is the same and each plant's [`PlantLens`] is written
 /// into `out` at its id.
@@ -606,6 +638,10 @@ fn grow_soil(
                             0.0
                         },
                         organ_n: e.plant.organ_n_concentration(),
+                        organ_water_potential: e.plant.water_potentials().to_vec(),
+                        organ_turgor: e.plant.organ_turgor(),
+                        leaf_turgor: e.plant.leaf_water_status().map_or(1.0, |s| s.1),
+                        root_zone_potential: e.plant.root_zone_potential(),
                         ..PlantLens::default()
                     };
                     (h, l)
@@ -1609,14 +1645,8 @@ impl World {
                 strip,
             });
             entry.ledger.accumulate(&led);
-            // 7. Joint uptake for every plant in this soil.
-            let requests: Vec<ps_soil::PlantUptake<'_>> = members
-                .iter()
-                .zip(&demand)
-                .map(|(e, d)| e.plant.uptake_request(*d))
-                .collect();
-            let joint = soils[si].grid.take_up_lean(&requests)?;
-            soils[si].ledger.accumulate(&joint.ledger);
+            // 7. Water uptake through each plant's network (R3b, decision 0044).
+            let joint = network_uptake(&mut members, &mut soils[si], &demand)?;
             // 8 to 12. Carbon.
             let soil = &soils[si].grid;
             let out = record.then_some(&mut plant_lens[..]);

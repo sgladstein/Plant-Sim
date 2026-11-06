@@ -20,6 +20,16 @@ struct Hourly {
     dt_range: (f64, f64),
 }
 
+/// The plant's network flows, taken from the soil alone.
+fn take(plant: &mut Plant, soil: &mut SoilGrid) -> ps_soil::JointUptake {
+    let flows = plant.water_flows(soil);
+    soil.take_flows(&[ps_soil::PlantFlows {
+        demand: flows.demand,
+        flows: &flows.flows,
+    }])
+    .unwrap()
+}
+
 /// Runs one plant for `days`; `edit` may change each hour's weather.
 fn run(
     days: u32,
@@ -73,13 +83,15 @@ fn run(
             t_air: h.t_air,
             strip: None,
         });
-        let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
+        let uptake = take(&mut plant, &mut soil);
         // Done-when 6: what the soil gives plus what it could not equals the plant's
         // demand, and the soil's ledger books exactly what the plant took.
         let got = &uptake.plants[0];
+        // The network's flows close to the round-off of its terms (decision 0044): at
+        // zero demand that is about 1e-16 kg, so the tolerance has an absolute floor.
         let scale = demand.0.max(1e-12);
         assert!(
-            (got.actual.0 + got.shortfall.0 - demand.0).abs() <= 1e-9 * scale,
+            (got.actual.0 + got.shortfall.0 - demand.0).abs() <= 1e-12 + 1e-9 * scale,
             "hour {tick}: {} + {} vs {}",
             got.actual.0,
             got.shortfall.0,

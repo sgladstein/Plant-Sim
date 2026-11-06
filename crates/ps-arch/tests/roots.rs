@@ -48,7 +48,7 @@ fn run(species: &str, days: u32) -> (Plant, f64, f64) {
             co2: Ppm(420.0),
             patm: KPa(101.3),
         };
-        let demand = plant.water_demand(&ctx, &soil).unwrap();
+        plant.water_demand(&ctx, &soil).unwrap();
         let lai = plant.report().leaf_area / soil.surface_area().max(1e-9);
         soil.step_hour(&SoilHour {
             water_in: Millimeters(0.0),
@@ -56,7 +56,13 @@ fn run(species: &str, days: u32) -> (Plant, f64, f64) {
             t_air: h.t_air,
             strip: None,
         });
-        let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
+        let flows = plant.water_flows(&soil);
+        let uptake = soil
+            .take_flows(&[ps_soil::PlantFlows {
+                demand: flows.demand,
+                flows: &flows.flows,
+            }])
+            .unwrap();
         let u = &uptake.plants[0];
         took += u.actual.0;
         asked += u.actual.0 + u.shortfall.0;

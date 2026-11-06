@@ -29,22 +29,32 @@ on a model version other than the scenario's pin is flagged.
 Medal thresholds come from strategy sweeps on world seed 7: on model 0.23.0 (re-swept
 after the PR #137 review), checked again on 0.24.0 (R2b, decision 0043), where hungry
 soil's medals moved and thirsty summer's silver and gold came down a pod each (its best
-bloom schedules made 6 to 10 pods, so gold at 11 was out of reach). Pod counts are noisy from one strategy to the next (each
+bloom schedules made 6 to 10 pods, so gold at 11 was out of reach), and on 0.25.0 (R3b,
+plant hydraulics, decision 0044) over world seeds 7 to 14, where thirsty summer's gold
+came down to 9 and the heat wave's medals to 8 / 10 / 12. Pod counts are noisy from one strategy to the next (each
 flower's set is a draw), so thresholds sit where a sound strategy usually lands, not at
 the best single draw. The review's eight-seed sweep is in the project files
 (reviews/wp32-challenges-137-review.md).
 
 | Challenge | Setting | Player controls | Sweep (seed 7) | Medals (B / S / G) |
 | --- | --- | --- | --- | --- |
-| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | 0.23.0: 6 L spread over the whole season 2 to 5 pods; the same 6 L in bloom (days 40 to 75, every 1 to 4 days) 9 to 14. 0.24.0: no water 4, spread daily 1, bloom every 1 to 4 days 6 to 10 | 5 / 7 / 10 pods (0.23.0: 5 / 8 / 11) |
-| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | 0.23.0: sown days 0 to 20 (blooms into the heat) 1 to 8 pods; days 22 to 40 6 to 18, mostly 11 to 18. 0.24.0: days 0 to 16 2 to 7; days 20 to 36 10 to 15; day 40 6 | 9 / 12 / 15 pods |
-| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | 0.23.0: none 0.5 g seed; all at sowing 4.0; all on day 45 2.1; split or mid-season (days 25 to 35, or several doses from day 15 to 55) 4.9 to 7.4. 0.24.0: none 0.8; all on day 45 4.9; days 20 and 35 6.7; days 15, 30 and 45 7.3; all at sowing 8.0; days 25 and 40 8.2 | 5.5 / 7 / 8.5 g seed (0.23.0: 4.5 / 6 / 7) |
+| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | 0.23.0: 6 L spread over the whole season 2 to 5 pods; the same 6 L in bloom (days 40 to 75, every 1 to 4 days) 9 to 14. 0.24.0: no water 4, spread daily 1, bloom every 1 to 4 days 6 to 10. 0.25.0 (seed 7; seeds 7 to 14 mean): no water 1 (1.9), spread daily 1 (1.8); the 6 L from day 40 every 1 to 7 days 2 to 9 (4.9 to 7.3), every 4 days 9 (7.3); from day 35 3 to 8 (4.9 to 6.4) | 5 / 7 / 9 pods (0.24.0: 5 / 7 / 10; 0.23.0: 5 / 8 / 11) |
+| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | 0.23.0: sown days 0 to 20 (blooms into the heat) 1 to 8 pods; days 22 to 40 6 to 18, mostly 11 to 18. 0.24.0: days 0 to 16 2 to 7; days 20 to 36 10 to 15; day 40 6. 0.25.0 (seed 7; seeds 7 to 14 mean): days 0 to 16 1 to 7 (3.3 to 6.4); days 20 to 40 9 to 12 (6.8 to 10.4), best days 28 and 32 | 8 / 10 / 12 pods (0.24.0: 9 / 12 / 15) |
+| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | 0.23.0: none 0.5 g seed; all at sowing 4.0; all on day 45 2.1; split or mid-season (days 25 to 35, or several doses from day 15 to 55) 4.9 to 7.4. 0.24.0: none 0.8; all on day 45 4.9; days 20 and 35 6.7; days 15, 30 and 45 7.3; all at sowing 8.0; days 25 and 40 8.2. 0.25.0 (seed 7; seeds 7 to 14 mean): none 1.0 (0.7); all on day 45 3.7 (3.2); all at sowing 7.0 (6.5); days 25 and 40 9.0 (7.2), days 20 and 35 9.0 (7.6), days 15, 30 and 45 9.3 (7.5) | 5.5 / 7 / 8.5 g seed, unchanged (0.23.0: 4.5 / 6 / 7) |
 
 On 0.24.0 hungry soil pays more for every feeding (water now carries nitrate to the
 roots, and roots proliferate where it lands), and on world seed 7 feeding all at sowing
 does as well as splitting. Over world seeds 7 to 14 it does not: all at sowing averages
 6.6 g (2.3 to 8.8), split or mid-season 7.3 to 7.6 g (5.8 to 9.6), all on day 45 3.2 g,
-none 0.7 g. So the hint stands.
+none 0.7 g. So the hint stands. On 0.25.0 seed 7 favours splitting again (9.0 to 9.3 g
+against 7.0 at sowing), and over seeds 7 to 14 splitting averages 7.2 to 7.6 g against
+6.5 g.
+
+On 0.25.0 daily doses in bloom no longer stand out: over seeds 7 to 14 they average 5.4
+pods and doses every 4 days 7.3, and on seed 7 the daily schedule draws only 2. Each
+flower's set is a draw, and pod abortion still reads the root zone's lowest FTSW of the
+day, which under any bloom schedule sits at 0.25 to 0.45 most afternoons against the
+0.5 threshold (decision 0044), so the fixture's bloom strategy waters every 4 days from day 40.
 
 The tests in `crates/ps-game/tests/challenges.rs` replay a good and a poor strategy for
 each challenge (tests/fixtures/challenges) and check the good one beats the poor one and
@@ -59,7 +69,7 @@ Each week gets a 0-to-1 pressure per factor, averaged over its days:
 
 | Factor | Daily pressure | Source of the threshold |
 | --- | --- | --- |
-| Water | `shortfall / (transpiration + shortfall)`: demand the roots could not meet; while any flower is open, at least `1 − FTSW / drought_abortion_ftsw` (end-of-day FTSW; the model uses the day's minimum) | the model's own uptake; species `drought_abortion_ftsw` |
+| Water | `1 − predawn leaf turgor` (R3b: the stress the plant carries through the night; a midday dip in wet soil is grown back that night), at least `shortfall / (transpiration + shortfall)` (demand the soil could not meet); while any flower is open, at least `1 − FTSW / drought_abortion_ftsw` (end-of-day FTSW; the model uses the day's minimum) | the model's water network; species `turgor_loss_point`, `turgor_full`, `drought_abortion_ftsw` |
 | Heat, cool weather | while any flower is open, one minus the model's pod-set response (quadratic ramps) at the day's peak; otherwise one minus the growth trapezoid at the day's mean | species `pod_set_t_*`, `growth_t_*` |
 | Light | one minus radiation at the soil over a full-sun reference, times one minus the sink-feedback loss | `data/game/debrief.ron` (guess, 25 MJ m⁻² d⁻¹) |
 | Nitrogen | one minus the nitrogen factor on expansion | the model's `n_status` |

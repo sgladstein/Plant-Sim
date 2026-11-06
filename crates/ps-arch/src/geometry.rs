@@ -11,7 +11,7 @@ use ps_light::LeafPoint;
 use ps_soil::{Cell, RootCells, SoilGrid};
 use ps_units::{M2, Meters};
 
-use crate::{Meta, Role};
+use crate::{Meta, Role, RootSpan};
 
 /// A 3-vector.
 pub type V3 = [f64; 3];
@@ -234,4 +234,51 @@ pub fn root_cells_from(
         }
     }
     RootCells::from_pairs(pairs)
+}
+
+/// Each living root organ's length per soil cell, sampled as [`root_cells`] samples it
+/// (every half cell along its extent), merged per (organ, cell) and sorted by organ,
+/// then cell: the radial links of the plant's water network (R3b, decision 0044).
+#[must_use]
+pub fn root_spans(arena: &OrganArena, pos: &[(V3, V3)], soil: &SoilGrid) -> Vec<RootSpan> {
+    let half = 0.5 * soil.cell_size().0;
+    let mut spans: Vec<RootSpan> = Vec::new();
+    for id in arena.alive_of(OrganKind::Root) {
+        let i = id.index();
+        let total = arena.size[i].length.0;
+        if total <= 0.0 {
+            continue;
+        }
+        let (b, t) = pos[i];
+        let d = [t[0] - b[0], t[1] - b[1], t[2] - b[2]];
+        let extent = norm(d);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let n = (libm::ceil(extent / half) as usize).max(1);
+        let nf = f64::from(u32::try_from(n).unwrap_or(u32::MAX));
+        let start = spans.len();
+        for k in 0..n {
+            let kf = f64::from(u32::try_from(k).unwrap_or(0));
+            let p = add(b, d, (kf + 0.5) / nf);
+            if let Some(c) = soil_cell(soil, p) {
+                spans.push(RootSpan {
+                    organ: id.0,
+                    cell: c,
+                    length: Meters(total / nf),
+                });
+            }
+        }
+        // Merge this organ's samples per cell, in cell order.
+        let own = &mut spans[start..];
+        own.sort_by_key(|s| s.cell);
+        let mut merged: Vec<RootSpan> = Vec::with_capacity(own.len());
+        for s in own.iter() {
+            match merged.last_mut() {
+                Some(m) if m.cell == s.cell => m.length = Meters(m.length.0 + s.length.0),
+                _ => merged.push(*s),
+            }
+        }
+        spans.truncate(start);
+        spans.extend(merged);
+    }
+    spans
 }

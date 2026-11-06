@@ -15,6 +15,7 @@ pub mod allocation;
 pub mod classes;
 pub mod energy;
 pub mod gas;
+pub mod hydraulics;
 pub mod phenology;
 pub mod respiration;
 pub mod thermal;
@@ -25,6 +26,7 @@ pub use allocation::{
 pub use classes::{ClassTable, Rates};
 pub use energy::{Air, LeafEnergyParams, LeafHeat, Site};
 pub use gas::{GasExchange, LeafEnv, LeafParams, Limitation, PeakedArrhenius};
+pub use hydraulics::HydraulicParams;
 pub use phenology::{Events, Phenology, Stage, Thresholds};
 pub use thermal::{Cardinal, GrowthTemperature};
 

@@ -67,6 +67,10 @@ impl Retention {
         let g = |n: f64| libm::log(excess(s_wp, n)) - libm::log(excess(s_fc, n)) - n * ratio;
         let (mut lo, mut hi) = N_BRACKET;
         let lo_positive = g(lo) > 0.0;
+        debug_assert!(
+            lo_positive != (g(hi) > 0.0),
+            "the n bracket {N_BRACKET:?} holds no root for these anchors"
+        );
         for _ in 0..200 {
             let mid = 0.5 * (lo + hi);
             if mid <= lo || mid >= hi {

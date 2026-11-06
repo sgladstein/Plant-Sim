@@ -167,28 +167,26 @@ fn scatter_is_bounded() {
     assert!((crate::scatter(-10.0, 0.5) - 0.25).abs() < 1e-12);
 }
 
-/// The stomatal supply factor (R2a, decision 0037): with spare root capacity it opens
-/// fully; short of water it closes to the share delivered; at night it resets.
+/// R3b (decision 0044): the rhizosphere factor is 1 from the wilting point up and
+/// falls to 0 at air-dry; the plant's stomatal factor is the Tuzet factor in steps.
 #[test]
-fn supply_factor_follows_what_the_roots_could_deliver() {
-    use ps_soil::Uptake;
-    use ps_units::KgWater;
-    let u = |actual: f64, shortfall: f64, capacity: f64| Uptake {
-        actual: KgWater(actual),
-        shortfall: KgWater(shortfall),
-        per_cell: Vec::new(),
-        capacity: KgWater(capacity),
-    };
-    // Met with room to spare: fully open, never above 1.
-    assert!((crate::supply_factor(0.5, &u(1.0, 0.0, 3.0)) - 1.0).abs() < 1e-15);
-    // Met just: the factor stays where it was.
-    assert!((crate::supply_factor(0.5, &u(1.0, 0.0, 1.0)) - 0.5).abs() < 1e-15);
-    // Short: closes to the share delivered, from the factor in force.
-    assert!((crate::supply_factor(0.8, &u(0.6, 0.4, 0.6)) - 0.48).abs() < 1e-15);
-    // Short because neighbours shared the cells: reads what was delivered.
-    assert!((crate::supply_factor(1.0, &u(0.5, 0.5, 2.0)) - 0.5).abs() < 1e-15);
-    // No demand: resets.
-    assert!((crate::supply_factor(0.1, &u(0.0, 0.0, 0.0)) - 1.0).abs() < 1e-15);
+fn rhizosphere_and_stomatal_steps() {
+    let h = ps_soil::Texture::Loam.hydraulics();
+    assert!((crate::rhizosphere_factor(h.field_capacity, &h) - 1.0).abs() < 1e-15);
+    assert!((crate::rhizosphere_factor(h.wilting_point, &h) - 1.0).abs() < 1e-15);
+    assert!(crate::rhizosphere_factor(h.air_dry, &h).abs() < 1e-15);
+    let mid = 0.5 * (h.wilting_point + h.air_dry);
+    assert!((crate::rhizosphere_factor(mid, &h) - 0.5).abs() < 1e-12);
+    let hp = params().hydraulics;
+    for psi in [0.0, -0.3, -0.8, -1.2, -2.0] {
+        let f = crate::stomatal_step(ps_units::MPa(psi), &hp);
+        let exact = ps_physio::hydraulics::stomatal_factor(ps_units::MPa(psi), &hp);
+        assert!(
+            (f - exact).abs() <= 0.5 / crate::STOMATAL_STEPS + 1e-12,
+            "{psi}: {f} {exact}"
+        );
+        assert!((f * crate::STOMATAL_STEPS - libm::round(f * crate::STOMATAL_STEPS)).abs() < 1e-9);
+    }
 }
 
 /// R1c (decision 0041): an apex lit from +x turns toward +x by the weight's share of

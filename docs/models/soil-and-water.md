@@ -3,9 +3,10 @@
 ## Purpose
 Rain and watering soak in from the top. Water beyond what soil can hold (its field
 capacity) drains down and out of the pot's bottom. Water spreads sideways a little, the
-sun dries the surface, and roots draw water from where they are. A plant feels thirsty
-when the soil around its roots holds less than about 40% of the water it could use; that
-stress narrows its stomata and slows leaf expansion.
+sun dries the surface, and roots draw water from where they are: each root takes what
+its own pull and the soil's wetness allow, so wet soil gives more (plant-hydraulics
+card). How much water a soil holds also sets how tightly it holds it, its water
+potential.
 
 ## Equations
 Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
@@ -25,21 +26,21 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 5. **Soil temperature** of layer at depth `z`: `T = T̄₂₄ + e^{−z/D} (T_air(t − 24z/(2πD)) − T̄₂₄)`.
 6. **FTSW** over root-occupied cells: `Σ L_i (W_i − W_wp) / Σ L_i (W_fc − W_wp)` in [0, 1];
    1 with no roots.
-7. **Stress factor**: `min(1, FTSW / 0.4)` (threshold is a species parameter).
-8. **Uptake**, one call per hour for all plants in the grid (decision 0012). Each
-   plant's potential in each of its root cells is
-   `P_i = min(k L_i / V · (W_i − W_wp)⁺, u_max L_i, (W_i − W_wp)⁺)`; it asks each cell
-   for `P_i · min(demand, Σ P) / Σ P`. Every plant computes from the same soil state, so
-   plant order does not matter; where the requests to a cell exceed its available water,
-   all of them are scaled by the same factor. The shortfall is logged. Roots are sparse
-   `(cell, length)` lists sorted by cell. Each plant also gets its capacity `Σ P` for
-   the hour (`Uptake::capacity`), which the plant reads as next hour's supply factor on
-   stomatal conductance (gas-exchange card; R2a, decision 0037).
-9. **`u_max` is an hourly ceiling over the day's transpiring hours:** CERES's RWUMX
-   (0.03 cm³ of water per cm of root per day) spread over 10 hours, not 24, since a 14
-   to 15 h day with a sine-shaped demand carries nearly all of its transpiration in
-   about 9.5 peak-equivalent hours. Spread over 24 h it held midday uptake to the daily
-   mean, which was the real cause of issue #116 (R2a, decision 0037).
+   It no longer sets a stress factor (R3b, decision 0044): it weights root carbon
+   priority (carbon-allocation card), with the plant's stomatal factor.
+7. *(Removed in R3b: the stress factor `min(1, FTSW / 0.4)` on stomata and expansion;
+   the leaves' water potential sets both now, plant-hydraulics card.)*
+8. **Uptake**, one call per hour for all plants in the grid (decision 0012), from each
+   plant's network flows (R3b, decision 0044; `SoilGrid::take_flows`, equations in the
+   plant-hydraulics card). Every plant's flows come from the same soil state, so plant
+   order does not matter. A cell asked for more than its water above air-dry scales
+   every withdrawal from it by the same factor; a plant's deposits (water its roots
+   leak into drier cells) are scaled by its granted share, so its net uptake is that
+   share of its demand. The shortfall is logged. Roots are sparse `(cell, length)`
+   lists sorted by cell.
+9. *(Removed in R3b: the per-root potential `min(k L/V (W − W_wp)⁺, u_max L, ...)` and
+   its hourly ceiling `u_max` (decisions 0012, 0037). A root now draws past the wilting
+   point down to air-dry, as its rhizosphere factor and the plant's potential allow.)*
 10. **Water potential** (R3a; `ps_soil::Retention`, derived, read by nothing in the
     step yet). van Genuchten (1980) with the residual content set to 0:
     `θ(ψ) = θ_s / [1 + (|ψ| / ψ_s)^n]^(1 − 1/n)`, inverted in closed form,
@@ -52,7 +53,9 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
     negative `θ_r`, sand one equal to its wilting point and loam one above air-dry
     (docs/research/realism-plan/numbers/README.md). A cell's potential is
     `SoilGrid::water_potential`; the lens gets each layer's potential at the layer's
-    mean water content (`SoilGrid::layer_water_potentials`).
+    mean water content (`SoilGrid::layer_water_potentials`). The anchor solve runs
+    once per texture per process (`Texture::retention` caches it). The plant's root
+    network reads each root cell's potential (R3b).
 
 ## Parameters
 | Name | Value | Unit | Source |
@@ -67,12 +70,9 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Damping depth | 0.10 | m | ~ (typical moist loam) |
 | Cell size, pots | 0.02 | m | design plan §3.6 |
 | Cell size, plots | 0.05 | m | design plan §3.6 (decision 0019) |
-| FTSW threshold | 0.4 | - | species file |
-| Root uptake rate `k` | 1e-5 | m2/h | species file, ~ |
 | Retention `n`, `α` (loam) | 1.2151, 0.0305 | -, 1/cm | solved from fc, wp and saturation (R3a); `ψ_s` 3.22 kPa |
 | Retention `n`, `α` (sand) | 1.2886, 0.0881 | -, 1/cm | solved (R3a); `ψ_s` 1.11 kPa |
 | Retention `n`, `α` (clay) | 1.1651, 0.0094 | -, 1/cm | solved (R3a); `ψ_s` 10.43 kPa |
-| Root uptake ceiling `u_max` | 3.0e-4 | kg/m/h | species file, ~ (CERES RWUMX 0.03 cm³ per cm of root per day over 10 h; decision 0037, was 1.25e-4 over 24 h, decision 0012) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -80,12 +80,11 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | in | rain + irrigation | mm | weather, actions |
 | in | radiation at the soil surface | W/m2 | light |
 | in | air temperature | C | weather |
-| in | root length per cell, water demand | m, kg | roots, gas exchange |
-| out | FTSW, stress factor | - | gas exchange, growth |
-| out | uptake, shortfall | kg | ledger |
-| out | uptake capacity | kg | the plant's supply factor (R2a) |
+| in | each plant's flow to or from each root cell, water demand | kg | plant hydraulics |
+| out | FTSW | - | root carbon priority |
+| out | uptake per cell, shortfall | kg | plant, ledger |
 | out | layer temperature | C | germination, roots |
-| out | water potential per cell, per layer | kPa | lens (R3a); R3b's root network |
+| out | water potential per cell, per layer | kPa | the root network (R3b); lens (R3a) |
 | out | water ledger | kg | world ledger |
 
 ## Encoded or emergent
@@ -100,10 +99,12 @@ below any plant's reach (loam about −88 MPa, sand −36, clay −178), since t
 no residual content to level off at; that only matters for the dry surface layer. Drainage is a bucket
 cascade, faster than real soils. Evaporation ignores humidity and wind. In a plot the
 surface radiation is one value for the whole plot, so the gaps between rows dry no
-faster than the soil under the canopy (decision 0019). Uptake per unit root length has
-no saturation in root length density (the R2 spec's `L/V ÷ (L/V + 0.5 cm cm⁻³)`); it was
-tried in R2a and cut supply to about 72% of demand in the pot, so it waits for R3's
-root hydraulics (decision 0037).
+faster than the soil under the canopy (decision 0019). A root's radial conductance is
+linear in its length in a cell, with no resistance in the soil between roots beyond the
+rhizosphere drying factor, so crowded roots in one cell don't compete for its water
+until the cell itself runs dry (R3b). Water a root gives back to a cell is not capped
+at saturation; it needs a root wetter than the cell, so it only reaches a saturated
+cell by gravity, in amounts far below the next hour's drainage.
 
 ## Validation
 - `ps_soil::tests::wet_column_drains_to_field_capacity`: loam, sand, clay; closure < 1e-9 every hour;
@@ -112,7 +113,8 @@ root hydraulics (decision 0037).
 - `infiltration_fills_from_the_top`, `excess_runs_off_when_saturated`,
   `lateral_redistribution_smooths_and_conserves`, `lateral_fraction_scales_as_a_diffusivity`, `evaporation_takes_from_top_only_and_stops_dry`,
   `a_strip_waters_its_columns_only` (R2b),
-  `ftsw_and_stress`, `uptake_is_proportional_and_limited`, `joint_uptake_shares_cells_fairly`,
+  `ftsw_and_stress`, `flows_are_granted_down_to_air_dry` and `joint_flows_share_cells_fairly`
+  (R3b's network flows: air-dry floor, deposits, a shared cell, plant order),
   `deeper_soil_is_damped_and_lagged`,
   `pot_mask_area_is_close_to_circle`.
 - Water potential (R3a): `ps_soil::retention::tests::anchors_hold_for_every_texture`
