@@ -28,9 +28,10 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   `D` (mol m⁻² day⁻¹; `D ← D + (D_yesterday − D)/3`). The response index is
   `x = max(clamp((0.7 − ρ)/(0.7 − 0.2), 0, 1), clamp((D_on − D)/(D_on − D_full), 0, 1))`
   with `D_on = 30`, `D_full = 8`, and `s(max) = 1 + (max − 1) · x`. It multiplies
-  internode length (max 2.0), and the internode's specific length by the same factor,
-  so a shaded internode is longer and thinner at the same potential mass; SLA (max
-  1.4); and pod set (max 0.2).
+  internode length (max 2.6, Lopes 1987's 30% light point; was 2.0, decision 0037),
+  and the internode's specific length by the same factor, so a shaded internode is
+  longer and thinner at the same potential mass; SLA (max 1.4); and pod set (to 0.5 at
+  full shade; was 0.2, decision 0037).
 - **Bud activation (daily):** `p = a · L · min(1, C_node / C_ref) · (1 − exp(−max(0, n − r − h)/d))`
   for dormant main-stem buds at `r ≤ N − 2` before flowering. The buds of the top `h`
   nodes under a growing apex stay dormant (WP25, decision 0024). The dominance term is 1
@@ -48,8 +49,17 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
 - **Seeds per pod:** `Binomial(n_ovules, p_ovule · H)`, at least 1: heat also lowers
   the share of ovules that set.
 - **Root segment:** length `Δ = min(2 cm, ℓ_max − ℓ)`, expansion duration
-  `Δ / (e · scale / (T_opt − T_base))` °C·day, potential `Δ · m / SRL`,
-  `SRL = 1 / (ρ_root π d² / 4)`.
+  `D = Δ / (e · scale / (T_opt − T_base))` °C·day, potential `Δ · m / SRL`,
+  `SRL = 1 / (ρ_root π d² / 4)`. Each daily step, an axis whose tip has started
+  expanding queues the next segment at the tip's planned end with its expansion clock
+  at `−(D_tip − age_tip)`, so it starts growing the moment the tip finishes and the
+  tip moves at the root's elongation rate rather than one segment per daily step
+  (R2a, decision 0037). The axis length `ℓ` counts finished segments at the length
+  they reached; segment starts are restated from those lengths each day.
+- **Root tip feeding (R2a):** a growing root organ draws on its own reserve and on its
+  parent root's (or the seed's) reserve above the floor, at its priority: phloem
+  unloads at the tip from the root behind it, and a primordium's own reserve alone held
+  it to a few percent of growth per hour.
 - **Root direction:** `u' = unit(u + 0.2 · w_g · (0, 0, −1) + ε)`, `ε ~ N(0, 0.15²)`
   per component.
 - **Lateral cohort:** one per 2 cm of parent past its apical zone, multiplicity
@@ -57,7 +67,15 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   insertion angle off the parent at the next golden-angle turn, mirrored downward. The
   cohort is one straight organ, so its tip must lie in active soil, as an axis segment
   must: the drawn direction, else the pot-wall rule (straight down, then along the wall
-  either way), else the next seven golden-angle turns (decision 0028).
+  either way), else the next seven golden-angle turns (decision 0028), else level
+  toward the plant's collar; where none fits (a pot's bottom edge) the cohort is not
+  made (decision 0037).
+- **Fine-root cohort (R2a, decision 0037):** once a first-order cohort finishes, it
+  gets one second-order cohort of the fine-lateral type standing for its fine roots,
+  `m₂ = m₁ (ℓ₁ − a₁) / s₁` (realized length past the lateral's apical zone `a₁` over the
+  fine-root spacing `s₁`), attached in the middle of that stretch, built like a lateral
+  cohort. Fine roots are 0.1 mm across (about 1,350 m/g), live in the cells next to
+  their lateral and do not thicken.
 - **Sink feedback on gross assimilation:** `A' = f(C) (A + Rd) − Rd`,
   `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (provisional; see gas-exchange).
 - **Leaf death:** at thermal age `expanded + lifespan`, after 5 days below light index
@@ -87,10 +105,10 @@ All values, units and sources are in `data/species/bush_bean.ron`. The main ones
 | pod_set_reserve_reference | 0.22 | g C / g DM | "~" (decision 0018) |
 | drought_abortion_ftsw | 0.5 | - | CROPGRO SWFAC 0.5 |
 | shade_dli_onset, shade_dli_full | 30, 8 | mol m⁻² day⁻¹ | "~" Poorter et al. 2019 range; calibrated (decision 0018) |
-| shade_internode_factor, shade_sla_factor, shade_pod_set_factor | 2.0, 1.4, 0.2 | - | Lopes et al. 1987; Cossu et al. 2021 |
+| shade_internode_factor, shade_sla_factor, shade_pod_set_factor | 2.6, 1.4, 0.5 | - | Lopes et al. 1987 (30% light); Cossu et al. 2021 (decision 0037) |
 | pod_set_t (min, opt, opt, max) | 7, 22, 25, 36 | °C | CROPGRO bean |
 | seeds_per_pod, ovule_set | 5, 0.75 | -, - | "~" Kumar 2025 |
-| Root types | tap, two basal whorls of 4, 10 hypocotyl-borne, laterals | see file | OpenSimRoot bean (values only) |
+| Root types | tap, two basal whorls of 4, 10 hypocotyl-borne, laterals, fine laterals | see file | OpenSimRoot bean (values only; fine laterals and lateral spacing 0.5 cm / apical zone 4 cm from carioca.xml, decision 0037) |
 | root_segment_length | 2 | cm | "~" (decision 0013) |
 | PRIMORDIUM | 0.02 | - | "~" code constant (decision 0013) |
 
@@ -114,9 +132,10 @@ leaves actually absorb), final organ sizes (carbon shortfall), which leaves die 
 shade, and where roots end up.
 
 ## Known limits
-- Stems and roots thicken (decision 0036, organ-growth card), but the root system is
-  still short and light: root:shoot is 0.07 at seed fill against 0.08 to 0.30
-  published, and root length is far below measured beans early (R2a).
+- Root length reaches 56 to 93 m at flowering in the pot (60 to 180 m published) and
+  root:shoot 0.13 to 0.18 at seed fill (0.08 to 0.30), but fine roots hold only about
+  8% of root length at flowering against 10 to 40% (Info), since a lateral cohort
+  gets its fine roots only once it has finished (decision 0037).
 - From flowering on the plant is short of sinks: the sink feedback discards about 60%
   of potential gross assimilation, even at half light. So a source stress (shade,
   drought, heat) acts mainly through pod number, which pod set ties to carbon, light,
@@ -127,9 +146,12 @@ shade, and where roots end up.
   F_T 0.6, against 0.8 to 0.93 on an ordinary 28 to 30 °C day, so the CROPGRO curve
   separates a heat wave only weakly from summer; seeds fall 8 to 31% across four
   weather years.
-- Drought raises root:shoot by 16 to 39%, but from a base 2 to 8 times too low.
+- Drought from flowering raises root:shoot by 23 to 54%, as published, but cuts shoot
+  mass 57 to 70% against about 26% (Info): once stomata follow what the roots can
+  supply (decision 0037), drought closes them harder than the published pots show.
 - No phototropism or hydrotropism yet; roots bend only by gravity and noise.
-- Laterals are lumped into cohorts and have no laterals of their own.
+- Laterals are lumped into cohorts; their fine roots are one more cohort each, in the
+  cells next to the lateral, without geometry of their own (decision 0037).
 - Leaves senesce from the base during seed fill only through nitrogen mining (nitrogen
   card); the seeds' own nitrogen demand does not yet strip them at a capped rate (R1b).
 - At maturity all leaves drop at once.

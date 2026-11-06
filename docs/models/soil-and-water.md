@@ -30,7 +30,14 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
    for `P_i · min(demand, Σ P) / Σ P`. Every plant computes from the same soil state, so
    plant order does not matter; where the requests to a cell exceed its available water,
    all of them are scaled by the same factor. The shortfall is logged. Roots are sparse
-   `(cell, length)` lists sorted by cell.
+   `(cell, length)` lists sorted by cell. Each plant also gets its capacity `Σ P` for
+   the hour (`Uptake::capacity`), which the plant reads as next hour's supply factor on
+   stomatal conductance (gas-exchange card; R2a, decision 0037).
+9. **`u_max` is an hourly ceiling over the day's transpiring hours:** CERES's RWUMX
+   (0.03 cm³ of water per cm of root per day) spread over 10 hours, not 24, since a 14
+   to 15 h day with a sine-shaped demand carries nearly all of its transpiration in
+   about 9.5 peak-equivalent hours. Spread over 24 h it held midday uptake to the daily
+   mean, which was the real cause of issue #116 (R2a, decision 0037).
 
 ## Parameters
 | Name | Value | Unit | Source |
@@ -47,7 +54,7 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Cell size, plots | 0.05 | m | design plan §3.6 (decision 0019) |
 | FTSW threshold | 0.4 | - | species file |
 | Root uptake rate `k` | 1e-5 | m2/h | species file, ~ |
-| Root uptake ceiling `u_max` | 1.25e-4 | kg/m/h | species file, ~ (0.03 cm³ per cm of root per day; decision 0012) |
+| Root uptake ceiling `u_max` | 3.0e-4 | kg/m/h | species file, ~ (CERES RWUMX 0.03 cm³ per cm of root per day over 10 h; decision 0037, was 1.25e-4 over 24 h, decision 0012) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -58,6 +65,7 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | in | root length per cell, water demand | m, kg | roots, gas exchange |
 | out | FTSW, stress factor | - | gas exchange, growth |
 | out | uptake, shortfall | kg | ledger |
+| out | uptake capacity | kg | the plant's supply factor (R2a) |
 | out | layer temperature | C | germination, roots |
 | out | water ledger | kg | world ledger |
 
@@ -69,7 +77,10 @@ depends on how fast roots explore the pot and how much leaf area transpires.
 No matric potential, no hysteresis, no capillary rise (§3.6). Drainage is a bucket
 cascade, faster than real soils. Evaporation ignores humidity and wind. In a plot the
 surface radiation is one value for the whole plot, so the gaps between rows dry no
-faster than the soil under the canopy (decision 0019).
+faster than the soil under the canopy (decision 0019). Uptake per unit root length has
+no saturation in root length density (the R2 spec's `L/V ÷ (L/V + 0.5 cm cm⁻³)`); it was
+tried in R2a and cut supply to about 72% of demand in the pot, so it waits for R3's
+root hydraulics (decision 0037).
 
 ## Validation
 - `ps_soil::tests::wet_column_drains_to_field_capacity`: loam, sand, clay; closure < 1e-9 every hour;

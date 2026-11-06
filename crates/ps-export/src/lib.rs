@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use ps_world::{DayRow, WorldState};
 
 /// Columns of [`daily_csv`], in order.
-pub const DAILY_COLUMNS: [&str; 45] = [
+pub const DAILY_COLUMNS: [&str; 46] = [
     "day",
     "plant",
     "soil",
@@ -54,6 +54,7 @@ pub const DAILY_COLUMNS: [&str; 45] = [
     "transpiration_kg",
     "hypocotyl_diameter_mm",
     "tap_root_diameter_mm",
+    "fine_root_length_m",
 ];
 
 /// Columns of [`organs_csv`], in order.
@@ -105,7 +106,7 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
     // Writing to a String cannot fail.
     let _ = writeln!(
         out,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         row.day,
         row.plant,
         soil_id(state, row.plant),
@@ -151,6 +152,7 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
         r.transpiration,
         r.hypocotyl_diameter * 1e3,
         r.tap_root_diameter * 1e3,
+        r.fine_root_length,
     );
 }
 
@@ -274,6 +276,7 @@ pub fn daily_number(state: &WorldState, row: &DayRow, column: &str) -> Option<f6
         "transpiration_kg" => r.transpiration,
         "hypocotyl_diameter_mm" => r.hypocotyl_diameter * 1e3,
         "tap_root_diameter_mm" => r.tap_root_diameter * 1e3,
+        "fine_root_length_m" => r.fine_root_length,
         _ => return None,
     })
 }

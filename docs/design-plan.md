@@ -134,6 +134,8 @@ Daily step, in order (from M2, a step 0 runs first: each soil's joint nitrogen u
 6. Light geometry rebuild: voxel grid resized to plant bounds, leaf area density recomputed, per-leaf coefficients for the next day's 24 sun positions and the diffuse sky recomputed (§3.5).
 7. Output: one daily summary row to the time series; full-state hash appended to the golden-run log.
 
+From R2a (decision 0037), the potential of stem and root thickening (secondary growth, R1a decision 0036) is set once a day as step 5b, after root elongation, from the day's mean temperature and stress, as a rate per hour for the coming day; hourly step 12 builds it after primary growth, as in R1a.
+
 ### 3.3 Plant structure and organ state
 
 An MTG-like organ graph stored as structs-of-arrays indexed by integer ids, with parent pointers and per-node children lists kept in creation order so iteration is deterministic. Organ types: seed, cotyledon, internode, bud, leaf (blade plus petiole), root segment, flower, pod, seed-in-pod, and in M2 nodule. (Decision 0023: common bean twines, so there is no tendril organ; a twining internode carries its support and coil instead. `OrganKind::Tendril` stays unused until the next model bump removes it.)

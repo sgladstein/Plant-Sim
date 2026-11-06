@@ -166,3 +166,27 @@ fn scatter_is_bounded() {
     assert!((crate::scatter(10.0, 0.2) - 1.5).abs() < 1e-12);
     assert!((crate::scatter(-10.0, 0.5) - 0.25).abs() < 1e-12);
 }
+
+/// The stomatal supply factor (R2a, decision 0037): with spare root capacity it opens
+/// fully; short of water it closes to the share delivered; at night it resets.
+#[test]
+fn supply_factor_follows_what_the_roots_could_deliver() {
+    use ps_soil::Uptake;
+    use ps_units::KgWater;
+    let u = |actual: f64, shortfall: f64, capacity: f64| Uptake {
+        actual: KgWater(actual),
+        shortfall: KgWater(shortfall),
+        per_cell: Vec::new(),
+        capacity: KgWater(capacity),
+    };
+    // Met with room to spare: fully open, never above 1.
+    assert!((crate::supply_factor(0.5, &u(1.0, 0.0, 3.0)) - 1.0).abs() < 1e-15);
+    // Met just: the factor stays where it was.
+    assert!((crate::supply_factor(0.5, &u(1.0, 0.0, 1.0)) - 0.5).abs() < 1e-15);
+    // Short: closes to the share delivered, from the factor in force.
+    assert!((crate::supply_factor(0.8, &u(0.6, 0.4, 0.6)) - 0.48).abs() < 1e-15);
+    // Short because neighbours shared the cells: reads what was delivered.
+    assert!((crate::supply_factor(1.0, &u(0.5, 0.5, 2.0)) - 0.5).abs() < 1e-15);
+    // No demand: resets.
+    assert!((crate::supply_factor(0.1, &u(0.0, 0.0, 0.0)) - 1.0).abs() < 1e-15);
+}

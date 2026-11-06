@@ -25,7 +25,13 @@ Medlyn et al. 2011), solved once per light class (`ps-physio::classes`).
   PAR, α electrons per absorbed photon, θ curvature.
 - Demand: `Ac = Vcmax (Ci − Γ*)/(Ci + Km) − Rd`; `Aj = (J/4)(Ci − Γ*)/(Ci + 2Γ*) − Rd`.
 - Medlyn conductance to CO2: `gc = g0/1.57 + s · (1 + g1/√max(D, 0.5)) A / Ca`, where `s`
-  is the water stress factor (0 to 1) from the soil (§3.2 hourly step 5).
+  is the water stress factor (0 to 1): the soil's FTSW factor times the plant's supply
+  factor `g`, from the previous hour's uptake (R2a, decision 0037):
+  `g_{t+1} = clamp(g_t · met / demand, 0, 1)`, with `met` the actual uptake when some
+  demand went unmet and the roots' capacity otherwise, and `g = 1` in an hour with no
+  demand. Transpiration scales about with conductance, so this is the factor at which
+  the last hour's demand would have been met: a one-hour lag, as CROPGRO's SWFAC is a
+  one-day lag.
 - Supply: `A = gc (Ca − Ci)`. For each limitation, the residual
   `F(Ci) = A(Ci)(1 − m(Ca − Ci)) − (g0/1.57)(Ca − Ci)`, with `m = s(1 + g1/√D)/Ca`, is
   solved by safeguarded Newton on `[Ca − 1/m, Ca]` (bisection whenever a Newton step
@@ -104,6 +110,8 @@ old leaves.
 - No mesophyll conductance, no triose-phosphate limit, no boundary layer for CO2 (the
   boundary layer for water vapor is in the energy balance).
 - Water stress acts on the stomatal slope only, not on photosynthetic capacity.
+- The supply factor lags uptake by one hour and has no leaf water potential behind it;
+  R3's hydraulics replaces it with a Tuzet-style closure (decision 0037).
 - The light-class table costs up to 4.6% in A between nodes since the nodes were spread
   to 0.1 for nitrogen-poor leaves (decision 0020; it was 3.0% with nodes down to 0.4),
   and up to 7% with leaf temperature coupled (WP27).

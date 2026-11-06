@@ -420,3 +420,80 @@ fn secondary_growth_is_a_low_priority_sink() {
     assert!(rep.secondary.0 < 1e-12, "{}", rep.secondary.0);
     assert!((g.structural(i).0 - w.0).abs() < 1e-12);
 }
+
+/// R2a tip feeding (decision 0037): a growing root primordium with almost no reserve
+/// of its own is fed from its parent's reserve, while a leaf in the same place is not.
+#[test]
+fn root_tip_draws_on_its_parent() {
+    let p = params();
+    let a = Allometry::generic_herb();
+    let grow = |kind| {
+        let mut g = OrganArena::new();
+        let s = g.add(&organ(OrganKind::Seed, None, 0.0, 0.1), &a).unwrap();
+        let tip = NewOrgan {
+            structural: GramsDM(1e-5),
+            ..organ(kind, Some(s), 0.05, 0.0)
+        };
+        let c = g.add(&tip, &a).unwrap();
+        // At the curve's peak rate.
+        g.expansion_age[c.index()] = DegreeDays(60.0);
+        let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+        let income = vec![GramsC(0.0); g.len()];
+        let w0 = g.structural(c).0;
+        let s0 = g.reserve[s.index()].0;
+        run_hour(&mut g, &income, &mut ledger, 25.0);
+        assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-12);
+        (
+            g.structural(c).0 - w0,
+            g.unmet[c.index()].0,
+            s0 - g.reserve[s.index()].0,
+        )
+    };
+    let (root_built, root_unmet, root_drawn) = grow(OrganKind::Root);
+    let (leaf_built, leaf_unmet, _) = grow(OrganKind::Leaf);
+    assert!(root_unmet.abs() < 1e-15, "root unmet {root_unmet}");
+    assert!(leaf_unmet > 0.0, "a leaf has no tip feeding");
+    assert!(
+        root_built > 2.0 * leaf_built,
+        "{root_built} vs {leaf_built}"
+    );
+    // The seed paid for the root beyond what transport moved.
+    assert!(root_drawn > 0.0);
+}
+
+/// Shedding resorbs 30% of primary structure only: wood stays in the litter (R1a
+/// review, decision 0037).
+#[test]
+fn shedding_does_not_resorb_wood() {
+    let p = params();
+    let a = Allometry::generic_herb();
+    let mut g = OrganArena::new();
+    let s = g.add(&organ(OrganKind::Seed, None, 0.0, 0.0), &a).unwrap();
+    let i = g
+        .add(&organ(OrganKind::Internode, Some(s), 0.0, 0.004), &a)
+        .unwrap();
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    let temps = vec![Celsius(20.0); g.len()];
+    let income = vec![GramsC(0.0); g.len()];
+    let mut pot = vec![GramsDM(0.0); g.len()];
+    pot[i.index()] = GramsDM(1.0);
+    let inp = HourInputs {
+        temperature: &temps,
+        income: &income,
+        ftsw: 1.0,
+        stress: 1.0,
+        respiring: false,
+        n_floor: None,
+        secondary: &pot,
+    };
+    allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
+    let wood = g.secondary(i).0;
+    assert!(wood > 0.0);
+    let primary = g.primary(i).0;
+    let r0 = g.reserve[s.index()].0;
+    allocation::shed(&mut g, &p, i, Hours(24), &mut ledger).unwrap();
+    let to_seed = g.reserve[s.index()].0 - r0;
+    let expect = primary * p.carbon_fraction * p.resorption_fraction;
+    assert!((to_seed - expect).abs() <= 1e-15, "{to_seed} vs {expect}");
+    assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-12);
+}

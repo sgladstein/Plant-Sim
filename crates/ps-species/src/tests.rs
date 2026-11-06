@@ -14,7 +14,8 @@ fn bean_file_loads() {
     assert_eq!(s.id, "bush_bean");
     assert_eq!(s.growth_form, GrowthForm::Herb);
     assert_eq!(s.heritable.len(), schema::HERITABLE.len());
-    assert_eq!(s.roots.len(), 5);
+    // Tap, two basal whorls, hypocotyl-borne, lateral and fine lateral (R2a).
+    assert_eq!(s.roots.len(), 6);
     assert!((s.constants.carbon_fraction.value - 0.45).abs() < 1e-15);
 }
 
@@ -106,12 +107,12 @@ fn locus_must_name_a_heritable_trait() {
 
 #[test]
 fn schema_version_checked() {
-    let bad = BEAN.replacen("schema: 12,", "schema: 6,", 1);
+    let bad = BEAN.replacen("schema: 13,", "schema: 6,", 1);
     assert!(matches!(
         Species::from_ron(&bad),
         Err(SpeciesError::Schema {
             found: 6,
-            expected: 12
+            expected: 13
         })
     ));
 }

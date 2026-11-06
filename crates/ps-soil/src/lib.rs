@@ -239,6 +239,9 @@ pub struct Uptake {
     pub shortfall: KgWater,
     /// Water removed per root cell, in the order of the plant's [`RootCells`].
     pub per_cell: Vec<(usize, KgWater)>,
+    /// What the roots could have taken this hour from the same state, before other
+    /// plants' requests on shared cells: the sum of the per-cell potentials (R2a).
+    pub capacity: KgWater,
 }
 
 /// Result of the hour's joint uptake.
@@ -792,6 +795,7 @@ impl SoilGrid {
         let avail = |w: KgWater| (w - wp).max(KgWater(0.0));
         // Requests per plant per root cell, from the same state.
         let mut asked: Vec<Vec<f64>> = Vec::with_capacity(plants.len());
+        let mut capacity: Vec<f64> = Vec::with_capacity(plants.len());
         let mut cell_total: Vec<(usize, f64)> = Vec::new();
         for p in plants {
             let pot: Vec<f64> = p
@@ -809,6 +813,7 @@ impl SoilGrid {
                 })
                 .collect();
             let total: f64 = pot.iter().sum();
+            capacity.push(total);
             let want = p.demand.0.max(0.0).min(total);
             let share = if total > 0.0 { want / total } else { 0.0 };
             let req: Vec<f64> = pot.iter().map(|x| x * share).collect();
@@ -842,7 +847,7 @@ impl SoilGrid {
         let factor = |i: usize| scale[i];
         let mut out = Vec::with_capacity(plants.len());
         let mut uptake = KgWater(0.0);
-        for (p, req) in plants.iter().zip(&asked) {
+        for ((p, req), &cap) in plants.iter().zip(&asked).zip(&capacity) {
             let per_cell: Vec<(usize, KgWater)> = p
                 .roots
                 .cells()
@@ -859,6 +864,7 @@ impl SoilGrid {
                 actual,
                 shortfall: p.demand.max(KgWater(0.0)) - actual,
                 per_cell,
+                capacity: KgWater(cap),
             });
         }
         let ledger = WaterLedger {

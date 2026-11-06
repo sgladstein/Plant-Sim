@@ -40,21 +40,31 @@ Structural mass `W` never decreases; at death it is frozen and the caller books 
 resorption to the parent and the rest as litter (§3.9 step 6).
 
 **Secondary growth** (R1a, decision 0036; `ps_arch::thicken`). Potentials per hour,
-built by allocation at priority 0.4 from the organ's reserve:
+set once a day for the coming day at daily step 5b (after root elongation; decision
+0037, approved by the owner) and built each hour by allocation at priority 0.4 from
+the organ's reserve (carbon-allocation card):
 
 - Stems (pipe model, Shinozaki et al. 1964): daily after initiation, each living
   internode's `A_max ← max(A_max, ΣA)`, the leaf area above it (pipes stay after their
   leaves die), and target `X* = h_L · A_max + h_F · ΣF` (`ΣF` fruit dry mass above).
-  Hourly, once the internode has finished expanding,
-  `ΔW_s = min(X* − π r², g_max · 2π r · Δt) · L · ρ_stem · f_T · s` (at least 0).
-- Roots (OpenSimRoot bean): `ΔW_s = 2π r L · ½ ḋ(age) · k(x) · Δt · ρ_root · f_T · s`,
+  Once the internode has finished expanding,
+  `ΔW_s = min(X* − π r², g_max · 2π r · 24 h) / 24 · L · ρ_stem · f_T · s` per hour (at
+  least 0): a day's widening toward the target, spread over the day.
+- Roots (OpenSimRoot bean): `ΔW_s = 2π r L · ½ ḋ(age) · k(x) · 1 h · ρ_root · f_T · s`,
   where `ḋ` is the species' diameter growth rate by the segment's own age, `k(x)` the
   root type's factor by the segment's distance `x` from its root's base (mid-segment),
-  and `L` includes a lateral cohort's multiplicity.
-- `f_T` is the expansion temperature multiplier at the organ's temperature (air, or the
-  soil layer), `s` the expansion stress factor (water times nitrogen). Nothing thickens
-  before germination, after maturity, in dead organs, or in a species with
+  and `L` includes a lateral cohort's multiplicity. The rate `½ ḋ(age) · k(x)` is read
+  at the daily step for each living segment (`Plant::set_wood_rates`).
+- `f_T` is the expansion temperature multiplier at the mean air temperature of the day
+  just ended (the soil layers' daily mean follows it), `s` that day's mean expansion
+  stress factor (water times nitrogen) times the share of the expanding shoot's carbon
+  demand that was met that day (leaves and internodes, `Plant::carbon_met`, R2a,
+  decision 0037): wood is the first sink to yield when carbon is short. Nothing
+  thickens before germination, after maturity, in dead organs, or in a species with
   `secondary_growth` 0.
+- R1a computed these potentials every hour. Thickness changes too slowly to show
+  within a day, so R2a computes them once a day (decision 0037); the hourly build
+  stays, since one draw a day from the midnight reserve starved wood.
 
 ## Parameters
 | Name | Value | Unit | Source |
@@ -95,6 +105,10 @@ which carbon decides.
   per nitrogen); wood does hold some nitrogen.
 - No secondary phloem: transport keeps the primary radius (R1a rule).
 - One root rate table per species (OpenSimRoot's basal whorls start 2 days later).
+- The thickening potential is set once a day: a segment's age, its rate, the
+  temperature factor and the stress factor are each read once, from the day before, so
+  the factor at the day's mean temperature stands in for the mean of the hourly
+  factors and wood answers to stress a day late (decision 0037).
 - The pipe target follows leaf area and fruit only: wind sway and self-weight do not
   thicken a stem, and there is no bark or heartwood.
 - Leaf blades are flat areas; petiole length is not modeled separately.

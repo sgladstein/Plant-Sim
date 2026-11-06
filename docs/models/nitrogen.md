@@ -26,9 +26,9 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 
 **Uptake, daily step 0, joint over a soil's plants** (`SoilGrid::take_up_nitrogen`):
 
-6. Each root cell's length `L` is spread over the active cells within `r = round(reach /
-   Δx)` cells on each axis: `L_j = Σ L_i / n_i` (`SoilGrid::reached_cells`).
-7. Per reached cell and form: `P = L_j · cap · (1 − e^(−0.08 ppm)) · √FTSW_j`, at most
+6. Each root cell takes up from itself only, by its own root length `L` (R2a, decision
+   0037: the 4 cm reach and the 25× capacity that stood in for undrawn roots are gone).
+7. Per root cell and form: `P = L · cap · (1 − e^(−0.08 ppm)) · √FTSW`, at most
    the cell's N above the floor (0.25 ppm NO₃, 0.5 ppm NH₄).
 8. Each plant asks `P · min(request, ΣP) / ΣP`. Where the asks to a cell exceed what it
    holds, all are scaled by the same factor.
@@ -58,7 +58,7 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
     `f_k = W_k · a · f_T,fix · f_drought · min(1, need / capacity)`, with
     `a = 0.05 g N g⁻¹ d⁻¹`.
 17. Nodulation, with rhizobia in the soil, after emergence and before maturity: target
-    mass `need / (a · f_T,fix · f_drought)`. Root-zone NO₃ is read over the reached cells (step 6). If above the clusters' potential mass,
+    mass `need / (a · f_T,fix · f_drought)`. Root-zone NO₃ is the root-length-weighted mean over the root cells. If above the clusters' potential mass,
     add `min(target − potential, step) · f_NO₃` of new clusters, with step `0.17 ·
     potential`, or 14 mg at first. `f_NO₃` is 1 at 5 ppm root-zone NO₃ or less, falling
     linearly to 0.1 at 30 ppm. Clusters are 2 mg each, at most 24 a day, on root
@@ -84,8 +84,7 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 | seed N final | 0.02 | g N/g DM | ~ |
 | nodule N | 0.048 | g N/g DM | CROPGRO-Drybean PRONOD |
 | leaf_n_area_base | 0.3 | g N/m2 | ~ Kattge 2009, Walker 2014 |
-| uptake_capacity | 1.5e-2 | g N/m/day | ~ 25 × CROPGRO RTNO3 (root length the sim does not draw; decision 0020 amendment) |
-| root_reach | 4 | cm | ~ (decision 0020) |
+| uptake_capacity | 6.0e-4 | g N/m/day | CROPGRO RTNO3 = RTNH4, each form (decision 0037; was 25× with a 4 cm reach, decision 0020 amendment) |
 | mobilization_rate, vegetative_mobilization | 0.12, 0.36 | 1/day, - | CROPGRO NMOBMX, NVSMOB |
 | leaf_drop_mobile | 0.1 | - | ~ |
 | nodule_activity | 0.05 | g N/g DM/day | CROPGRO SNACTM |
@@ -129,15 +128,15 @@ Emergent:
   mass (decision 0020 amendment).
 
 ## Known limits
-- The root reach and the 25× uptake capacity stand for root length the sim does not
-  draw. A fuller root system would replace them. A constant factor is wrong in time:
-  drawn length is about a tenth of a real bean's at day 40 and near all of it at
-  maturity, so it under-draws early and over-draws late. Capacity tied to root mass is
-  the follow-up (decision 0020, second review round).
+- Uptake follows CROPGRO's per-length rate on the drawn root length (R2a). That length
+  is near the low end of pot data, so in the 300 ppm M0 pots the daily capacity is close
+  to demand around day 40: the end-of-day deficits (`n_unmet_g`) reach about 20% of
+  demand before the nightly top-up, though growth is rarely gated. CROPGRO's response
+  saturates by about 40 ppm, with no low-affinity uptake at high nitrate (decision 0037).
 - Mineralization is low for a garden: about 0.03 g N per m² a day on the plot against
   0.05 to 0.15.
-- The soil water has no upward flow, so nitrate below the root zone reaches roots only
-  through the reach.
+- The soil water has no upward flow, and nitrate does not diffuse, so a cell's roots see
+  only the nitrate that is in it or drains into it.
 - Leaf aging still multiplies capacity next to leaf N (decision 0020).
 - Pod set does not read N. An N-short plant sets as many pods as a fed one and fills
   smaller seeds; real beans shed pods instead.
@@ -150,7 +149,7 @@ Emergent:
 ## Validation
 - `ps_soil::nitrogen::tests::*`: rates to 1e-9 relative, factor shapes, leaching closes
   the ledger, lateral spread, fertilizer in the top layer, uptake limited by root length,
-  soil N and demand and fair between plants, root reach conserves length.
+  soil N and demand and fair between plants.
 - Debug builds assert the soil N ledger every hour and each plant's N ledger every day
   at 1e-9 relative.
 - `ps-validate/tests/nitrogen_free.rs::nitrogen_free_sand_needs_nodules` (WP24

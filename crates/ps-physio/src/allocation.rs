@@ -249,7 +249,8 @@ pub struct HourInputs<'a> {
     /// [`kind_index`] (decision 0020); `None` for no nitrogen limit.
     pub n_floor: Option<&'a [f64; ORGAN_KINDS]>,
     /// Potential secondary growth (thickening) this hour by organ id, g DM of
-    /// structure, from the caller's rules (R1a); empty for none.
+    /// structure, from the caller's rules (R1a; set once a day since decision 0037);
+    /// empty for none.
     pub secondary: &'a [GramsDM],
 }
 
@@ -390,12 +391,27 @@ fn build_primary(
         return Ok(());
     }
     let available = (arena.reserve[i].0 - p.reserve_floor * arena.primary(id).0).max(0.0);
-    let spent = demand.min(priority(arena.kind[i], inp.ftsw) * available);
+    // A growing root also draws on its parent root's (or the seed's) reserve at its
+    // priority: a queued segment starts as a tiny primordium whose own reserve could
+    // not feed the tip's elongation (R2a, decision 0037).
+    let host = arena.parent[i].filter(|q| {
+        arena.kind[i] == OrganKind::Root
+            && matches!(arena.kind[q.index()], OrganKind::Root | OrganKind::Seed)
+            && arena.alive[q.index()]
+    });
+    let host_avail = host.map_or(0.0, |q| {
+        (arena.reserve[q.index()].0 - p.reserve_floor * arena.primary(q).0).max(0.0)
+    });
+    let spent = demand.min(priority(arena.kind[i], inp.ftsw) * (available + host_avail));
     let unmet = demand - spent;
     arena.record_demand(id, GramsC(demand), GramsC(unmet));
     rep.unmet += GramsC(unmet);
     if spent > 0.0 {
-        arena.reserve[i] -= GramsC(spent);
+        let own = spent.min(available);
+        arena.reserve[i] -= GramsC(own);
+        if let Some(q) = host {
+            arena.reserve[q.index()] -= GramsC(spent - own);
+        }
         let (built, resp) = growth_split(GramsC(spent), cost);
         arena.grow(id, GramsDM(built.0 / cf), g.allometry)?;
         rep.growth += GramsC(spent);
@@ -524,6 +540,7 @@ pub fn hourly_recording(
     }
     // 12. Growth: primary growth along each organ's expansion curve, then secondary
     // growth (stem and root thickening, R1a) from what is left, at its own priority.
+    // Its potential is set once a day (decision 0037).
     let cf = p.carbon_fraction;
     let g = GrowCtx { p, inp, allometry };
     for &id in &ids {
@@ -642,11 +659,11 @@ pub struct Death {
 
 /// Kills `root` and everything it carries (an axis dies with its basal internode, a
 /// pod with its seeds) and books the carbon (§3.9 step 6, daily step 4).
-/// `resorption_fraction` of each dead organ's structural carbon moves to the nearest
-/// living ancestor of `root`, which also pays any negative reserve (carbon the organ
-/// already respired, so litter is never negative; decision 0011); the rest of its
-/// structure and any positive reserve become litter. With no living ancestor
-/// everything, including a debt, goes to litter.
+/// `resorption_fraction` of each dead organ's primary (not woody) structural carbon
+/// moves to the nearest living ancestor of `root`, which also pays any negative
+/// reserve (carbon the organ already respired, so litter is never negative; decision
+/// 0011); the rest of its structure and any positive reserve become litter. With no
+/// living ancestor everything, including a debt, goes to litter.
 ///
 /// # Errors
 /// A [`GraphError`] if `root` is dead or missing.
@@ -671,8 +688,10 @@ pub fn shed(
     let mut deaths = Vec::with_capacity(killed.len());
     for (id, mass) in killed {
         let structural = mass.to_carbon(p.carbon_fraction);
+        // Wood is not resorbed (R1a review; decision 0037): only the primary tissue.
+        let primary = GramsDM((mass.0 - arena.secondary(id).0).max(0.0));
         let resorbed = if ancestor.is_some() {
-            structural * p.resorption_fraction
+            primary.to_carbon(p.carbon_fraction) * p.resorption_fraction
         } else {
             GramsC(0.0)
         };
