@@ -328,6 +328,9 @@ pub struct HourInputs<'a> {
     /// Whether seeds are filling (stage R5 on): starch stores stop refilling and
     /// release to the seeds (R1b, decision 0040).
     pub filling: bool,
+    /// Whether organs grow: false from physiological maturity, where seed growth stops
+    /// as in CROPGRO's R7 and the annual's tissues dry (decision 0042).
+    pub growing: bool,
 }
 
 /// Number of organ kinds, for per-kind tables.
@@ -695,7 +698,9 @@ pub fn hourly_recording(
     // is set once a day (decision 0037); last, a store refills from a surplus.
     let cf = p.carbon_fraction;
     let g = GrowCtx { p, inp, allometry };
-    for &id in &ids {
+    // From maturity nothing grows: late pods keep the seed mass they have (decision 0042).
+    let growing: &[OrganId] = if inp.growing { &ids } else { &[] };
+    for &id in growing {
         let i = id.index();
         let cap = storage_capacity(&p.storage, arena.kind[i], arena.axis_order[i]);
         // Old saves carry a store their species no longer fills: it still releases.

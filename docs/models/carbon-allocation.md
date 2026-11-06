@@ -63,6 +63,9 @@ concentration nor raises the reserve floor.
    that was met (leaves and internodes, `Plant::carbon_met`), so wood is the first sink
    to yield when carbon is short.
    Last, the store refills (item 8).
+   From physiological maturity nothing in step 12 runs: no organ grows, thickens,
+   releases or refills, so late pods keep the seed mass they have (R1d, decision 0042;
+   CROPGRO stops seed growth at R7).
 6. No catch-up: demand always follows the species potential, and a shortfall is lost, so
    a fully expanded organ ends at `(1 − unmet / potential demand) × potential`.
 7. Starvation (daily step 4): an organ with at least `24 × starvation_window` starving
@@ -146,9 +149,12 @@ late leaves, smaller leaves after a dull week.
   seed fill (−1% against −10 to −35% in the field, where petioles count with the stem;
   decision 0040).
 - A lone pot plant still has more sugar than its seeds can take in seed fill (about
-  44% of its potential gross assimilation is lost to the sink feedback; the target is
-  at most 35%).
+  41% of its potential gross assimilation is lost to the sink feedback in model 0.23.0;
+  the target is at most 35%).
 - Exuded carbon leaves the model: there is no soil carbon pool or rhizosphere.
+- Growth stops at once at maturity (decision 0042): a pod still filling is cut short,
+  and the reserves left in the plant stay there. Under drought and heat the mean seed
+  grows larger rather than smaller, likely because fewer pods share those reserves.
 - Root tip feeding lets a growing root spend its parent's reserve at its own priority,
   so a fast-growing root system can draw on the reserve of the root behind it within
   the hour; there is no unloading limit at the tip (decision 0037).
@@ -176,9 +182,12 @@ property tests `transport_conserves_and_clamps` and
 `root_tip_draws_on_its_parent` and `shedding_does_not_resorb_wood` (R2a),
 `store_fills_holds_and_releases` (refill and release conserve carbon to 1e-12 per hour,
 the store stays within 0 and `S_max`, release only below `C_off`),
-`roots_exude_a_share_of_maintenance` and `filling_empties_the_store` (R1b);
+`roots_exude_a_share_of_maintenance` and `filling_empties_the_store` (R1b),
+`nothing_grows_after_maturity` (R1d; with `ninety_days`, which checks that seed mass
+does not change after maturity);
 `ps_graph::tests::store_moves_carbon_and_returns_it_at_death`. Validation report:
-`stem_share_peak`, `stem_decline_fill`, `feedback_loss_fill`, `root_shoot_seed_fill`.
+`stem_share_peak`, `stem_decline_fill`, `feedback_loss_fill`, `root_shoot_seed_fill`,
+`mean_seed_mass`, `harvest_index_tops`.
 
 ## References
 - Allen, M. T., Prusinkiewicz, P. and DeJong, T. M. (2005). Using L-systems for modeling

@@ -59,7 +59,7 @@ Species(
     pod_wall_mass: (value: 0.6, unit: "g DM", source: "~ (pod wall about a third of pod mass at 4 seeds of 0.3 g)"),
     pod_expansion: (value: 154.0, unit: "Cd", source: "CROPGRO LNGSH 8 photothermal days (research review item 18); restated from 145.0 for the development trapezoid (decision 0032)"),
     seed_fill_delay: (value: 74.0, unit: "Cd", source: "CROPGRO about 3.5 photothermal days after pod start (research review item 18); restated from 70.0 for the development trapezoid (decision 0032)"),
-    seed_fill: (value: 350.0, unit: "Cd", source: "CROPGRO SFDUR 15 to 22 photothermal days (research review item 18); restated from 330.0 for the development trapezoid (decision 0032)"),
+    seed_fill: (value: 289.0, unit: "Cd", source: "CROPGRO SFDUR 15 photothermal days, the generic determinate bush (Andean Habit 1; determinate cultivars 14 to 19, BNGRO048.CUL), at 19.25 Cd per photothermal day (decision 0032); was 350, from the 15 to 22 range of every habit, which left late pods filling after maturity (decision 0042)"),
     phyllochron: (value: 59.5, unit: "Cd", source: "CROPGRO TRIFL 0.34 leaves per thermal day, about 53 to 65 Cd per node (research review); restated from 55.0 for the development trapezoid (decision 0032)"),
     leaf_expansion: (value: 162.0, unit: "Cd", source: "~ (decision 0013); restated from 150.0 for the development trapezoid (decision 0032)"),
     internode_expansion: (value: 130.0, unit: "Cd", source: "~ (decision 0013); restated from 120.0 for the development trapezoid (decision 0032)"),
