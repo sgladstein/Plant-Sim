@@ -515,7 +515,8 @@ fn absorbed(p: &PlantEntry, i: usize, hour: usize, w: &HourWeather, fraction: f6
 }
 
 /// The plant's lean toward the light (WP20): each living leaf's daily-mean absorbed PAR
-/// against its offset from the stem, from today's weather.
+/// against its offset from the stem, from today's weather, less the lean the sim already
+/// gave the main stem.
 fn lean_of(
     p: &PlantEntry,
     skeleton: &Skeleton,
@@ -538,7 +539,11 @@ fn lean_of(
             Some((offset, placement.area, par as f32))
         })
         .collect();
-    ps_mesh::lean_from_light(&leaves)
+    // The sim bends stems toward light beside obstacles itself (R1c); draw only the rest.
+    ps_mesh::residual_lean(
+        ps_mesh::lean_from_light(&leaves),
+        ps_mesh::own_lean(skeleton),
+    )
 }
 
 /// The sim hour the plant's first flower appeared (its birth tick), if it has flowered.

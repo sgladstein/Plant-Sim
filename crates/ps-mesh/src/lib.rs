@@ -47,7 +47,9 @@ pub use instances::{
     wilt_droop_level,
 };
 pub use mesh::MeshData;
-pub use moments::{Pose, lean_from_light, pose, turgor_step, wilt_of_stress};
+pub use moments::{
+    Pose, lean_from_light, own_lean, pose, residual_lean, turgor_step, wilt_of_stress,
+};
 pub use skeleton::{Coil, Container, Hook, MAX_COPIES, Placement, Skeleton};
 pub use templates::{
     DROOP_LEVELS, Template, TemplateKey, UNFOLD_LEVELS, build_template, build_template_shaded,
