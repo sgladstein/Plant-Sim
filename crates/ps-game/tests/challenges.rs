@@ -102,3 +102,64 @@ fn thirsty_summer_rewards_water_in_bloom_and_names_the_drought() {
         d.plants[0].summary
     );
 }
+
+#[test]
+fn heat_wave_rewards_sowing_past_the_heat() {
+    let c = load_challenge(&data(), "heat_wave").expect("challenge");
+    let (_, early) = play(&data(), &c, &fixture("heat_wave_day4")).expect("day 4");
+    let (_, late) = play(&data(), &c, &fixture("heat_wave_day28")).expect("day 28");
+    assert!(early.breaks.is_empty() && late.breaks.is_empty());
+    assert!(late.score > early.score, "{early:?} {late:?}");
+    assert!(late.medal >= Some(Medal::Bronze), "{late:?}");
+    assert_eq!(early.medal, None, "{early:?}");
+}
+
+#[test]
+fn hungry_soil_rewards_split_feeding() {
+    let c = load_challenge(&data(), "hungry_soil").expect("challenge");
+    let (_, split) = play(&data(), &c, &fixture("hungry_soil_split")).expect("split");
+    let (w, late) = play(&data(), &c, &fixture("hungry_soil_late")).expect("late");
+    assert!(split.breaks.is_empty() && late.breaks.is_empty());
+    assert!(split.score > late.score, "{split:?} {late:?}");
+    assert!(split.medal >= Some(Medal::Bronze), "{split:?}");
+    assert_eq!(late.medal, None, "{late:?}");
+    let d = ps_game::debrief(w.state(), &load_debrief_refs(&data()).expect("refs"));
+    assert!(
+        d.plants[0].ranked.contains(&Factor::Nitrogen),
+        "{:?}",
+        d.plants[0].summary
+    );
+}
+
+#[test]
+fn every_challenge_pins_this_model() {
+    for id in ["thirsty_summer", "heat_wave", "hungry_soil"] {
+        let c = load_challenge(&data(), id).expect("challenge");
+        let sc = ps_game::load_scenario(&data(), &c).expect("scenario");
+        assert_eq!(
+            sc.model_version,
+            ps_world::MODEL_VERSION,
+            "{id}: re-pin and re-sweep the medals (docs/game/challenges.md)"
+        );
+    }
+}
+
+#[test]
+fn the_debrief_names_heat_in_the_heat_at_flowering_scenario() {
+    let text = std::fs::read_to_string(data().join("scenarios/response/heat_at_flowering.ron"))
+        .expect("scenario");
+    let sc = ps_world::Scenario::from_ron(&text).expect("parse");
+    let catalog = ps_world::Catalog::load(&data(), &sc).expect("catalog");
+    let mut w = ps_world::World::new(sc, catalog).expect("world");
+    w.run_to_end().expect("run");
+    let d = ps_game::debrief(w.state(), &load_debrief_refs(&data()).expect("refs"));
+    assert!(!d.plants.is_empty());
+    for p in &d.plants {
+        assert!(
+            p.ranked.contains(&Factor::Heat),
+            "plant {}: {:?}",
+            p.plant,
+            p.summary
+        );
+    }
+}

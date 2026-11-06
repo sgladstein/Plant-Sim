@@ -556,7 +556,8 @@ pub fn metric(m: &Metric, history: &[DayRow]) -> f64 {
         let e = per.entry(row.plant).or_insert(v);
         *e = if peak { e.max(v) } else { v };
     }
-    per.values().sum()
+    // `+ 0.0` turns an empty sum's −0.0 into 0.
+    per.values().sum::<f64>() + 0.0
 }
 
 /// The columns a challenge can score, by daily-table name (the same names as the

@@ -4,16 +4,19 @@
 //! own thresholds, so the debrief says what the model did, not a separate opinion:
 //!
 //! - **Water:** the share of the day's transpiration demand the roots could not
-//!   supply, `shortfall / (transpiration + shortfall)`; from flowering to pod set, at
+//!   supply, `shortfall / (transpiration + shortfall)`; while flowers are open, at
 //!   least `1 − FTSW / drought_abortion_ftsw`, the soil-water deficit that aborts
-//!   flowers in the model.
-//! - **Heat** and **cold:** one minus the species' trapezoid temperature response at
-//!   the day's mean of `t_min` and `t_max`. The growth response applies before
-//!   flowering; from flowering to pod set the stricter pod-set response applies, since
-//!   that is where heat costs beans their pods. The model steps hourly, so the daily
-//!   mean is an approximation of what it saw.
+//!   flowers in the model (read at the end of the day, where the model takes the day's
+//!   minimum, so a little milder).
+//! - **Heat** and **cold:** while any flower is open, one minus the model's pod-set
+//!   response at the day's peak temperature (the quadratic ramps of ps-arch
+//!   `pod_set_temperature`), since that is what costs beans their pods. Otherwise one
+//!   minus the growth trapezoid at the day's mean of `t_min` and `t_max` (the model
+//!   applies it hourly, so the mean is an approximation).
 //! - **Light:** one minus the day's radiation at the soil over a full-sun reference
-//!   (data/game/debrief.ron). Shade cast by neighbours is not in this number.
+//!   (data/game/debrief.ron), times the share of photosynthesis the sink feedback
+//!   leaves (light cannot limit a plant with nowhere to put the sugar). Shade cast by
+//!   neighbours is not in this number.
 //! - **Nitrogen:** one minus the plant's nitrogen factor on expansion.
 //! - **Sinks:** the share of potential photosynthesis lost because the plant had
 //!   nowhere to put the sugar (the sink feedback, decision 0013).
@@ -21,8 +24,8 @@
 //! Sinks are a symptom more than a cause (a plant whose pods aborted in a heat wave
 //! has nowhere to put its sugar), so a week's top factor and the season ranking use the
 //! five environmental factors; sinks stay in the weekly numbers only. The
-//! season ranks factors by their worst week, since one bad week in bloom can cost a
-//! season's pods.
+//! season ranks factors that hit while flowers were open first, then by their worst
+//! week, since one bad week in bloom can cost a season's pods.
 
 use ps_physio::phenology::Stage;
 use ps_species::Param;
@@ -134,6 +137,8 @@ pub struct WeekDebrief {
     pub days: (u32, u32),
     /// Most advanced stage reached in the week.
     pub stage: Option<Stage>,
+    /// Whether any flower was open during the week.
+    pub bloom: bool,
     /// Mean pressure of each factor, in [`Factor::ALL`] order, 0 to 1.
     pub pressure: [f64; 6],
     /// The factor that held the plant back most, if any passed the notable threshold.
@@ -179,6 +184,23 @@ struct Temps {
     abort_ftsw: f64,
 }
 
+/// The model's pod-set temperature response (mirrors ps-arch
+/// `Params::pod_set_temperature`): 1 on the plateau, `1 − x²` on each ramp, 0 beyond.
+fn pod_set_response(t: [f64; 4], x: f64) -> f64 {
+    let [lo, o1, o2, hi] = t;
+    if x <= lo || x >= hi {
+        0.0
+    } else if x < o1 {
+        let d = (o1 - x) / (o1 - lo);
+        1.0 - d * d
+    } else if x > o2 {
+        let d = (x - o2) / (hi - o2);
+        1.0 - d * d
+    } else {
+        1.0
+    }
+}
+
 /// Trapezoid response: 0 at or beyond `t[0]` and `t[3]`, 1 between `t[1]` and `t[2]`.
 fn trapezoid(t: [f64; 4], x: f64) -> f64 {
     if x <= t[0] || x >= t[3] {
@@ -196,31 +218,44 @@ fn day_pressure(row: &DayRow, temps: &Temps, full_sun: f64) -> [f64; 6] {
     let r = &row.report;
     let e = &row.env;
     let mut p = [0.0; 6];
-    let reproductive = matches!(r.stage, Some(Stage::Flowering | Stage::PodSet));
+    // Bloom: any flower open. The model sets pods for every flower that closes, whatever
+    // the stage, so this is wider than Flowering and PodSet.
+    let bloom = r.flowers > 0;
     let demand = r.transpiration + r.shortfall;
     let mut water = if demand > 0.0 {
         r.shortfall / demand
     } else {
         0.0
     };
-    if reproductive && temps.abort_ftsw > 0.0 {
+    if bloom && temps.abort_ftsw > 0.0 {
         water = water.max(1.0 - e.ftsw / temps.abort_ftsw);
     }
     p[Factor::Water.index()] = water.clamp(0.0, 1.0);
-    let mean = 0.5 * (e.t_min_c + e.t_max_c);
-    let t = if reproductive {
-        temps.pod_set
+    if bloom {
+        // The model's pod-set response: the day's peak through quadratic ramps
+        // (ps-arch `Params::pod_set_temperature`).
+        let t = temps.pod_set;
+        let lost = 1.0 - pod_set_response(t, e.t_max_c);
+        if e.t_max_c > t[2] {
+            p[Factor::Heat.index()] = lost;
+        } else if e.t_max_c < t[1] {
+            p[Factor::Cold.index()] = lost;
+        }
     } else {
-        temps.growth
-    };
-    let lost = 1.0 - trapezoid(t, mean);
-    if mean > t[2] {
-        p[Factor::Heat.index()] = lost;
-    } else if mean < t[1] {
-        p[Factor::Cold.index()] = lost;
+        let t = temps.growth;
+        let mean = 0.5 * (e.t_min_c + e.t_max_c);
+        let lost = 1.0 - trapezoid(t, mean);
+        if mean > t[2] {
+            p[Factor::Heat.index()] = lost;
+        } else if mean < t[1] {
+            p[Factor::Cold.index()] = lost;
+        }
     }
     if full_sun > 0.0 {
-        p[Factor::Light.index()] = (1.0 - e.radiation_mj / full_sun).clamp(0.0, 1.0);
+        // Light only limits a plant that has somewhere to put the sugar: scale by the
+        // share of photosynthesis the sink feedback leaves.
+        let short = (1.0 - e.radiation_mj / full_sun).clamp(0.0, 1.0);
+        p[Factor::Light.index()] = short * (1.0 - r.feedback_loss.clamp(0.0, 1.0));
     }
     p[Factor::Nitrogen.index()] = (1.0 - r.n_status).clamp(0.0, 1.0);
     p[Factor::Sinks.index()] = r.feedback_loss.clamp(0.0, 1.0);
@@ -284,10 +319,9 @@ fn spans_text(spans: &[(u32, u32)]) -> String {
 }
 
 fn in_bloom(weeks: &[WeekDebrief], spans: &[(u32, u32)]) -> bool {
-    weeks.iter().any(|w| {
-        matches!(w.stage, Some(Stage::Flowering | Stage::PodSet))
-            && spans.iter().any(|(a, b)| (*a..=*b).contains(&w.week))
-    })
+    weeks
+        .iter()
+        .any(|w| w.bloom && spans.iter().any(|(a, b)| (*a..=*b).contains(&w.week)))
 }
 
 fn weeks_over(weeks: &[WeekDebrief], f: Factor, notable: f64) -> usize {
@@ -404,6 +438,7 @@ pub fn debrief(state: &WorldState, refs: &DebriefRefs) -> Debrief {
                 week: u32::try_from(i + 1).unwrap_or(u32::MAX),
                 days: (chunk[0].day, last.day),
                 stage: chunk.iter().filter_map(|r| r.report.stage).max(),
+                bloom: chunk.iter().any(|r| r.report.flowers > 0),
                 pressure,
                 top,
                 pods_gained: pods - prev_pods,
@@ -427,7 +462,21 @@ pub fn debrief(state: &WorldState, refs: &DebriefRefs) -> Debrief {
                 *m = m.max(p);
             }
         }
-        let rank = ranked(&peak, notable);
+        // Pods are made in bloom, so a factor that hit while flowers were open outranks
+        // one that did not, whatever their sizes.
+        let mut bloom_peak = [0.0_f64; 6];
+        for w in weeks.iter().filter(|w| w.bloom) {
+            for (m, p) in bloom_peak.iter_mut().zip(w.pressure) {
+                *m = m.max(p);
+            }
+        }
+        let mut rank = ranked(&peak, notable);
+        rank.sort_by(|a, b| {
+            let (ba, bb) = (bloom_peak[a.index()], bloom_peak[b.index()]);
+            (bb >= notable)
+                .cmp(&(ba >= notable))
+                .then(peak[b.index()].total_cmp(&peak[a.index()]))
+        });
         let summary = summary(&weeks, &peak, &rank, notable);
         let backdrop: Vec<Factor> = rank
             .iter()
@@ -451,6 +500,14 @@ pub fn debrief(state: &WorldState, refs: &DebriefRefs) -> Debrief {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pod_set_response_matches_the_model() {
+        let t = [7.0, 22.0, 25.0, 36.0];
+        assert!((pod_set_response(t, 23.0) - 1.0).abs() < 1e-12);
+        assert!((pod_set_response(t, 30.5) - 0.75).abs() < 1e-12);
+        assert!(pod_set_response(t, 36.0).abs() < 1e-12);
+    }
 
     #[test]
     fn trapezoid_shape() {

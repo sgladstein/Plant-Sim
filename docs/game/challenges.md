@@ -26,17 +26,23 @@ on a model version other than the scenario's pin is flagged.
 
 ## The first three challenges
 
-Medal thresholds come from strategy sweeps on model 0.20.0 (world seed 7). Pod counts
-are noisy from one strategy to the next (each flower's set is a draw), so thresholds
-sit where a sound strategy usually lands, not at the best single draw.
+Medal thresholds come from strategy sweeps on model 0.23.0 (world seed 7, re-swept after
+the PR #137 review). Pod counts are noisy from one strategy to the next (each flower's
+set is a draw), so thresholds sit where a sound strategy usually lands, not at the best
+single draw. The review's eight-seed sweep is in the project files
+(reviews/wp32-challenges-137-review.md).
 
-| Challenge | Setting | Player controls | Sweep | Medals (B / S / G) |
+| Challenge | Setting | Player controls | Sweep (0.23.0, seed 7) | Medals (B / S / G) |
 | --- | --- | --- | --- | --- |
-| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | 6 L spread over the whole season: 1 to 4 pods; the same 6 L in bloom (days 40 to 75, every 1 to 3 days): 8 to 13 | 5 / 8 / 11 pods |
-| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 12 (blooms into the heat): 0 to 6 pods; days 16 to 36: mostly 9 to 16 | 6 / 10 / 14 pods |
-| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none: 1.4 g seed; all at sowing: 8.6; all on day 45: 3.6 to 4.7; days 20 and 35, or 15, 30 and 45: 10.5 to 12 | 6 / 9 / 11.5 g seed |
+| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | 6 L spread over the whole season: 2 to 5 pods; the same 6 L in bloom (days 40 to 75, every 1 to 4 days): 9 to 14 | 5 / 8 / 11 pods |
+| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 20 (blooms into the heat): 1 to 8 pods; days 22 to 40: 6 to 18, mostly 11 to 18 | 8 / 12 / 15 pods |
+| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none: 0.5 g seed; all at sowing: 4.0; all on day 45: 2.1; split or mid-season (days 25 to 35, or several doses from day 15 to 55): 4.9 to 7.4 | 4.5 / 6 / 7 g seed |
 
-Re-run the sweeps and reset the medals when a model version bump moves these numbers.
+The tests in `crates/ps-game/tests/challenges.rs` replay a good and a poor strategy for
+each challenge (tests/fixtures/challenges) and check the good one beats the poor one and
+earns a medal, and that every challenge scenario pins the current model. When a model
+bump moves these numbers, re-run the sweeps and reset the medals here and in
+`data/challenges/`.
 
 ## The debrief
 
@@ -45,9 +51,9 @@ Each week gets a 0-to-1 pressure per factor, averaged over its days:
 
 | Factor | Daily pressure | Source of the threshold |
 | --- | --- | --- |
-| Water | `shortfall / (transpiration + shortfall)`: demand the roots could not meet; from flowering to pod set, at least `1 − FTSW / drought_abortion_ftsw` | the model's own uptake; species `drought_abortion_ftsw` |
-| Heat, cool weather | one minus the trapezoid response at the day's mean of min and max; the pod-set response during flowering and pod set, the growth response otherwise | species `growth_t_*`, `pod_set_t_*` |
-| Light | one minus radiation at the soil over a full-sun reference | `data/game/debrief.ron` (guess, 25 MJ m⁻² d⁻¹) |
+| Water | `shortfall / (transpiration + shortfall)`: demand the roots could not meet; while any flower is open, at least `1 − FTSW / drought_abortion_ftsw` (end-of-day FTSW; the model uses the day's minimum) | the model's own uptake; species `drought_abortion_ftsw` |
+| Heat, cool weather | while any flower is open, one minus the model's pod-set response (quadratic ramps) at the day's peak; otherwise one minus the growth trapezoid at the day's mean | species `pod_set_t_*`, `growth_t_*` |
+| Light | one minus radiation at the soil over a full-sun reference, times one minus the sink-feedback loss | `data/game/debrief.ron` (guess, 25 MJ m⁻² d⁻¹) |
 | Nitrogen | one minus the nitrogen factor on expansion | the model's `n_status` |
 | Sinks | the sink-feedback loss (decision 0013) | the model's `feedback_loss` |
 
@@ -57,14 +63,17 @@ Reading rules:
   pressure (0.15, a guess in `data/game/debrief.ron`). Sinks are a symptom (a plant that
   lost its pods to heat has nowhere to put sugar), so they stay in the weekly numbers
   and never top a week or reach the summary.
-- The season ranks factors by their worst week, since one bad week in bloom can cost the
-  season's pods. A factor notable in 60% or more of the weeks is reported as the season's
+- The season ranks factors that hit while flowers were open first, then by their worst
+  week, since one bad week in bloom can cost the season's pods. "During bloom" means any
+  flower open (`flowers > 0`), which runs well into seed fill. A factor notable in 60% or more of the weeks is reported as the season's
   backdrop ("All season, mildly: cool weather and light"), not as an event.
 - A span that includes flowering or pod set is marked "during bloom".
 
 Known limits: the temperature pressure uses the daily mean, while the model steps
 hourly; light ignores shade from neighbours; the debrief names pressures, it does not
-count the pods each one cost.
+count the pods each one cost; weekly means dilute a short heat wave that straddles two
+weeks (on `response/heat_at_flowering` heat is named for every plant but often after
+light).
 
 ## Viewer
 
