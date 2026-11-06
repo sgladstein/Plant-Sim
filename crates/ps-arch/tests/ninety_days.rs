@@ -27,7 +27,23 @@ fn run_soil(
     theta: f64,
     n: &ps_soil::SoilNitrogen,
 ) -> (Plant, Vec<DayReport>) {
-    let species = Species::from_ron(include_str!("../../../data/species/bush_bean.ron")).unwrap();
+    let r = run_env(days, seed, theta, n, |_| {}, &[]);
+    (r.0, r.1)
+}
+
+/// As [`run_soil`], with the species edited by `edit` and these light obstacles (in
+/// the soil frame); also returns the PAR the leaves absorbed over the run, mol.
+fn run_env(
+    days: u32,
+    seed: u64,
+    theta: f64,
+    n: &ps_soil::SoilNitrogen,
+    edit: impl Fn(&mut Species),
+    obstacles: &[ps_light::Obstacle],
+) -> (Plant, Vec<DayReport>, f64) {
+    let mut species =
+        Species::from_ron(include_str!("../../../data/species/bush_bean.ron")).unwrap();
+    edit(&mut species);
     let traits = species
         .phenotype(&species.default_genotype())
         .traits()
@@ -55,7 +71,9 @@ fn run_soil(
     #[allow(clippy::cast_precision_loss)]
     let center = [nx as f64 * cell * 0.5, ny as f64 * cell * 0.5, -0.03];
     let mut plant = Plant::sow(&species, &traits, seed, 1, center, Hours(0)).unwrap();
+    plant.obstacles = obstacles.to_vec();
     let mut reports = Vec::new();
+    let mut absorbed = 0.0;
     for tick in 0..u64::from(days) * 24 {
         let h = wx.at(Hours(tick)).unwrap();
         let ctx = HourCtx {
@@ -74,6 +92,8 @@ fn run_soil(
         });
         let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
         plant.grow_hour(&ctx, &soil, uptake.plants.first()).unwrap();
+        let (area, par) = plant.absorbed_par(&ctx);
+        absorbed += area.0 * par.0 * 3600.0 * 1e-6;
         if tick % 24 == 23 {
             let mut sun = [None; 24];
             for (k, s) in sun.iter_mut().enumerate() {
@@ -86,7 +106,7 @@ fn run_soil(
             soil.fill_to(theta);
         }
     }
-    (plant, reports)
+    (plant, reports, absorbed)
 }
 
 #[test]
@@ -349,5 +369,46 @@ fn seed_fill_mines_first_in_a_fertilized_pot() {
     assert!(
         mined > 10.0 * before && mined > 0.3 * (mined + uptake),
         "mined {mined} against uptake {uptake}"
+    );
+}
+
+/// R1c done-when (decision 0041): a plant beside a low wall leans away from it, toward
+/// the open sky, and its leaves absorb more light than with phototropism off; in the
+/// open it stays nearly upright.
+#[test]
+fn a_plant_beside_a_wall_leans_away_and_gains_light() {
+    let fc = Texture::Loam.hydraulics().field_capacity;
+    let n = ps_soil::SoilNitrogen::GARDEN;
+    // An opaque wall 40 cm tall, 6 cm east of the stem (the pot's center is at 0.12 m).
+    let wall = ps_light::Obstacle::with_transmittance([0.18, -0.5, 0.0], [0.20, 0.74, 0.4], 0.01);
+    let days = 45;
+    let (on, _, lit_on) = run_env(days, 7, fc, &n, |_| {}, &[wall]);
+    let (off, _, lit_off) = run_env(
+        days,
+        7,
+        fc,
+        &n,
+        |s| s.constants.phototropism_weight.value = 0.0,
+        &[wall],
+    );
+    let (open, _, _) = run_env(days, 7, fc, &n, |_| {}, &[]);
+    let offset = |p: &Plant| {
+        let tip = p.positions[p.axes[0].apex.index()].1;
+        [
+            tip[0] - p.collar_position[0],
+            tip[1] - p.collar_position[1],
+            tip[2],
+        ]
+    };
+    let (a, b, c) = (offset(&on), offset(&off), offset(&open));
+    println!(
+        "main tip offset east, north, height: wall {a:.3?}, wall without phototropism {b:.3?}, open {c:.3?}; PAR absorbed {lit_on:.2} against {lit_off:.2} mol"
+    );
+    assert!(a[0] < -0.03, "leans west, away from the wall: {a:?}");
+    assert!(b[0].abs() < 1e-9, "upright without phototropism: {b:?}");
+    assert!(lit_on > 1.02 * lit_off, "{lit_on} against {lit_off}");
+    assert!(
+        c[0].hypot(c[1]) < 0.02,
+        "a lone plant in the open stays nearly upright: {c:?}"
     );
 }

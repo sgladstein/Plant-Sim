@@ -638,6 +638,7 @@ impl Species {
         self.validate_storage()?;
         self.validate_development()?;
         self.validate_energy()?;
+        self.validate_phototropism()?;
         self.validate_climbing()?;
         self.validate_variation()?;
         self.validate_grass()?;
@@ -768,6 +769,29 @@ impl Species {
                 return Err(SpeciesError::Value {
                     at: format!("constants.{key}"),
                     why: "must be 1 or more".into(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Phototropism (R1c, decision 0041): the weight is a share, 0 to 1, and the daily
+    /// turn 0 to 90 degrees.
+    fn validate_phototropism(&self) -> Result<(), SpeciesError> {
+        let c = &self.constants;
+        for (key, v, max) in [
+            ("phototropism_weight", c.phototropism_weight.value, 1.0),
+            (
+                "phototropism_max_per_day",
+                c.phototropism_max_per_day.value,
+                90.0,
+            ),
+        ] {
+            // NaN fails too.
+            if !(v >= 0.0 && v <= max) {
+                return Err(SpeciesError::Value {
+                    at: format!("constants.{key}"),
+                    why: format!("must lie within [0, {max}]"),
                 });
             }
         }

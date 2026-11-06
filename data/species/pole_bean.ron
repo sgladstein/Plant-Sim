@@ -3,7 +3,7 @@
 // later pole-type phenology, and longer internodes; everything else is the bush bean's.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 14,
+  schema: 15,
   id: "pole_bean",
   name: "Pole bean archetype",
   growth_form: Vine,
@@ -88,6 +88,8 @@ Species(
     abaxial_conductance_share: (value: 0.875, unit: "-", source: "abaxial stomata about 7 times as many as adaxial in bean (Kanemasu and Tanner 1969, abstract; research notes/boundary_layer_wind.md)"),
     root_segment_length: (value: 2.0, unit: "cm", source: "model resolution (decision 0013)"),
     shoot_gravitropism: (value: 0.3, unit: "-", source: "~ (decision 0013)"),
+    phototropism_weight: (value: 0.3, unit: "-", source: "~ R1 spec §5 (decision 0041): a new internode turns 0.3 of the angle toward the light it saw, before gravitropism pulls it 0.3 of the way to vertical"),
+    phototropism_max_per_day: (value: 10.0, unit: "deg", source: "~ conservative; seedlings of sunflower and pea bend about 25 degrees in 2 h, and no bean stem kinetics were found (R1 numbers, docs/research/realism-plan/numbers/README.md; decision 0041)"),
     shade_senescence_days: (value: 5.0, unit: "day", source: "design plan §3.11"),
     hypocotyl_specific_length: (value: 150.0, unit: "cm/g", source: "~ thin, watery hypocotyl the seed reserve can pay for (decision 0013)"),
     reserve_feedback_onset: (value: 0.10, unit: "g C / g DM", source: "~ leaf reserve where end-product inhibition starts, about 18% non-structural carbohydrate in total dry mass (L-PEACH style feedback, Allen et al. 2005; decision 0013)"),

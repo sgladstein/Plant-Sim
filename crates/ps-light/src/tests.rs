@@ -478,3 +478,52 @@ fn strips_sample_three_points_along_them() {
         }
     }
 }
+
+/// R1c (decision 0041): in the open an apex sees the diffuse sky straight overhead and
+/// every sun; behind a wall to the east its light leans west.
+#[test]
+fn apex_light_leans_away_from_a_wall() {
+    let leaves = [LeafPoint {
+        center: [0.0, 0.0, 0.1],
+        area: M2(0.0075),
+        normal: [0.0, 0.0, 1.0],
+        strip: None,
+    }];
+    let mut sun = [None; 24];
+    sun[8] = Some(unit(30.0, 90.0));
+    sun[12] = Some([0.0, 0.0, 1.0]);
+    let sky = sky_sectors();
+    let dirs = DayDirections::new(&sun, &sky);
+    let at = [[0.0, 0.0, 0.2]];
+    let (grid, _) = rebuild_daily(&leaves, &[[0.0, 0.0, 0.0]], &sun, &sky);
+    let open = apex_light(grid.as_ref().unwrap(), &dirs, &sky, &at)[0];
+    for k in 0..3 {
+        assert!((open.direct[8][k] - unit(30.0, 90.0)[k]).abs() < 1e-12);
+    }
+    assert!(open.direct[0].iter().all(|v| v.abs() < 1e-15), "night");
+    assert!(open.diffuse[0].abs() < 1e-12 && open.diffuse[1].abs() < 1e-12);
+    assert!((open.diffuse[2] - 1.0).abs() < 1e-9, "{:?}", open.diffuse);
+    // An opaque wall 10 cm east, 1 m tall.
+    let wall = Obstacle::with_transmittance([0.1, -1.0, 0.0], [0.12, 1.0, 1.0], 1e-6);
+    let (grid, _) = rebuild_daily_with(&leaves, &[[0.0, 0.0, 0.0]], &[wall], &sun, &sky);
+    let walled = apex_light(grid.as_ref().unwrap(), &dirs, &sky, &at)[0];
+    assert!(
+        walled.direct[8].iter().all(|v| v.abs() < 1e-5),
+        "the morning sun is behind the wall"
+    );
+    assert!(
+        (walled.direct[12][2] - 1.0).abs() < 1e-12,
+        "noon is overhead"
+    );
+    assert!(
+        walled.diffuse[0] < -0.1,
+        "the sky light comes from the west: {:?}",
+        walled.diffuse
+    );
+    // The hour's vector irradiance: beam normal to the sun plus diffuse.
+    let v = open.vector(8, WPerM2(100.0), WPerM2(50.0), 0.5);
+    let s = unit(30.0, 90.0);
+    for k in 0..3 {
+        assert!((v[k] - (200.0 * s[k] + 50.0 * open.diffuse[k])).abs() < 1e-9);
+    }
+}
