@@ -228,6 +228,28 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+### R1b to R2b cost (models 0.21.0 to 0.24.0, 2026-11-06)
+
+Callgrind, one thread, 90 days, against d88bb3c (0.20.0, the commit timed on the
+owner's PC):
+
+| Scenario | 0.20.0 (d88bb3c) | 0.23.0 (4c1ca49) | 0.24.0 R2b (f6600ed) | with the lateral nitrate fix |
+| --- | --- | --- | --- | --- |
+| single_pot | 3.57 G | 3.65 G (+2.2%) | 3.98 G (+11.4%) | 3.80 G (+6.6%) |
+| plot_30_beans | 66.8 G | 69.8 G (+4.4%) | 70.6 G (+5.7%) | 70.0 G (+4.8%) |
+
+R2b's lateral step moves nitrate with the water at the concentration of the cell it
+leaves. That cost a division per flux, two per cell. The fix computes each cell's
+concentration once and adds the carried nitrate into the diffusion flux lists in
+place, instead of building two more lists. Every state hash is unchanged
+(the goldens; full runs of single_pot, two_pot_sun_shade, plot_30_beans, m2/split_pot,
+nitrate_patch, nitrate_patch_control, plot_low_n and density_35). In wall time, single_pot
+measured 3.65 to 3.82 ms per sim-day with the fix against 3.89 to 4.30 on main, in
+interleaved best-of-5 runs. Scaled by instructions from the owner-PC timings of
+0.20.0 (pot 3.9 ms, plot 30.7), the estimate is about 4.2 ms for the pot and 32 ms for
+the plot. Both are a little over the decision 0039 budgets; to re-time on the owner's
+PC.
+
 ### R2a cost (model 0.20.0, 2026-11-06)
 
 R2a (decision 0037, #129) adds about 45% more organs (root segments) and moves the

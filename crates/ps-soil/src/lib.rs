@@ -725,44 +725,34 @@ impl SoilGrid {
         let (wx, wy) = lateral_fluxes(&self.water, &self.active, nx, ny, self.divider, |a, b| {
             (a.0 - b.0) * fraction
         });
-        let (water, no3) = (&self.water, &self.no3);
-        // Nitrate per kg of water in cell i (zero in a dry cell, which sends no water).
-        let conc = |i: usize| {
-            if water[i].0 > 0.0 {
-                no3[i].0 / water[i].0
-            } else {
-                0.0
-            }
-        };
+        // Nitrate per kg of water in each cell (zero in a dry cell, which sends no
+        // water), once per cell rather than once per flux.
+        let conc: Vec<f64> = self
+            .water
+            .iter()
+            .zip(&self.no3)
+            .map(|(w, g)| if w.0 > 0.0 { g.0 / w.0 } else { 0.0 })
+            .collect();
         let carried = |f: f64, from: usize, to: usize| {
             if f > 0.0 {
-                f * conc(from)
+                f * conc[from]
             } else {
-                f * conc(to)
+                f * conc[to]
             }
         };
-        let (nxf, nyf) = lateral_fluxes(&self.no3, &self.active, nx, ny, self.divider, |a, b| {
-            (a.0 - b.0) * diffusion
-        });
-        // Flux k of the x list runs from cell k − 1 to k; of the y list from k − nx to k.
-        let mx: Vec<f64> = (0..wx.len())
-            .map(|k| {
-                if k == 0 || k >= self.water.len() {
-                    nxf[k]
-                } else {
-                    nxf[k] + carried(wx[k], k - 1, k)
-                }
-            })
-            .collect();
-        let my: Vec<f64> = (0..wy.len())
-            .map(|k| {
-                if k < nx || k >= self.water.len() {
-                    nyf[k]
-                } else {
-                    nyf[k] + carried(wy[k], k - nx, k)
-                }
-            })
-            .collect();
+        let (mut mx, mut my) =
+            lateral_fluxes(&self.no3, &self.active, nx, ny, self.divider, |a, b| {
+                (a.0 - b.0) * diffusion
+            });
+        // Flux k of the x list runs from cell k − 1 to k; of the y list from k − nx to
+        // k. The first and the trailing entries carry no water.
+        let n = self.water.len();
+        for k in 1..mx.len().min(n) {
+            mx[k] += carried(wx[k], k - 1, k);
+        }
+        for k in nx..my.len().min(n) {
+            my[k] += carried(wy[k], k - nx, k);
+        }
         apply_fluxes(&mut self.water, nx, &wx, &wy, |w| w.0, KgWater);
         apply_fluxes(&mut self.no3, nx, &mx, &my, |g| g.0, GramsN);
     }
