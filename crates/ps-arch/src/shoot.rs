@@ -9,11 +9,37 @@ use ps_physio::allocation;
 use ps_rng::Purpose;
 use ps_units::{DegreeDays, GramsC, GramsDM, Hours, M2PerG, MPerG};
 
-use crate::geometry::{add, from_azimuth, unit};
+use crate::geometry::{V3, add, from_azimuth, norm, unit};
 use crate::{
-    ArchError, Bud, BudFate, Climb, Flower, Plant, Pod, Raceme, Role, ShadeSignal, ShootAxis,
-    Spawn, curve,
+    ApexSight, ArchError, Bud, BudFate, Climb, Flower, Plant, Pod, Raceme, Role, ShadeSignal,
+    ShootAxis, Spawn, curve,
 };
+
+/// A new internode's direction, turned from its parent's direction `u` toward the
+/// light the apex saw, `seen` (R1c, decision 0041): by `weight` of the angle between
+/// them, at most `max` rad, in the plane the two span. `u` comes back unchanged when no
+/// light was seen, the turn is zero, or the light comes from straight behind.
+#[must_use]
+pub fn turn_toward_light(u: V3, seen: V3, weight: f64, max: f64) -> V3 {
+    let n = norm(seen);
+    if n < 1e-12 || weight <= 0.0 || max <= 0.0 {
+        return u;
+    }
+    let a = unit(u);
+    let w = [seen[0] / n, seen[1] / n, seen[2] / n];
+    let angle = libm::acos((a[0] * w[0] + a[1] * w[1] + a[2] * w[2]).clamp(-1.0, 1.0));
+    let sin = libm::sin(angle);
+    if sin < 1e-9 {
+        return u;
+    }
+    let phi = (weight * angle).min(max);
+    let (ka, kw) = (libm::sin(angle - phi) / sin, libm::sin(phi) / sin);
+    unit([
+        ka * a[0] + kw * w[0],
+        ka * a[1] + kw * w[1],
+        ka * a[2] + kw * w[2],
+    ])
+}
 
 /// Elevation of a new petiole above the horizontal (~; decision 0013).
 const PETIOLE_ELEVATION: f64 = 0.5;
@@ -71,6 +97,7 @@ impl Plant {
             last_leaf: first_leaf,
             climb: Climb::Free,
             free_length: 0.0,
+            sight: ApexSight::default(),
         });
         Ok(())
     }
@@ -323,6 +350,7 @@ impl Plant {
                 last_leaf: Some(leaf),
                 climb: if lodged { Climb::Lodged } else { Climb::Free },
                 free_length: 0.0,
+                sight: ApexSight::default(),
             });
         }
         Ok(())
@@ -377,7 +405,18 @@ impl Plant {
     fn add_node(&mut self, ax: &mut ShootAxis, now: Hours) -> Result<(), ArchError> {
         let hp = &self.params;
         let prev = self.arena.orientation[ax.apex.index()].direction;
-        let mut dir = unit(add(prev, [0.0, 0.0, 1.0], hp.shoot_gravitropism));
+        // Phototropism (R1c, decision 0041): toward the light the apex saw since the
+        // last node, at most the daily turn for each day seen; then gravitropism.
+        let days = f64::from(ax.sight.hours) / 24.0;
+        let lit = turn_toward_light(
+            prev,
+            ax.sight.seen,
+            hp.phototropism_weight,
+            hp.phototropism_max_per_day.0 * days,
+        );
+        ax.sight.seen = [0.0; 3];
+        ax.sight.hours = 0;
+        let mut dir = unit(add(lit, [0.0, 0.0, 1.0], hp.shoot_gravitropism));
         let k = ax.nodes + 1;
         let (factor, rank) = if ax.order == 0 {
             (hp.leaf_factor(k - 1, ax.max_nodes - 1), Some(k))

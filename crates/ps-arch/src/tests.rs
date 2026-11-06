@@ -190,3 +190,41 @@ fn supply_factor_follows_what_the_roots_could_deliver() {
     // No demand: resets.
     assert!((crate::supply_factor(0.1, &u(0.0, 0.0, 0.0)) - 1.0).abs() < 1e-15);
 }
+
+/// R1c (decision 0041): an apex lit from +x turns toward +x by the weight's share of
+/// the angle, never more than the daily turn per day of light seen.
+#[test]
+fn an_apex_turns_toward_the_light_within_the_daily_bound() {
+    use crate::shoot::turn_toward_light;
+    let p = params();
+    let (w, max) = (p.phototropism_weight, p.phototropism_max_per_day.0);
+    assert!(w > 0.0 && max > 0.0);
+    let up = [0.0, 0.0, 1.0];
+    let angle = |a: [f64; 3], b: [f64; 3]| {
+        libm::acos((a[0] * b[0] + a[1] * b[1] + a[2] * b[2]).clamp(-1.0, 1.0))
+    };
+    // Light from the side: the bound holds, one day or two.
+    for days in [1.0, 2.0] {
+        let d = turn_toward_light(up, [5.0, 0.0, 0.0], w, max * days);
+        assert!(d[0] > 0.0 && d[1].abs() < 1e-12, "{d:?}");
+        let turned = angle(up, d);
+        let want = (w * core::f64::consts::FRAC_PI_2).min(max * days);
+        assert!((turned - want).abs() < 1e-9, "{turned} against {want}");
+        assert!(turned <= max * days + 1e-12);
+    }
+    // Light 20° off the stem: the weight's share of it.
+    let off = [libm::sin(0.35), 0.0, libm::cos(0.35)];
+    let d = turn_toward_light(up, off, w, max);
+    assert!((angle(up, d) - (w * 0.35).min(max)).abs() < 1e-9);
+    // No light, light straight along the stem, or a zero turn: unchanged.
+    let bits = |v: [f64; 3]| v.map(f64::to_bits);
+    assert_eq!(bits(turn_toward_light(up, [0.0; 3], w, max)), bits(up));
+    assert_eq!(
+        bits(turn_toward_light(up, [0.0, 0.0, 3.0], w, max)),
+        bits(up)
+    );
+    assert_eq!(
+        bits(turn_toward_light(up, [1.0, 0.0, 0.0], w, 0.0)),
+        bits(up)
+    );
+}

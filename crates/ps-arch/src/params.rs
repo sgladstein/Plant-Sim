@@ -195,6 +195,12 @@ pub struct HerbParams {
     pub phyllotaxis: Radians,
     /// Shoot gravitropism per node.
     pub shoot_gravitropism: f64,
+    /// Share of the angle to the light a new internode turns (R1c, decision 0041).
+    #[serde(default)]
+    pub phototropism_weight: f64,
+    /// Most a shoot turns toward the light per day of light seen (R1c).
+    #[serde(default)]
+    pub phototropism_max_per_day: Radians,
     /// Base daily bud activation probability.
     pub bud_activation: f64,
     /// Reserve concentration of a fully fed bud, g C per g DM.
@@ -388,6 +394,8 @@ impl HerbParams {
             branch_angle: Radians(c.branch_angle.value.to_radians()),
             phyllotaxis: Radians(c.phyllotaxis_angle.value.to_radians()),
             shoot_gravitropism: c.shoot_gravitropism.value,
+            phototropism_weight: c.phototropism_weight.value,
+            phototropism_max_per_day: Radians(c.phototropism_max_per_day.value.to_radians()),
             bud_activation: t.bud_activation,
             bud_reserve_reference: c.bud_reserve_reference.value,
             pod_set_reserve_reference: c.pod_set_reserve_reference.value,

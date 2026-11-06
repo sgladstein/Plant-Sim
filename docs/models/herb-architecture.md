@@ -23,6 +23,22 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   Main-stem internode `k` of `N` (k ≥ 2): length `ℓ = ℓ_pot · (g₁ + (g_N − g₁)(k − 2)/(N − 2))`; the epicotyl has `ℓ_pot`.
   Branches use the branch fractions. Potential mass is area over SLA or length over
   specific stem length.
+- **Shoot direction and phototropism (R1c, decision 0041):** a new internode of a bean
+  axis starts from its parent's direction `u`, turns toward the light its apex saw,
+  then toward vertical: `u₁ = rotate(u → v̂, min(θ_max · d, k_p · ∠(u, v̂)))`,
+  `u' = unit(u₁ + g · (0, 0, 1))`, with `g = 0.3` (shoot gravitropism), `k_p = 0.3`,
+  `θ_max = 10°` per day and `d` the days of light seen since the axis' last node.
+  `v = Σ_hours (I_b,h T_h ŝ_h + I_d,h Σ_s a_s T_s d̂_s)` is the vector irradiance at the
+  apex tip summed hour by hour since the last node: `I_b` the beam normal to the sun,
+  `I_d` the horizontal diffuse irradiance, `T` the transmittance from the tip toward
+  each hour's sun and each of 16 sky sectors (light card), `a_s` a sector's radiance
+  times solid angle. Its horizontal part is the light difference across the stem. Only
+  new internodes turn; grown ones keep their direction. A twining vine's internode
+  follows its support, and a grass does not bend. Nodes come 3 to 5 days apart, so the
+  daily bound allows 30 to 50° per node while `k_p · ∠` is at most 27° for light within
+  90°: the bound does not bind today, and `k_p` alone sets the response (30° a day gives
+  bit-identical runs; review of decision 0041). Under a fixed light direction at angle
+  `α` from vertical a stem settles at about `α · k_p / (k_p + g) = α/2`.
 - **Shade response (decision 0018):** the newest leaf below the node that has seen a
   whole day gives two signals, red:far-red `ρ` and its running mean daily absorbed PAR
   `D` (mol m⁻² day⁻¹; `D ← D + (D_yesterday − D)/3`). The response index is
@@ -110,6 +126,8 @@ All values, units and sources are in `data/species/bush_bean.ron`. The main ones
 | seeds_per_pod, ovule_set | 5, 0.75 | -, - | "~" Kumar 2025 |
 | Root types | tap, two basal whorls of 4, 10 hypocotyl-borne, laterals, fine laterals | see file | OpenSimRoot bean (values only; fine laterals and lateral spacing 0.5 cm / apical zone 4 cm from carioca.xml, decision 0037) |
 | root_segment_length | 2 | cm | "~" (decision 0013) |
+| shoot_gravitropism | 0.3 | - | "~" (decision 0013) |
+| phototropism_weight, phototropism_max_per_day | 0.3, 10 | -, ° | "~" R1 spec §5; the daily bound does not bind at today's phyllochron (decision 0041) |
 | PRIMORDIUM | 0.02 | - | "~" code constant (decision 0013) |
 
 ## Inputs and outputs
@@ -149,7 +167,15 @@ shade, and where roots end up.
 - Drought from flowering raises root:shoot by 23 to 54%, as published, but cuts shoot
   mass 57 to 70% against about 26% (Info): once stomata follow what the roots can
   supply (decision 0037), drought closes them harder than the published pots show.
-- No phototropism or hydrotropism yet; roots bend only by gravity and noise.
+- Stems lean toward the light (R1c): next to a low wall a pot plant leans away from
+  it and its leaves catch a few percent more light, while a lone plant in the open stays
+  nearly upright. Next to a tall wall leaning gains no sky (decision 0041). Under an
+  open sky a tilted branch's apex sees light from nearly straight up, so the rule adds a
+  second upward pull on top of gravitropism: pot and plot branch internodes stand 27°
+  from vertical against 34° without it, with tips 20 to 25% closer to the collar. Branch
+  angles have not been checked against bean data. Leaves do
+  not turn their blades toward the sun (no heliotropism), and roots have no
+  hydrotropism; they bend only by gravity and noise.
 - Laterals are lumped into cohorts; their fine roots are one more cohort each, in the
   cells next to the lateral, without geometry of their own (decision 0037).
 - Leaves senesce from the base during seed fill through nitrogen mining (nitrogen
@@ -170,7 +196,12 @@ shade, and where roots end up.
 - `dry_soil_holds_the_seed`, `same_seed_same_plant` (bit-identical arena),
   `roots_stay_in_the_pot`.
 - Debug builds assert the carbon ledger every hour (WP7) through all of these runs.
-- `ps_arch::tests::*`: profiles, pod-set temperature, sink feedback, deflection.
+- `ps_arch::tests::*`: profiles, pod-set temperature, sink feedback, deflection;
+  `an_apex_turns_toward_the_light_within_the_daily_bound` (R1c).
+- `tests/ninety_days.rs::a_plant_beside_a_wall_leans_away_and_gains_light` (R1c
+  done-when, world seed 7, day 45): beside a 40 cm wall 6 cm east of the stem the main
+  stem's tip ends 8.5 cm west of the collar and the leaves absorb 4% more PAR than with
+  phototropism off; the same plant in the open ends within 2 cm of upright.
 
 ## References
 - Allen, M. T., Prusinkiewicz, P., DeJong, T. M. (2005). Using L-systems for modeling

@@ -60,9 +60,9 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - M0 gates fail the build; everything else is Info.
 - Targets, sources and bands are documented in `docs/validation-data.md` and `data/validation/`.
 
-## 2. Current state (2026-11-06, R1b PR)
+## 2. Current state (2026-11-06, R1c PR)
 
-**Model and data.** Model 0.21.0 (decision 0040: starch storage, root exudation and seed-driven nitrogen, realism plan R1b), species schema 14. Before it 0.20.0 (decision 0037: root length and water uptake, realism plan R2a, issue #116; the thickening potential is set daily, schema 13), 0.19.0 (decision 0036: stem and root thickening, realism plan R1a, schema 12), 0.18.0 (decision 0034 amendment: coupled tolerance 0.05 K, for speed; perf thread), 0.17.0 (decision 0034: the leaf energy balance, WP27, schema 11) and 0.16.0 (decision 0033: broad leaves at 5 light points) and schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
+**Model and data.** Model 0.22.0 (decision 0041: phototropism, realism plan R1c), species schema 15. Before it 0.21.0 (decision 0040: starch storage, root exudation and seed-driven nitrogen, realism plan R1b, schema 14), 0.20.0 (decision 0037: root length and water uptake, realism plan R2a, issue #116; the thickening potential is set daily, schema 13), 0.19.0 (decision 0036: stem and root thickening, realism plan R1a, schema 12), 0.18.0 (decision 0034 amendment: coupled tolerance 0.05 K, for speed; perf thread), 0.17.0 (decision 0034: the leaf energy balance, WP27, schema 11) and 0.16.0 (decision 0033: broad leaves at 5 light points) and schema 10 (decision 0032). The genetics thread's WP28 step 2 took 0.14.0, schema 9 and decision 0031.
 
 **Merged today:**
 - #87: lateral roots stay in the soil (decision 0028, model 0.11.0).
@@ -74,9 +74,10 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - #118: coupled leaf-temperature tolerance 0.05 K (decision 0034 amendment, model 0.18.0), perf thread.
 - #119: R1a (decision 0036, model 0.19.0): stem and root thickening, a sink at priority 0.4.
 - #129: R2a (decision 0037, model 0.20.0): roots queue behind the tip, tip feeding, fine-root cohorts, `u_max` over the transpiring hours (#116), stomata follow supply, nitrogen from each cell's own roots, wood yields first when carbon is short, the thickening potential set once a day, shade factors recalibrated.
-- The R1b PR (decision 0040, model 0.21.0): a starch store in stems and main roots (release below `C_off`, refill above `C_on` 0.15 once expanded, emptied from seed fill at 0.08 a day), root exudation at 0.4 of maintenance, the seeds' nitrogen mined first from seed fill.
+- #133: R1b (decision 0040, model 0.21.0): a starch store in stems and main roots (release below `C_off`, refill above `C_on` 0.15 once expanded, emptied from seed fill at 0.08 a day), root exudation at 0.4 of maintenance, the seeds' nitrogen mined first from seed fill.
+- The R1c PR (decision 0041, model 0.22.0): new bean internodes turn toward the light their apex saw (rays from each growing apex at the light rebuild, vector irradiance summed hourly; 0.3 of the angle; the 10° a day bound does not bind), then gravitropism. Main stems lean only beside obstacles; in the open it straightens branches (27° against 34° from vertical). The WP20 drawn lean should be turned down near obstacles, not switched off.
 
-**Validation at 0.21.0, seed means.** 70 of 94 pass, every M0 gate passes (0.20.0: 68 of 92). R1b brought harvest_index_tops (0.410), pod_set_thermal_time_b10 and density_leaf_area_per_plant back inside their bands; wheat_height_spaced slips just out (0.687 against 0.7). The misses:
+**Validation at 0.22.0, seed means.** 70 of 94 pass, every M0 gate passes (0.21.0: 70; 0.20.0: 68 of 92). R1b brought pod_set_thermal_time_b10 and density_leaf_area_per_plant back inside their bands; wheat_height_spaced slips just out (0.687 against 0.7). R1c brought stem_share_peak in (0.354) and took harvest_index_tops out (0.374 against 0.4) by chance (16 seeds: −0.009 ± 0.006 against phototropism off). The misses:
 - **Thermal-time phenology.** The seven checks against two literature bases that disagree with each other.
 - **Wheat.** Five checks: the stand is too short and low-yielding, spaced plants tiller too little.
 - **Drought and heat seed size** (drought_seed_size, drought_seeds_per_pod, heat_seed_mass, heat_seed_size): seed number does not adjust to carbon after pod set, so seed size takes every shortfall. Needs a seed abortion rule.
@@ -85,15 +86,15 @@ ps-view, ps-ui and ps-app are excluded because the cloud container has no waylan
 - **R1b's own targets (Info):** stem_decline_fill (−0.7% against −10 to −35%: the stores empty but stem wood keeps growing from spare sugar, and the field band includes petioles) and feedback_loss_fill (0.44 against at most 0.35: the lone pot plant has more sugar than its seeds can take). A fertilized pot still keeps every leaf to maturity (lowest leaves at 16 to 21% of their mobile N). Follow-ups in decision 0040: a stem band without petioles (research), whether cambial growth yields to the seeds in seed fill, CROPGRO-style senescence in proportion to N mined (`SENRTE`).
 - **wheat_height_spaced** (0.687 against 0.7, since R1b: stem starch filling after expansion still costs a little height).
 - **R1b review (decision 0040):** the pot's seed gain is the four validation seeds' (over seeds 7 to 14, 10.72 → 10.63 g); the stands lose 3 to 6% of seed. Seeds keep filling 8 to 10 days after maturity (late pods finish their 74 + 350 °C·day after the 965 °C·day maturity; +35% seed mass with no assimilation), the likeliest reason the pot stays sink-limited in seed fill: look at it before tuning R1b further. Exudation is 0.3 to 0.5% of assimilation against 2.7 to 10% cited.
-- **Near-edge M0 passes (R2a review, at 0.21.0):** shade_internode +25% (seeds −13% to +42%), shade_total_mass −47% (gate −50%); heat_seeds' weakest seed is now −15%. Watch them on every model change.
+- **Near-edge M0 passes (R2a review, at 0.22.0):** shade_internode +27% (seeds −12% to +43%), shade_total_mass −46% (gate −50%); heat_seeds' weakest seed −21%. Watch them on every model change.
 - **R2a review notes for later work:** 38% of the pot's root length sits in the bottom 4 cm at maturity (R3 density saturation will matter there); A/E 3 to 5 mmol/mol, the low end for C3 (keep in view for R3); fine roots could start past a lateral's apical zone instead of when it finishes (R2b).
-- **stem_share_peak** (0.349 against 0.35 with stem starch), **shade_height** (+31%), **nar_early** (7.5).
+- **harvest_index_tops** (0.374 against 0.4, R1c's four seeds; see above), **shade_height** (+31%), **nar_early** (7.5).
 
 **Speed (perf thread, 4 cores).** single_pot about 2.3 ms per sim-day (target 2). plot_30_beans about 24.7 ms (M2 target 20). wheat_stand about 108 ms after #98. The perf thread has a bit-identical speed-up in flight.
 
 ## 3. Next steps, in order
 
-1. **Realism specs, in order (owner, 2026-11-05): R1 carbon sinks, R2 root system, R3 plant hydraulics.** R1a, R2a (root length, with the water-uptake fix of #116) and R1b (storage, exudation, seed-driven N) are done; R1c (phototropism) goes next, then the rest of R2 and R3 (`docs/research/realism-plan/`, r1-carbon-sinks.md, r2-root-system.md, r3-plant-hydraulics.md; PR #107). Each its own model version, decision record and PR; Code review before merging; the performance thread re-times after each merge.
+1. **Realism specs, in order (owner, 2026-11-05): R1 carbon sinks, R2 root system, R3 plant hydraulics.** R1a, R2a (root length, with the water-uptake fix of #116), R1b (storage, exudation, seed-driven N) and R1c (phototropism) are done; the rest of R2 goes next, then the rest of R2 and R3 (`docs/research/realism-plan/`, r1-carbon-sinks.md, r2-root-system.md, r3-plant-hydraulics.md; PR #107). Each its own model version, decision record and PR; Code review before merging; the performance thread re-times after each merge.
 2. **Seed abortion after pod set** (decision 0032, not done). The root of the drought and heat seed-size misses.
 3. **Per-organ construction costs** (decision 0032): CROPGRO's leaf 1.39, stem 1.29, root 1.25, fruit 1.36 go in with the transport and priority revisit (decision 0009), since the leaf cost alone takes the shade-internode M0 gate to +17%.
 4. **WP26, sim side** (its own thread): session save, the replay done-when test, lens data for competition, nitrogen, temperature and carbon flow.
