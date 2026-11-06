@@ -39,16 +39,20 @@ concentration nor raises the reserve floor.
    in one hour, and a debt (negative reserve) stays with its organ.
 4. Thermal time (step 11): organ thermal age advances (thermal-time card), and so does
    the organ's expansion clock, by thermal time times the expansion temperature
-   multiplier (decision 0011).
+   multiplier (decision 0011), times, for a growing leaf, internode, tendril or
+   cotyledon, its turgor from the last hour's water potential (R3b, decision 0044;
+   plant-hydraulics card: stored growth), and for a root tip its soil's dryness
+   (R2b).
 5. Growth (step 12). First, a starch store short of sugar releases (R1b, decision
    0040; item 8 below). Then, for organs still expanding: potential `ΔW = potential ×
    (y(a + da) − y(a))` from the beta curve on the expansion clock `a`, times the
-   water stress factor for leaves, internodes, tendrils and cotyledons. Cold slows the
-   clock, so it delays expansion instead of cutting the organ short. Demand
+   plant's nitrogen factor for leaves, internodes, tendrils and cotyledons. Cold and
+   low turgor slow the clock, so they delay expansion instead of cutting the organ
+   short. Demand
    `D = ΔW · 0.45 · 1.25` g C. Available `A = max(0, R − 0.05 W_p)`. Spent
    `S = min(D, p · A)` with priority `p` (seeds in pods 1.0, pods 0.9, roots
-   0.6 + 0.4 (1 − min(FTSW, g)), everything else 0.7, with `g` the stomatal supply
-   factor of the gas-exchange card). Unmet `D − S` is booked; `S / 1.25` becomes
+   0.6 + 0.4 (1 − min(FTSW, f_ψ)), everything else 0.7, with `f_ψ` the stomatal
+   factor of the gas-exchange card, R3b). Unmet `D − S` is booked; `S / 1.25` becomes
    structure and the rest is growth respiration. A growing root draws on its own
    reserve and on its parent root's (or the seed's), `S = min(D, p (A + A_parent))`, own
    first (tip feeding, R2a, decision 0037): a queued root segment starts as a tiny
@@ -121,7 +125,8 @@ concentration nor raises the reserve floor.
 | Direction | Quantity | Unit | From / to |
 | --- | --- | --- | --- |
 | in | leaf net assimilation | g C h⁻¹ | gas exchange |
-| in | organ temperatures, FTSW, stress | °C, 1, 1 | weather, soil |
+| in | organ temperatures, FTSW, nitrogen factor | °C, 1, 1 | weather, soil, nitrogen |
+| in | organ turgor (expansion clock), stomatal factor (root priority) | 1, 1 | plant hydraulics |
 | out | organ reserves, starch stores, structural growth, unmet demand, starving hours, deaths | g C, g DM | organ graph, architecture, lenses |
 | out | exudation | g C | carbon ledger, daily CSV (soil carbon is not tracked) |
 

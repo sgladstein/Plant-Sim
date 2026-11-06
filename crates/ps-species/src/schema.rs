@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 16;
+pub const SCHEMA: u32 = 17;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -101,8 +101,6 @@ param_group!(
         germination_ftsw: "-",
         /// Consecutive hours above thresholds to germinate.
         germination_hours: "h",
-        /// FTSW below which stomatal conductance is reduced.
-        ftsw_threshold: "-",
         /// FTSW below which expansion growth is reduced.
         ftsw_expansion_threshold: "-",
         /// Days of negative reserve before an organ dies.
@@ -247,10 +245,35 @@ param_group!(
         hypocotyl_specific_length: "cm/g",
         reserve_feedback_onset: "g C / g DM",
         reserve_feedback_full: "g C / g DM",
-        /// Root water uptake coefficient: root length density times this is the hourly share of available water a cell can give.
-        root_uptake_rate: "m2/h",
-        /// Most water a meter of root can take up in an hour.
-        root_uptake_max: "kg/m/h",
+        /// Radial conductivity of young and fine roots, `Lp_r` (R3b, decision 0044;
+        /// schema 17).
+        root_radial_conductivity: "m/s/MPa",
+        /// Radial conductivity of fully thickened root (R3b).
+        root_radial_conductivity_thickened: "m/s/MPa",
+        /// Axial conductance of one root at its tip, and of each lateral and fine root
+        /// (R3b).
+        root_axial_conductance_tip: "m4/s/MPa",
+        /// Axial conductance of the tap root's mature part (R3b).
+        root_axial_conductance_tap: "m4/s/MPa",
+        /// Axial conductance of the other main axes' mature part (R3b).
+        root_axial_conductance_basal: "m4/s/MPa",
+        /// Distance from a main axis's tip over which its axial conductance rises to
+        /// the mature value (R3b).
+        root_axial_maturation: "cm",
+        /// Stem xylem conductivity per conducting area (R3b).
+        stem_xylem_conductivity: "kg/m/s/MPa",
+        /// Share of a stem's cross-section that conducts water (R3b).
+        xylem_area_fraction: "-",
+        /// Leaf hydraulic conductance per leaf area, petiole and blade (R3b).
+        leaf_hydraulic_conductance: "mmol/m2/s/MPa",
+        /// Tuzet stomatal sensitivity to leaf water potential (R3b).
+        tuzet_sensitivity: "1/MPa",
+        /// Leaf water potential where the Tuzet factor is about one half (R3b).
+        tuzet_reference: "MPa",
+        /// Turgor loss point: expansion stops and leaves wilt (R3b).
+        turgor_loss_point: "MPa",
+        /// Water potential at full turgor for expansion (R3b).
+        turgor_full: "MPa",
         /// Stem tissue density.
         stem_density: "g/m3",
         /// Root tissue density.

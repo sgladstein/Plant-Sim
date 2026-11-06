@@ -638,8 +638,7 @@ impl Species {
         self.validate_storage()?;
         self.validate_development()?;
         self.validate_energy()?;
-        self.validate_phototropism()?;
-        self.validate_root_plasticity()?;
+        self.validate_realism()?;
         self.validate_climbing()?;
         self.validate_variation()?;
         self.validate_grass()?;
@@ -650,6 +649,14 @@ impl Species {
             }
         }
         Ok(())
+    }
+
+    /// The realism plan's later constants: phototropism (R1c), root plasticity (R2b)
+    /// and plant hydraulics (R3b).
+    fn validate_realism(&self) -> Result<(), SpeciesError> {
+        self.validate_phototropism()?;
+        self.validate_root_plasticity()?;
+        self.validate_hydraulics()
     }
 
     /// Thickening (R1a): the flag is 0 or 1, the rates and pipe areas are not
@@ -815,6 +822,67 @@ impl Species {
                 at: "constants.hydropatterning".into(),
                 why: "must be 0 or 1".into(),
             });
+        }
+        Ok(())
+    }
+
+    /// Plant hydraulics (R3b, decision 0044): conductances and the Tuzet sensitivity
+    /// are positive, the xylem share is above 0 and at most 1, and the potentials are
+    /// ordered `ψ_tlp < ψ_0 ≤ 0` with `ψ_f < 0`.
+    fn validate_hydraulics(&self) -> Result<(), SpeciesError> {
+        let c = &self.constants;
+        let fail = |key: &str, why: String| SpeciesError::Value {
+            at: format!("constants.{key}"),
+            why,
+        };
+        for (key, v) in [
+            ("root_radial_conductivity", c.root_radial_conductivity.value),
+            (
+                "root_radial_conductivity_thickened",
+                c.root_radial_conductivity_thickened.value,
+            ),
+            (
+                "root_axial_conductance_tip",
+                c.root_axial_conductance_tip.value,
+            ),
+            (
+                "root_axial_conductance_tap",
+                c.root_axial_conductance_tap.value,
+            ),
+            (
+                "root_axial_conductance_basal",
+                c.root_axial_conductance_basal.value,
+            ),
+            ("root_axial_maturation", c.root_axial_maturation.value),
+            ("stem_xylem_conductivity", c.stem_xylem_conductivity.value),
+            (
+                "leaf_hydraulic_conductance",
+                c.leaf_hydraulic_conductance.value,
+            ),
+            ("tuzet_sensitivity", c.tuzet_sensitivity.value),
+        ] {
+            // NaN fails too.
+            if !(v > 0.0 && v.is_finite()) {
+                return Err(fail(key, format!("{v} must be positive")));
+            }
+        }
+        let x = c.xylem_area_fraction.value;
+        if !(x > 0.0 && x <= 1.0) {
+            return Err(fail(
+                "xylem_area_fraction",
+                format!("{x} is outside (0, 1]"),
+            ));
+        }
+        let (loss, full) = (c.turgor_loss_point.value, c.turgor_full.value);
+        if !(loss < full && full <= 0.0) {
+            return Err(fail(
+                "turgor_loss_point",
+                format!("needs turgor_loss_point {loss} < turgor_full {full} <= 0"),
+            ));
+        }
+        let f = c.tuzet_reference.value;
+        if f.is_nan() || f >= 0.0 {
+            return Err(fail("tuzet_reference", format!("{f} must be negative")));
         }
         Ok(())
     }

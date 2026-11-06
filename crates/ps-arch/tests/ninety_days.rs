@@ -83,7 +83,7 @@ fn run_env(
             co2: Ppm(420.0),
             patm: KPa(101.3),
         };
-        let demand = plant.water_demand(&ctx, &soil).unwrap();
+        plant.water_demand(&ctx, &soil).unwrap();
         let lai = plant.report().leaf_area / soil.surface_area().max(1e-9);
         soil.step_hour(&SoilHour {
             water_in: Millimeters(0.0),
@@ -91,7 +91,13 @@ fn run_env(
             t_air: h.t_air,
             strip: None,
         });
-        let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
+        let flows = plant.water_flows(&soil);
+        let uptake = soil
+            .take_flows(&[ps_soil::PlantFlows {
+                demand: flows.demand,
+                flows: &flows.flows,
+            }])
+            .unwrap();
         plant.grow_hour(&ctx, &soil, uptake.plants.first()).unwrap();
         let (area, par) = plant.absorbed_par(&ctx);
         absorbed += area.0 * par.0 * 3600.0 * 1e-6;

@@ -86,7 +86,7 @@ fn run(setup: &Setup, plastic: bool, days: u32) -> (Plant, SoilGrid) {
             co2: Ppm(420.0),
             patm: KPa(101.3),
         };
-        let demand = plant.water_demand(&ctx, &soil).unwrap();
+        plant.water_demand(&ctx, &soil).unwrap();
         let lai = plant.report().leaf_area / soil.surface_area().max(1e-9);
         let strip =
             (matches!(setup, Setup::Split) && tick >= 15 * 24 && tick % 24 == 0).then(|| Strip {
@@ -100,7 +100,13 @@ fn run(setup: &Setup, plastic: bool, days: u32) -> (Plant, SoilGrid) {
             t_air: w.t_air,
             strip,
         });
-        let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
+        let flows = plant.water_flows(&soil);
+        let uptake = soil
+            .take_flows(&[ps_soil::PlantFlows {
+                demand: flows.demand,
+                flows: &flows.flows,
+            }])
+            .unwrap();
         plant.grow_hour(&ctx, &soil, uptake.plants.first()).unwrap();
         if tick % 24 == 23 {
             let mut sun = [None; 24];
@@ -155,7 +161,10 @@ fn a_split_pot_roots_more_in_its_wet_half() {
         z: 2,
     });
     assert!(soil_on.cell_ftsw(east) < 0.8, "{}", soil_on.cell_ftsw(east));
-    assert!(r_on > 1.15 * r_off, "{r_on} vs {r_off}");
+    // 1.15 until R3b; the plant's roots now carry water into the drying half at night
+    // (hydraulic redistribution, decision 0044), so that half dries more slowly and
+    // the rules act less: 1.14 on this seed.
+    assert!(r_on > 1.1 * r_off, "{r_on} vs {r_off}");
 }
 
 #[test]

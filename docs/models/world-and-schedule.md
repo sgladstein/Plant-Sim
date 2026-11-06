@@ -82,7 +82,12 @@ also records, beside the state and never in it:
   copied out of the transport solve; its temperature (a leaf's own from the energy
   balance, WP27; air for the rest of the shoot; the soil layer for roots and the
   seed); and
-  its nitrogen per structural dry mass after the hour;
+  its nitrogen per structural dry mass after the hour; and its water potential (the
+  pressure part, without gravity) and relative turgor from the hour's network solve
+  (R3b, plant-hydraulics card); per plant also the leaves' area-weighted mean turgor
+  (how wilted the plant looks) and the root zone's soil potential. Organs added at the
+  day's end have no potential until the next hour's solve, so these lists can be
+  shorter than the organ arena;
 - per soil: each layer's temperature, and each layer's water potential at its mean
   water content (R3a; soil-and-water card). A cell's own potential comes from the grid
   in the state (`SoilGrid::water_potential`), so the lens does not copy every cell's
@@ -101,8 +106,9 @@ done-when, on the 30-bean plot with every WP25 action).
 ## Encoded or emergent
 Encoded: the step order, the watering rule, shade as a radiation multiplier, and
 pruning as a cut whose carbon leaves the plant.
-Emergent: plants in one soil compete for water through the joint uptake, and plants on
-a plot also compete for light through the shared grid.
+Emergent: plants in one soil compete for water through the joint uptake (each plant's
+root network, from the same soil state, R3b), and plants on a plot also compete for
+light through the shared grid.
 
 ## Known limits
 - Plants on a plot shade each other. Plants in pots do not, even in the same pot or in

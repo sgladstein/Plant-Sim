@@ -112,9 +112,9 @@ Hourly step, in order (in the code, steps 3, 5 and 6 run from the soil as it sta
 2. Solar geometry: sun elevation and azimuth from latitude, day of year and hour.
 3. Light: absorbed PAR per leaf = the stored daily coefficient for this hour's sun position × this hour's direct radiation, plus the diffuse coefficient × diffuse radiation. Yields sunlit fraction and the red:far-red proxy per leaf.
 4. Soil water: infiltrate rain and irrigation into the top cells, drain cells above field capacity downward, redistribute laterally, evaporate from exposed topsoil, update soil temperature.
-5. Plant water status: fraction of transpirable soil water (FTSW) over root-occupied cells, weighted by root length density. One stress factor results and is used in exactly two places: stomatal conductance and expansion growth.
+5. Plant water status: fraction of transpirable soil water (FTSW) over root-occupied cells, weighted by root length density, for root carbon priority and nodule fixation. From R3b (decision 0044) the stomatal factor (Tuzet) comes from the previous hour's mean leaf water potential, and each growing organ's turgor from its own potential then; before R3b one FTSW stress factor set both stomatal conductance and expansion growth.
 6. Gas exchange per light class (§3.8): coupled Farquhar photosynthesis and Medlyn conductance give assimilation and transpiration per unit leaf area per class. Each leaf copies its class result scaled by its area and sunlit or shaded fraction. From M2 (WP27, decision 0034) each class is solved together with the leaf energy balance, and each leaf part then solves its own leaf temperature and transpiration from its own light, sky view and wind.
-7. Water uptake: remove transpired water from soil cells in proportion to root length density and water above wilting point. A shortfall is logged; no second penalty is applied because the stress factor already reduced conductance.
+7. Water uptake: from R3b (decision 0044) each plant's water network is solved against the soil as it stands: organs are nodes on the organ tree, each root links to the soil cells it runs through, and each leaf draws its transpiration from step 6. Every organ's water potential and each root cell's flow result (a negative flow is water the roots give back to drier soil). The soil grants all plants' flows together, scaling the withdrawals from a cell asked for more than it holds above air-dry. A shortfall is logged; no second penalty is applied because the stomatal factor already reduced conductance. Before R3b, transpired water was removed from soil cells in proportion to root length density and water above wilting point.
 8. Maintenance respiration per organ, paid from the organ's own reserve.
 9. Carbon income: each leaf adds its hourly net assimilation to its own reserve.
 10. Transport: one relaxation pass of reserve exchange between neighboring organs (§3.9).
@@ -144,6 +144,8 @@ From R1d (decision 0042), with no change to the step list: from physiological ma
 
 From R2b (decision 0043), with no change to the step list: in daily step 5 a root tip leans weakly up the water gradient, and a lateral or fine-root cohort forms only where its parent's soil is not too dry, turns toward the wetter side, and stands for more roots where its path is richer in nitrate or water than both the soil's and the root zone's mean; daily step 6, with the root cells, sets each growing root's expansion clock factor for the next day from its tip cell's available water, which hourly step 11 applies. Hourly step 4 moves nitrate sideways with the lateral water flux and slow diffusion, not at the water's exchange fraction.
 
+From R3b (decision 0044), steps 5 and 7 change as written above, and hourly step 11 also slows a growing leaf, internode or cotyledon's expansion clock by its turgor, so a midday dip delays expansion rather than cutting it (stored growth); the day's thickening potential (step 5b) reads the leaves' predawn turgor. Daily step 6 also lists each root's length in each soil cell, the network's radial links.
+
 ### 3.3 Plant structure and organ state
 
 An MTG-like organ graph stored as structs-of-arrays indexed by integer ids, with parent pointers and per-node children lists kept in creation order so iteration is deterministic. Organ types: seed, cotyledon, internode, bud, leaf (blade plus petiole), root segment, flower, pod, seed-in-pod, and in M2 nodule. (Decision 0023: common bean twines, so there is no tendril organ; a twining internode carries its support and coil instead. `OrganKind::Tendril` stays unused until the next model bump removes it.)
@@ -160,7 +162,7 @@ An MTG-like organ graph stored as structs-of-arrays indexed by integer ids, with
 | nitrogen content | g N | Stored from M0; drives maintenance respiration now and photosynthetic capacity in M2 |
 | unmet demand | g C | Cumulative shortfall; shrinks potential final size |
 | light coefficients | - | 24 direct transmittances for the day, one diffuse coefficient, sunlit fraction, red:far-red proxy |
-| water status | - | Plant-level stress factor copied per organ for lenses and inspector |
+| water status | MPa | The organ's water potential from the last hour's network solve (R3b, decision 0044); before R3b a plant-level stress factor copied per organ |
 | orientation | unit vector | Base direction and phyllotactic angle; updated by tropisms at the daily step |
 
 Buds carry: dormancy state, light signal (yesterday's absorbed PAR at the bud's position relative to full sun), apical dominance signal (decays with distance from the nearest active tip along the axis), and the fate roll's RNG purpose key.

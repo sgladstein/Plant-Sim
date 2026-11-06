@@ -1,11 +1,12 @@
 //! Lens data (WP26): per-hour values the viewer's competition, temperature, nitrogen,
-//! carbon-flow and soil water-potential (R3a) lenses read. They are derived from the step (copied out of it or
+//! carbon-flow and water-potential (R3a, R3b) lenses read, and each leaf's turgor for
+//! wilting (R3b). They are derived from the step (copied out of it or
 //! read from the state after it), live on the [`World`](crate::World) beside its
 //! state, and are never saved or hashed: turning them on or off cannot change a hash,
 //! and a loaded save has none until its next hour. Model card:
 //! docs/models/world-and-schedule.md, "Lens data".
 
-use ps_units::{Celsius, GramsC, KPa, M2, UmolPerM2S};
+use ps_units::{Celsius, GramsC, KPa, M2, MPa, UmolPerM2S};
 
 /// The lens data of the hour just stepped.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -47,6 +48,17 @@ pub struct PlantLens {
     /// Nitrogen per structural dry mass after the hour, g N g⁻¹, indexed by organ id
     /// (0 for dead or massless organs).
     pub organ_n: Vec<f64>,
+    /// Each organ's water potential from the hour's network solve, indexed by organ id
+    /// (pressure, without gravity; R3b).
+    pub organ_water_potential: Vec<MPa>,
+    /// Each organ's relative turgor from that potential, 0 at the turgor loss point to
+    /// 1 at full turgor, indexed by organ id: how wilted a leaf looks (R3b).
+    pub organ_turgor: Vec<f64>,
+    /// Leaf-area-weighted mean leaf turgor (1 without leaves).
+    pub leaf_turgor: f64,
+    /// The root zone's soil water potential, weighted by each root cell's radial
+    /// conductance (R3b).
+    pub root_zone_potential: MPa,
 }
 
 /// One soil's lens values after the hour.

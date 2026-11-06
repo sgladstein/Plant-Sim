@@ -934,7 +934,10 @@ pub fn drive(
             };
             let skeleton = skeleton_of(p, size);
             let stress = p.plant.stress.0 as f32;
-            let target = ps_mesh::wilt_of_stress(stress);
+            // Leaves droop when they lose turgor (R3b, decision 0044), not when the
+            // stomata close: a watered plant's stomata close a fifth at noon.
+            let turgor = p.plant.leaf_water_status().map_or(1.0, |(_, t)| t) as f32;
+            let target = ps_mesh::wilt_of_turgor(turgor);
             let wilt = match src.turgor.get(&p.id) {
                 Some(&(t0, w0)) if t0 == tick => w0,
                 // Follow the stress forward in time; a seek back or a long jump starts

@@ -2,11 +2,12 @@
 
 use ps_graph::Allometry;
 use ps_physio::allocation::{CarbonParams, Temperature};
-use ps_physio::{Cardinal, GrowthTemperature, LeafEnergyParams, LeafParams, Thresholds};
+use ps_physio::{
+    Cardinal, GrowthTemperature, HydraulicParams, LeafEnergyParams, LeafParams, Thresholds,
+};
 use ps_species::{RootOrigin, Species, Traits};
 use ps_units::{
-    Celsius, DegreeDays, GPerM3, GramsDM, KgPerMH, M2, M2PerG, M2PerHour, MPerG, Meters,
-    MolPerM2Day, Radians,
+    Celsius, DegreeDays, GPerM3, GramsDM, M2, M2PerG, MPa, MPerG, Meters, MolPerM2Day, Radians,
 };
 use serde::{Deserialize, Serialize};
 
@@ -177,8 +178,6 @@ pub struct HerbParams {
     pub energy: LeafEnergyParams,
     /// Photosynthetic capacity at the end of leaf life.
     pub capacity_floor: f64,
-    /// FTSW below which conductance falls.
-    pub ftsw_conductance: f64,
     /// FTSW below which expansion falls.
     pub ftsw_expansion: f64,
     /// Seed dry mass.
@@ -318,10 +317,9 @@ pub struct HerbParams {
     pub feedback_onset: f64,
     /// Leaf reserve concentration where capacity reaches zero, g C per g DM.
     pub feedback_full: f64,
-    /// Root uptake coefficient.
-    pub uptake_rate: M2PerHour,
-    /// Root uptake ceiling.
-    pub uptake_max: KgPerMH,
+    /// Plant hydraulics: root, stem and leaf conductances, stomata and turgor (R3b,
+    /// decision 0044).
+    pub hydraulics: HydraulicParams,
 }
 
 fn round(x: f64) -> u32 {
@@ -398,7 +396,6 @@ impl HerbParams {
                 abaxial_share: c.abaxial_conductance_share.value,
             },
             capacity_floor: c.leaf_capacity_floor.value,
-            ftsw_conductance: c.ftsw_threshold.value,
             ftsw_expansion: c.ftsw_expansion_threshold.value,
             seed_mass: GramsDM(t.seed_mass),
             seed_carbon_fraction: c.seed_carbon_fraction.value,
@@ -486,8 +483,21 @@ impl HerbParams {
             thickening: ThickeningParams::new(s),
             feedback_onset: c.reserve_feedback_onset.value,
             feedback_full: c.reserve_feedback_full.value,
-            uptake_rate: M2PerHour(c.root_uptake_rate.value),
-            uptake_max: KgPerMH(c.root_uptake_max.value),
+            hydraulics: HydraulicParams {
+                root_radial_young: c.root_radial_conductivity.value,
+                root_radial_thickened: c.root_radial_conductivity_thickened.value,
+                root_axial_tip: c.root_axial_conductance_tip.value,
+                root_axial_tap: c.root_axial_conductance_tap.value,
+                root_axial_basal: c.root_axial_conductance_basal.value,
+                root_axial_maturation: c.root_axial_maturation.value * CM,
+                stem_conductivity: c.stem_xylem_conductivity.value,
+                xylem_fraction: c.xylem_area_fraction.value,
+                leaf_conductance: c.leaf_hydraulic_conductance.value,
+                tuzet_sensitivity: c.tuzet_sensitivity.value,
+                tuzet_reference: MPa(c.tuzet_reference.value),
+                turgor_loss: MPa(c.turgor_loss_point.value),
+                turgor_full: MPa(c.turgor_full.value),
+            },
         }
     }
 

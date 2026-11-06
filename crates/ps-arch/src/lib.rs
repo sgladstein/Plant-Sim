@@ -16,6 +16,7 @@
 
 pub mod geometry;
 pub mod grass;
+mod hydraulics;
 pub mod nitrogen;
 pub mod params;
 mod roots;
@@ -33,7 +34,7 @@ use ps_physio::classes::{REFERENCE_HEIGHT, Reference};
 use ps_physio::energy::{self, Air, Site};
 use ps_physio::{ClassTable, Events, Phenology, PhysioError, Stage, leaf_capacity};
 use ps_rng::{Purpose, RngKey};
-use ps_soil::{RootCells, SoilError, SoilGrid, Uptake, stress_factor};
+use ps_soil::{RootCells, SoilError, SoilGrid, Uptake};
 use ps_species::{Species, Traits};
 use ps_units::{
     Celsius, DegreeDays, GramsC, GramsDM, GramsN, Hours, KPa, KgWater, Meters, MolPerM2Day, Ppm,
@@ -44,6 +45,7 @@ use serde::{Deserialize, Serialize};
 
 pub use geometry::V3;
 pub use grass::GrassParams;
+pub use hydraulics::{RootSpan, STOMATAL_STEPS, WaterFlows, rhizosphere_factor, stomatal_step};
 pub use nitrogen::{NitrogenDay, NitrogenParams, PlantNitrogen};
 pub use params::{HerbParams, RootParams, ShadeSignal, VariationParams, scatter};
 pub use vine::{Climb, ClimbingParams, Support, Twine};
@@ -410,14 +412,29 @@ pub struct DayStats {
     /// Water taken from the soil today, which the plant transpires, kg.
     #[serde(default)]
     pub transpiration: f64,
-    /// Sum of the hourly expansion stress factors (water times nitrogen), for the
-    /// day's thickening (decision 0037).
+    /// Sum of the hourly nitrogen factors on expansion, for the day's thickening
+    /// (decision 0037; water stress on it is the predawn turgor below since R3b).
     #[serde(default)]
     pub stress_sum: f64,
     /// Carbon the roots exuded today, g C (R1b).
     #[serde(default)]
     pub exudation: f64,
+    /// Lowest hourly leaf-area-weighted mean leaf water potential today, `MPa` (R3b).
+    #[serde(default)]
+    pub leaf_psi_min: f64,
+    /// Mean leaf water potential after the hour ending at 05:00, `MPa` (R3b).
+    #[serde(default)]
+    pub leaf_psi_predawn: Option<f64>,
+    /// The root zone's soil water potential then, `MPa` (R3b).
+    #[serde(default)]
+    pub soil_psi_predawn: Option<f64>,
+    /// The leaves' mean turgor then (R3b): the water factor on the day's thickening.
+    #[serde(default)]
+    pub turgor_predawn: Option<f64>,
 }
+
+/// The hour (04:00 to 05:00) after which the predawn water potentials are read.
+pub const PREDAWN_HOUR: usize = 4;
 
 fn lowest() -> f64 {
     f64::MIN
@@ -425,26 +442,6 @@ fn lowest() -> f64 {
 
 fn one() -> f64 {
     1.0
-}
-
-/// Next hour's water supply factor on stomatal conductance (R2a, issue #116): this
-/// hour's factor `g` times what the roots could deliver over what the leaves asked for,
-/// at most 1. Transpiration scales about in proportion to conductance, so this is the
-/// factor at which the last hour's demand would have been met; a one-hour lag, as
-/// CROPGRO's SWFAC is a one-day lag. What the roots could deliver is the actual uptake
-/// when some demand went unmet (other plants may have shared the cells), else the
-/// roots' capacity. With no demand (night) the factor resets to 1.
-pub(crate) fn supply_factor(g: f64, u: &Uptake) -> f64 {
-    let demand = (u.actual + u.shortfall).0;
-    if demand <= 1e-12 {
-        return 1.0;
-    }
-    let met = if u.shortfall.0 > 1e-12 * demand {
-        u.actual.0
-    } else {
-        u.capacity.0.max(u.actual.0)
-    };
-    (g * met / demand).clamp(0.0, 1.0)
 }
 
 impl Default for DayStats {
@@ -462,6 +459,10 @@ impl Default for DayStats {
             transpiration: 0.0,
             stress_sum: 0.0,
             exudation: 0.0,
+            leaf_psi_min: 0.0,
+            leaf_psi_predawn: None,
+            soil_psi_predawn: None,
+            turgor_predawn: None,
         }
     }
 }
@@ -571,6 +572,21 @@ pub struct DayReport {
     /// Carbon the roots exuded today, g C (R1b).
     #[serde(default)]
     pub exudation: f64,
+    /// Leaf-area-weighted mean leaf water potential after the hour ending at 05:00,
+    /// `MPa`; 0 without leaves (R3b).
+    #[serde(default)]
+    pub leaf_psi_predawn: f64,
+    /// The root zone's soil water potential then (weighted by each root cell's radial
+    /// conductance), `MPa` (R3b).
+    #[serde(default)]
+    pub soil_psi_predawn: f64,
+    /// Lowest hourly mean leaf water potential of the day, `MPa` (R3b).
+    #[serde(default)]
+    pub leaf_psi_min: f64,
+    /// The leaves' mean turgor after the hour ending at 05:00, 0 to 1; 1 without leaves
+    /// (R3b). How much water stress the plant carries through the night.
+    #[serde(default = "one")]
+    pub leaf_turgor_predawn: f64,
 }
 
 /// What sets one plant apart from its siblings at sowing (decision 0027): the seed it
@@ -682,6 +698,15 @@ pub struct Plant {
     pub root_types_started: Vec<bool>,
     /// Root length per soil cell, rebuilt daily.
     pub roots: RootCells,
+    /// Each root organ's length per soil cell, rebuilt daily with [`Plant::roots`]: the
+    /// radial links of the water network (R3b, decision 0044).
+    #[serde(default)]
+    pub root_spans: Vec<RootSpan>,
+    /// Each organ's water potential after the last hour's network solve, by organ
+    /// index (pressure, without gravity; R3b): the next hour's stomata and expansion
+    /// read it. Empty before the first solve.
+    #[serde(default)]
+    pub water_potential: Vec<ps_units::MPa>,
     /// Organ base and tip positions, rebuilt daily.
     pub positions: Vec<(V3, V3)>,
     /// Hours the seed has spent moist and warm enough to germinate.
@@ -717,10 +742,12 @@ pub struct Plant {
     pub shortfall: KgWater,
     /// Current FTSW.
     pub ftsw: f64,
-    /// Stress factors on conductance and expansion.
+    /// The stomatal factor (Tuzet, from the last hour's mean leaf potential, in steps of
+    /// 1/50) and the leaves' mean turgor (R3b, decision 0044).
     pub stress: (f64, f64),
-    /// Water supply factor on stomatal conductance, from the last hour's uptake: the
-    /// share of the potential demand the roots could meet (R2a, issue #116).
+    /// Water supply factor on stomatal conductance from the last hour's uptake (R2a,
+    /// issue #116). Unused since the water network (R3b, decision 0044): kept so older
+    /// saves load.
     #[serde(default = "one")]
     pub supply: f64,
     /// Share of the expanding shoot's carbon demand met yesterday, the factor on
@@ -753,6 +780,13 @@ pub struct Plant {
     /// hourly calls; empty at the daily boundary).
     #[serde(skip)]
     income: Vec<GramsC>,
+    /// This hour's transpiration per organ (scratch between the demand and the network
+    /// solve; R3b).
+    #[serde(skip)]
+    leaf_water: Vec<KgWater>,
+    /// The root zone's soil water potential at the last solve (scratch; R3b).
+    #[serde(skip)]
+    root_zone_potential: ps_units::MPa,
     #[serde(skip)]
     sky: Vec<SkySector>,
 }
@@ -973,6 +1007,8 @@ impl Plant {
             root_axes: Vec::new(),
             root_types_started: vec![false; n_roots],
             roots: RootCells::default(),
+            root_spans: Vec::new(),
+            water_potential: Vec::new(),
             positions: Vec::new(),
             germination_hours: 0,
             day: 0,
@@ -997,6 +1033,8 @@ impl Plant {
             soil_means: None,
             stress: (1.0, 1.0),
             income: Vec::new(),
+            leaf_water: Vec::new(),
+            root_zone_potential: ps_units::MPa(0.0),
             sky: ps_light::sky_sectors().to_vec(),
         };
         p.positions = geometry::layout(&p.arena, &p.meta, p.collar_position);
@@ -1079,8 +1117,11 @@ impl Plant {
         Ok(self.water_demand_with(ctx, &table))
     }
 
-    /// The first part of [`Plant::water_demand`]: this hour's FTSW over the roots and
-    /// the stress factors.
+    /// The first part of [`Plant::water_demand`], hourly step 5: this hour's FTSW over
+    /// the roots (for partitioning, pod set and fixation), and the stress factors from
+    /// the last hour's water potentials (R3b, decision 0044): the Tuzet factor of the
+    /// leaves' mean potential on stomata, rounded to [`STOMATAL_STEPS`], and the
+    /// leaves' mean turgor (each organ's own turgor scales its expansion).
     ///
     /// # Errors
     /// [`ArchError::Soil`] if the root list does not fit the soil.
@@ -1090,11 +1131,10 @@ impl Plant {
         } else {
             soil.ftsw(&self.roots)?
         };
-        let hp = &self.params;
-        self.stress = (
-            stress_factor(self.ftsw, hp.ftsw_conductance) * self.supply,
-            stress_factor(self.ftsw, hp.ftsw_expansion),
-        );
+        self.stress = match self.leaf_water_status() {
+            Some((psi, turgor)) => (stomatal_step(psi, &self.params.hydraulics), turgor),
+            None => (1.0, 1.0),
+        };
         Ok(())
     }
 
@@ -1142,6 +1182,8 @@ impl Plant {
         let hp = &self.params;
         self.income.clear();
         self.income.resize(self.arena.len(), GramsC(0.0));
+        self.leaf_water.clear();
+        self.leaf_water.resize(self.arena.len(), KgWater(0.0));
         let leaves: Vec<OrganId> = self
             .arena
             .alive_of(OrganKind::Leaf)
@@ -1236,7 +1278,9 @@ impl Plant {
                 self.today.gross_lost += (1.0 - fb) * gross * area;
                 self.income[i] = UmolPerM2S(a_net).carbon_per_hour(ps_units::M2(area));
                 self.today.assimilation += self.income[i].0;
-                water += e * area * 3600.0 * KG_PER_MOL_WATER;
+                let w = e * area * 3600.0 * KG_PER_MOL_WATER;
+                self.leaf_water[i] = KgWater(w);
+                water += w;
             }
         }
         KgWater(water)
@@ -1301,17 +1345,6 @@ impl Plant {
             .collect()
     }
 
-    /// The plant's roots, for the world's joint uptake.
-    #[must_use]
-    pub fn uptake_request(&self, demand: KgWater) -> ps_soil::PlantUptake<'_> {
-        ps_soil::PlantUptake {
-            demand,
-            roots: &self.roots,
-            rate: self.params.uptake_rate,
-            max_per_length: self.params.uptake_max,
-        }
-    }
-
     /// Hourly steps 8 to 12 (allocation), plus germination and thermal time. `uptake`
     /// is this plant's share of the joint uptake, for the shortfall log.
     ///
@@ -1343,7 +1376,6 @@ impl Plant {
         if let Some(u) = uptake {
             self.shortfall += u.shortfall;
             self.today.transpiration += u.actual.0;
-            self.supply = supply_factor(self.supply, u);
         }
         let seed_t = Self::soil_temperature(soil, self.collar_position[2]);
         // Germination (§3.10): hours with the seed cell above the FTSW threshold and
@@ -1379,7 +1411,10 @@ impl Plant {
         // Nodules pay for the hour's fixation first (decision 0020).
         self.fix_hour();
         let respiring = self.phenology.stage != Stage::Mature;
-        let stress = self.stress.1 * self.nitrogen.status;
+        // Water acts on each expanding organ through its own turgor (R3b, decision
+        // 0044); nitrogen on all of them alike (decision 0020).
+        let stress = self.nitrogen.status;
+        let expansion = self.expansion_factors();
         let (flows, lens_temps) = match lens {
             Some(l) => (Some(&mut l.phloem_import), Some(&mut l.temperature)),
             None => (None, None),
@@ -1392,8 +1427,9 @@ impl Plant {
             &HourInputs {
                 temperature: &temps,
                 income: &self.income,
-                ftsw: self.ftsw.min(self.supply),
+                ftsw: self.ftsw.min(self.stress.0),
                 stress,
+                expansion: &expansion,
                 respiring,
                 n_floor: Some(&self.params.nitrogen.growth_floor),
                 secondary: &self.wood_potential,
@@ -1420,11 +1456,21 @@ impl Plant {
         let dt = self.params.temperature.cardinal.hourly(t_plant);
         self.phenology.accumulate(dt);
         let emerged = self.emerged();
+        let leaf_status = self.leaf_water_status();
+        let zone = self.root_zone_potential.0;
         let d = &mut self.today;
         d.hours += 1;
         d.exudation += rep.exudation.0;
         d.t_sum += wx.t_air.0;
         d.stress_sum += stress;
+        if let Some((psi, turgor)) = leaf_status {
+            d.leaf_psi_min = d.leaf_psi_min.min(psi.0);
+            if ctx.hour == PREDAWN_HOUR {
+                d.leaf_psi_predawn = Some(psi.0);
+                d.soil_psi_predawn = Some(zone);
+                d.turgor_predawn = Some(turgor);
+            }
+        }
         d.t_min = d.t_min.min(wx.t_air.0);
         d.t_max = d.t_max.max(wx.t_air.0);
         d.ftsw_min = d.ftsw_min.min(self.ftsw);
@@ -1516,6 +1562,7 @@ impl Plant {
         // 6. Light geometry, root cells, nitrogen, expansion records.
         self.positions = geometry::layout(&self.arena, &self.meta, self.collar_position);
         self.roots = geometry::root_cells(&self.arena, &self.positions, soil);
+        self.root_spans = geometry::root_spans(&self.arena, &self.positions, soil);
         self.set_root_clock(soil);
         Ok(())
     }
@@ -2034,6 +2081,10 @@ impl Plant {
             stem_structural_mass: mass(OrganKind::Internode),
             root_structural_mass: mass(OrganKind::Root),
             exudation: self.today.exudation,
+            leaf_psi_predawn: self.today.leaf_psi_predawn.unwrap_or(0.0),
+            soil_psi_predawn: self.today.soil_psi_predawn.unwrap_or(0.0),
+            leaf_psi_min: self.today.leaf_psi_min,
+            leaf_turgor_predawn: self.today.turgor_predawn.unwrap_or(1.0),
         }
     }
 }

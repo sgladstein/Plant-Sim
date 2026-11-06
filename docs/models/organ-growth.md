@@ -56,8 +56,10 @@ the organ's reserve (carbon-allocation card):
   and `L` includes a lateral cohort's multiplicity. The rate `½ ḋ(age) · k(x)` is read
   at the daily step for each living segment (`Plant::set_wood_rates`).
 - `f_T` is the expansion temperature multiplier at the mean air temperature of the day
-  just ended (the soil layers' daily mean follows it), `s` that day's mean expansion
-  stress factor (water times nitrogen) times the share of the expanding shoot's carbon
+  just ended (the soil layers' daily mean follows it), `s` that day's mean nitrogen
+  factor on expansion times the leaves' predawn turgor (04:00 to 05:00; R3b, decision
+  0044: stems and roots thicken mostly at night, when they rehydrate, so a well-watered
+  plant's midday turgor dip does not slow them) times the share of the expanding shoot's carbon
   demand that was met that day (leaves and internodes, `Plant::carbon_met`, R2a,
   decision 0037): wood is the first sink to yield when carbon is short. Nothing
   thickens before germination, after maturity, in dead organs, or in a species with

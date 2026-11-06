@@ -9,5 +9,5 @@ Challenge(
   scenario: "challenges/thirsty_summer",
   score: (metric: PeakSum("pods"), label: "pods", higher_is_better: true),
   rules: (allowed: [Water, Harvest], water_budget: Some(6.0)),
-  medals: (bronze: 5.0, silver: 7.0, gold: 10.0),
+  medals: (bronze: 5.0, silver: 7.0, gold: 9.0),
 )

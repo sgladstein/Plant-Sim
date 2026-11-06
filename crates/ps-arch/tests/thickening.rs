@@ -47,7 +47,7 @@ fn run(species: &str, days: u32, mut after_day: impl FnMut(u32, &Plant)) -> Plan
             co2: Ppm(420.0),
             patm: KPa(101.3),
         };
-        let demand = plant.water_demand(&ctx, &soil).unwrap();
+        plant.water_demand(&ctx, &soil).unwrap();
         let lai = plant.report().leaf_area / soil.surface_area().max(1e-9);
         soil.step_hour(&SoilHour {
             water_in: Millimeters(0.0),
@@ -55,7 +55,13 @@ fn run(species: &str, days: u32, mut after_day: impl FnMut(u32, &Plant)) -> Plan
             t_air: h.t_air,
             strip: None,
         });
-        let uptake = soil.take_up(&[plant.uptake_request(demand)]).unwrap();
+        let flows = plant.water_flows(&soil);
+        let uptake = soil
+            .take_flows(&[ps_soil::PlantFlows {
+                demand: flows.demand,
+                flows: &flows.flows,
+            }])
+            .unwrap();
         plant.grow_hour(&ctx, &soil, uptake.plants.first()).unwrap();
         if tick % 24 == 23 {
             let mut sun = [None; 24];

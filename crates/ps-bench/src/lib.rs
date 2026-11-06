@@ -46,7 +46,7 @@ pub fn plot() -> SoilGrid {
     SoilGrid::new_box(60, 60, 20, Meters(0.05), Texture::Loam, Celsius(15.0)).expect("valid plot")
 }
 
-/// Sparse root lists (the `ftsw` and `take_up` input) for `plants` plants on a grid:
+/// Sparse root lists (the `ftsw` and uptake bench input) for `plants` plants on a grid:
 /// plant `p` has 0.3 m of root in each cell of its own 30 cm × 30 cm × 50 cm block,
 /// laid out 6 × 5 across a 60-cell-wide plot.
 #[must_use]

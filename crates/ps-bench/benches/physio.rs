@@ -138,6 +138,7 @@ fn physio(c: &mut Criterion) {
                         income: &income,
                         ftsw: 1.0,
                         stress: 1.0,
+                        expansion: &[],
                         respiring: true,
                         n_floor: None,
                         secondary: &[],

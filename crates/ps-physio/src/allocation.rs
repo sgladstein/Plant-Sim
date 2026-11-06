@@ -312,9 +312,12 @@ pub struct HourInputs<'a> {
     pub income: &'a [GramsC],
     /// Plant FTSW, for the root priority.
     pub ftsw: f64,
-    /// Plant water stress factor, for expansion (the caller multiplies in the
-    /// nitrogen factor; decision 0020).
+    /// Plant-wide factor on expansion (nitrogen, decision 0020; before R3b also the
+    /// FTSW water factor).
     pub stress: f64,
+    /// Each organ's own factor on expansion this hour, by organ id: its turgor (R3b,
+    /// decision 0044); empty, or an id past its end, for 1.
+    pub expansion: &'a [f64],
     /// Whether organs pay maintenance (false once the annual has matured and its
     /// tissue is dry; decision 0013).
     pub respiring: bool,
@@ -692,7 +695,8 @@ pub fn hourly_recording(
         let i = id.index();
         let dt = temp.cardinal.hourly(t_of(id));
         arena.thermal_age[i] += dt;
-        let clock = inp.clock.get(i).copied().unwrap_or(1.0);
+        let clock = inp.clock.get(i).copied().unwrap_or(1.0)
+            * inp.expansion.get(i).copied().unwrap_or(1.0).clamp(0.0, 1.0);
         dt_exp[i] = DegreeDays(dt.0 * temp.growth.factor(t_of(id)) * clock);
         arena.expansion_age[i] += dt_exp[i];
     }

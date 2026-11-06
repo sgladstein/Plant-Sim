@@ -3,11 +3,14 @@
 //! Each pressure is a 0-to-1 shortfall read from the daily table against the species'
 //! own thresholds, so the debrief says what the model did, not a separate opinion:
 //!
-//! - **Water:** the share of the day's transpiration demand the roots could not
-//!   supply, `shortfall / (transpiration + shortfall)`; while flowers are open, at
-//!   least `1 − FTSW / drought_abortion_ftsw`, the soil-water deficit that aborts
-//!   flowers in the model (read at the end of the day, where the model takes the day's
-//!   minimum, so a little milder).
+//! - **Water:** one minus the leaves' predawn turgor (R3b, decision 0044): how much
+//!   water stress the plant carries through the night, which slows its stomata and its
+//!   growth the next day; at least the share of the day's transpiration demand the
+//!   soil could not supply, `shortfall / (transpiration + shortfall)`; and while
+//!   flowers are open, at least `1 − FTSW / drought_abortion_ftsw`, the soil-water
+//!   deficit that aborts flowers in the model (read at the end of the day, where the
+//!   model takes the day's minimum, so a little milder). A midday turgor dip in wet
+//!   soil is not a pressure: the plant grows it back that night.
 //! - **Heat** and **cold:** while any flower is open, one minus the model's pod-set
 //!   response at the day's peak temperature (the quadratic ramps of ps-arch
 //!   `pod_set_temperature`), since that is what costs beans their pods. Otherwise one
@@ -228,6 +231,7 @@ fn day_pressure(row: &DayRow, bloom: bool, temps: &Temps, full_sun: f64) -> [f64
     } else {
         0.0
     };
+    water = water.max(1.0 - r.leaf_turgor_predawn);
     if bloom && temps.abort_ftsw > 0.0 {
         water = water.max(1.0 - e.ftsw / temps.abort_ftsw);
     }

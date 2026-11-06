@@ -375,6 +375,17 @@ quantity!(
     "kg/m/h"
 );
 quantity!(
+    /// Water potential in megapascals (negative under suction; R3b).
+    MPa,
+    "MPa"
+);
+quantity!(
+    /// Hydraulic conductance, kg of water per hour per megapascal of water potential
+    /// difference (R3b).
+    KgPerHourMPa,
+    "kg/h/MPa"
+);
+quantity!(
     /// Angle in degrees.
     Degrees,
     "deg"
@@ -494,6 +505,22 @@ impl Meters {
     #[must_use]
     pub fn to_centimeters(self) -> Centimeters {
         Centimeters(self.0 * 100.0)
+    }
+}
+
+impl KPa {
+    /// The same pressure in megapascals.
+    #[must_use]
+    pub fn to_mpa(self) -> MPa {
+        MPa(self.0 * 1e-3)
+    }
+}
+
+impl MPa {
+    /// The same pressure in kilopascals.
+    #[must_use]
+    pub fn to_kpa(self) -> KPa {
+        KPa(self.0 * 1e3)
     }
 }
 
