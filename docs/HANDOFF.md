@@ -100,8 +100,9 @@ one at a time, with options and a recommendation.
   Don't tune "~" parameters on one seed. Main misses: thermal-time phenology, wheat
   stand height and yield,
   drought and heat seed size, shade height, nar_early, root_shoot_seed_fill.
-- **Speed (4 cores):** single pot ~2.2 ms per sim-day (budget 2), 30-bean plot about 23
-  to 25 ms over 90 days, under 20 over the first 60 (budget 20), wheat stand ~110 ms (no budget). Viewer on the GTX 1070, real sim,
+- **Speed (4 cores, model 0.19.0):** single pot ~3.5 ms per sim-day (budget 4), 30-bean plot
+  about 26 ms (budget 30); budgets re-baselined by the owner 2026-11-06 (decision 0039),
+  provisional until timed on the owner's PC. Wheat stand ~110 ms (no budget). Viewer on the GTX 1070, real sim,
   Vulkan uncapped at 2352x1325: 6.55 ms mean, p99 9.61 ms (f4bec25; budget 16.7).
   It predates the #72 lawn and #78 fuller plants, which are untimed.
 
@@ -302,7 +303,7 @@ a project folder that no longer exists; from now on put them in the repo: review
    step 3); the UI half is the viewer's. WP27 (leaf energy balance) is done (decision 0034).
    Then the realism specs R1 carbon sinks, R2 root system, R3 plant hydraulics, in that
    order (owner, 2026-11-05; `docs/research/realism-plan`), then M2 exit: 30 plants at 60 fps and
-   under 20 ms per sim-day, density plateau (still weak: -43% vs -70%).
+   under 30 ms per sim-day (decision 0039), density plateau (still weak: -43% vs -70%).
 4. M3 (WP28 to WP32): genome, pollination, breeding bench, trait discovery,
    challenges. Research round 2 has the genetics. WP28 is bound by decision 0023
    items 4 to 6 (light linkage, two-tier mutation 1e-3 QTL / 1e-5 named, a seed-colour
@@ -319,8 +320,9 @@ panel, model-card panel, assimilation and transpiration charts once the sim writ
 them to the daily rows); then the look follow-ups (leaf pose by age needs a sim change; plate view as a screenshot
 mode; canopy shade). Details in [handoff-viewer.md](handoff-viewer.md).
 
-**Performance:** profile the light fit after decision 0025; plot back under 20 ms;
-wheat after the owner's choice. Details in [perf/handoff.md](perf/handoff.md).
+**Performance:** bit-identical speedups only (decision 0039 re-baselined the budgets to
+4 ms pot and 30 ms plot); measure each realism step; time on the owner's PC when it is
+connected; wheat after the owner's choice. Details in [perf/handoff.md](perf/handoff.md).
 
 **Research:** WP27 leaf energy balance data; M3 genetics gaps (cM distances, seed-colour
 epistasis); weed competition for challenges. Details in [handoff/research.md](handoff/research.md).
