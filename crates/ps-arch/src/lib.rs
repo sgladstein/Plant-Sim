@@ -399,6 +399,9 @@ pub struct DayStats {
     /// day's thickening (decision 0037).
     #[serde(default)]
     pub stress_sum: f64,
+    /// Carbon the roots exuded today, g C (R1b).
+    #[serde(default)]
+    pub exudation: f64,
 }
 
 fn lowest() -> f64 {
@@ -443,6 +446,7 @@ impl Default for DayStats {
             assimilation: 0.0,
             transpiration: 0.0,
             stress_sum: 0.0,
+            exudation: 0.0,
         }
     }
 }
@@ -476,12 +480,12 @@ pub struct DayReport {
     pub lateral_cohorts: u32,
     /// Total living root length, m.
     pub root_length: f64,
-    /// Root dry mass, g.
+    /// Living root dry mass, structure plus starch, g (starch since R1b).
     pub root_mass: f64,
-    /// Total living structural dry mass, g.
+    /// Total living dry mass, structure plus starch, g (starch since R1b).
     pub dry_mass: f64,
-    /// Structural dry mass ever built, living or shed, g (the plant's total
-    /// production, for comparison with harvested totals).
+    /// Structural dry mass ever built, living or shed, plus the living starch, g (the
+    /// plant's total production, for comparison with harvested totals).
     pub total_dry_mass: f64,
     /// Share of today's potential gross assimilation lost to the sink feedback
     /// (decision 0013 diagnostic: above about 0.2 the plant lacks sinks).
@@ -490,7 +494,8 @@ pub struct DayReport {
     pub fruit_mass: f64,
     /// Living leaf blade and petiole dry mass (unifoliates and trifoliates), g.
     pub leaf_mass: f64,
-    /// Living stem dry mass (internodes, the hypocotyl included), g.
+    /// Living stem dry mass (internodes, the hypocotyl included), structure plus
+    /// starch, g (starch since R1b).
     pub stem_mass: f64,
     /// Seed dry mass in pods, g.
     pub seed_mass: f64,
@@ -539,6 +544,18 @@ pub struct DayReport {
     /// the shortfall).
     #[serde(default)]
     pub transpiration: f64,
+    /// Starch in the living stems and main roots, as dry mass, g (R1b).
+    #[serde(default)]
+    pub storage_mass: f64,
+    /// Living stem structural dry mass, g (`stem_mass` before R1b).
+    #[serde(default)]
+    pub stem_structural_mass: f64,
+    /// Living root structural dry mass, g (`root_mass` before R1b).
+    #[serde(default)]
+    pub root_structural_mass: f64,
+    /// Carbon the roots exuded today, g C (R1b).
+    #[serde(default)]
+    pub exudation: f64,
 }
 
 /// What sets one plant apart from its siblings at sowing (decision 0027): the seed it
@@ -1352,6 +1369,7 @@ impl Plant {
                 respiring,
                 n_floor: Some(&self.params.nitrogen.growth_floor),
                 secondary: &self.wood_potential,
+                filling: self.phenology.stage == Stage::SeedFill,
             },
             &mut self.ledger,
             flows,
@@ -1374,6 +1392,7 @@ impl Plant {
         let emerged = self.emerged();
         let d = &mut self.today;
         d.hours += 1;
+        d.exudation += rep.exudation.0;
         d.t_sum += wx.t_air.0;
         d.stress_sum += stress;
         d.t_min = d.t_min.min(wx.t_air.0);
@@ -1812,6 +1831,11 @@ impl Plant {
         let a = &self.arena;
         let alive = |k: OrganKind| a.alive_of(k);
         let mass = |k: OrganKind| a.total_structural(k).0;
+        // Starch as dry mass (R1b): stores hold carbon at the species carbon fraction.
+        let cf = self.params.carbon.carbon_fraction;
+        let starch = |k: OrganKind| alive(k).map(|id| a.storage(id).0).sum::<f64>() / cf;
+        let stem_starch = starch(OrganKind::Internode);
+        let root_starch = starch(OrganKind::Root);
         let height = a
             .alive_ids()
             .filter(|id| a.kind[id.index()] != OrganKind::Root)
@@ -1858,9 +1882,13 @@ impl Plant {
             )
             .unwrap_or(0),
             root_length,
-            root_mass: mass(OrganKind::Root),
-            dry_mass: a.alive_ids().map(|id| a.structural(id).0).sum(),
-            total_dry_mass: a.ids().map(|id| a.structural(id).0).sum(),
+            root_mass: mass(OrganKind::Root) + root_starch,
+            dry_mass: a.alive_ids().map(|id| a.structural(id).0).sum::<f64>()
+                + stem_starch
+                + root_starch,
+            total_dry_mass: a.ids().map(|id| a.structural(id).0).sum::<f64>()
+                + stem_starch
+                + root_starch,
             feedback_loss: if self.today.gross_potential > 0.0 {
                 self.today.gross_lost / self.today.gross_potential
             } else {
@@ -1868,7 +1896,7 @@ impl Plant {
             },
             fruit_mass: mass(OrganKind::Pod) + mass(OrganKind::SeedInPod),
             leaf_mass: mass(OrganKind::Leaf),
-            stem_mass: mass(OrganKind::Internode),
+            stem_mass: mass(OrganKind::Internode) + stem_starch,
             seed_mass: mass(OrganKind::SeedInPod),
             height,
             shortfall: self.shortfall.0,
@@ -1889,6 +1917,10 @@ impl Plant {
             tap_root_diameter: self.tap_root_diameter(TAP_ROOT_DEPTH),
             fine_root_length,
             transpiration: self.today.transpiration,
+            storage_mass: stem_starch + root_starch,
+            stem_structural_mass: mass(OrganKind::Internode),
+            root_structural_mass: mass(OrganKind::Root),
+            exudation: self.today.exudation,
         }
     }
 }

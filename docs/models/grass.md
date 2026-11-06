@@ -93,6 +93,11 @@ Code: `ps_arch::grass`. Decision 0022.
 ## Known limits
 - Grasses have no cambium, so stems and roots never thicken (`secondary_growth` 0 in
   the species file; decision 0036). A culm's width is its primary allometry's.
+- Stem water-soluble carbohydrates are the carbon allocation card's starch store
+  (R1b, decision 0040): finished internodes fill to 0.28 of their structure from
+  surplus sugar and give it back through grain fill (0.08 a day). Wheat roots store
+  nothing. A spaced plant stores about 0.4 g at its peak; the store's fill and release
+  are the bean's guesses, not fitted to wheat stem data.
 - A dense stand stays too short (0.56 m against 0.7 to 1.0) and yields too little. Its
   culms elongate while the plants are short of sugar, and the sim does not yet treat
   the growing stem as the main sink at jointing.

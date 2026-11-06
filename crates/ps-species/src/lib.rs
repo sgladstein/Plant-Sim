@@ -20,7 +20,7 @@ use ps_rng::{Purpose, RngKey};
 use serde::{Deserialize, Serialize};
 
 pub use schema::{
-    Climbing, Constants, Grass, Nitrogen, Phenology, SCHEMA, Spec, Thickening, Variation,
+    Climbing, Constants, Grass, Nitrogen, Phenology, SCHEMA, Spec, Storage, Thickening, Variation,
 };
 pub use traits::{TRAIT_KEYS, Traits};
 
@@ -443,6 +443,8 @@ pub struct Species {
     /// Root diameter growth rate by root segment age at optimum temperature, before
     /// each root type's [`RootType::secondary_factor`] (schema 12, R1a).
     pub root_secondary_rate: ParamTable,
+    /// The starch store and root exudation (schema 14, R1b, decision 0040).
+    pub storage: Storage,
     /// The grass shoot (schema 4, WP23); present exactly when the growth form is
     /// `Grass`.
     #[serde(default)]
@@ -630,6 +632,10 @@ impl Species {
             check_param(&format!("thickening.{}", spec.key), spec.unit, p)?;
         }
         self.validate_thickening()?;
+        for (spec, p) in self.storage.entries() {
+            check_param(&format!("storage.{}", spec.key), spec.unit, p)?;
+        }
+        self.validate_storage()?;
         self.validate_development()?;
         self.validate_energy()?;
         self.validate_climbing()?;
@@ -683,6 +689,53 @@ impl Species {
                 "-",
                 &r.secondary_factor,
             )?;
+        }
+        Ok(())
+    }
+
+    /// Storage (R1b): every value is 0 or more, the hourly rates and the exudation
+    /// share are at most 1, the store releases below where it refills, and the
+    /// mining-first flag is 0 or 1.
+    fn validate_storage(&self) -> Result<(), SpeciesError> {
+        let s = &self.storage;
+        for (key, v, max) in [
+            ("storage_capacity", s.storage_capacity.value, f64::INFINITY),
+            (
+                "root_storage_capacity",
+                s.root_storage_capacity.value,
+                f64::INFINITY,
+            ),
+            ("storage_on", s.storage_on.value, f64::INFINITY),
+            ("storage_off", s.storage_off.value, f64::INFINITY),
+            ("storage_refill_rate", s.storage_refill_rate.value, 1.0),
+            ("storage_release_rate", s.storage_release_rate.value, 1.0),
+            (
+                "storage_fill_release_rate",
+                s.storage_fill_release_rate.value,
+                24.0,
+            ),
+            ("exudation_fraction", s.exudation_fraction.value, 1.0),
+        ] {
+            // NaN fails too.
+            if !(v >= 0.0 && v <= max) {
+                return Err(SpeciesError::Value {
+                    at: format!("storage.{key}"),
+                    why: format!("must lie within [0, {max}]"),
+                });
+            }
+        }
+        if s.storage_off.value > s.storage_on.value {
+            return Err(SpeciesError::Value {
+                at: "storage.storage_off".into(),
+                why: "must not exceed storage_on".into(),
+            });
+        }
+        let flag = self.nitrogen.seed_fill_mining_first.value;
+        if !(flag.abs() < f64::EPSILON || (flag - 1.0).abs() < f64::EPSILON) {
+            return Err(SpeciesError::Value {
+                at: "nitrogen.seed_fill_mining_first".into(),
+                why: "must be 0 or 1".into(),
+            });
         }
         Ok(())
     }
@@ -1184,6 +1237,14 @@ impl Species {
         for (spec, p) in self.thickening.entries() {
             out.push((
                 format!("thickening.{}", spec.key),
+                p.value,
+                p.unit.clone(),
+                p.source.clone(),
+            ));
+        }
+        for (spec, p) in self.storage.entries() {
+            out.push((
+                format!("storage.{}", spec.key),
                 p.value,
                 p.unit.clone(),
                 p.source.clone(),
