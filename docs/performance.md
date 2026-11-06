@@ -243,7 +243,13 @@ Wall time, 4 cores, interleaved best of 3, in a container that ran 0.19.0's plot
 sim-day; plot_30_beans 32.9 to 38.2 ms, and 37.2 to 38.5 ms with the edge-list fix
 (main 39.4 to 41.2 in the same runs). Scaled to the earlier container the plot is
 about 30 ms and the pot about 3.5 to 4 ms: both at the edge of the decision 0039
-budgets. Timing on the owner's PC settles it.
+budgets.
+
+On the owner's PC (i5-6600K, 4 cores, Windows 10, Balanced power plan, rustc 1.97.1,
+2026-11-06), three runs each of best of 3 over 90 days: main 3a55343 single_pot 3.90
+to 3.94 ms per sim-day, plot_30_beans 33.3 to 33.7, two_pot_sun_shade 6.7; with the
+edge-list fix plot_30_beans 30.5 to 30.9 (about 8% faster there; runs within 1%).
+So the pot is just under its 4 ms budget and the plot just over its 30 ms.
 
 The extra cost is spread over the hourly per-organ loop in `allocation::hourly_recording`
 (about 700 instructions per organ per hour), the hourly wood build

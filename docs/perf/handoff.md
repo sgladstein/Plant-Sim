@@ -7,10 +7,10 @@ in docs/performance.md, and the STATUS perf line says where each budget stands.
 
 ## Budgets (decision 0039, re-baselined by the owner 2026-11-06)
 
-| Scope | Budget | State at model 0.19.0 (4-core cloud container) |
+| Scope | Budget | State at model 0.20.0 on the owner's PC (i5-6600K, 2026-11-06) |
 | --- | --- | --- |
-| One bush bean in a pot (M0) | under 4 ms per sim-day (was 2) | about 3.5 ms |
-| 30-bean plot (M2) | under 30 ms per sim-day (was 20) | about 26 ms |
+| One bush bean in a pot (M0) | under 4 ms per sim-day (was 2) | 3.9 ms |
+| 30-bean plot (M2) | under 30 ms per sim-day (was 20) | 30.7 ms with #132 (33.5 before) |
 | Viewer frame (M1) | under 16.7 ms on the owner's GTX 1070 at 2560 × 1440 | 6.55 ms mean, p99 9.61 (Vulkan uncapped, 2352 × 1325, real sim, f4bec25); re-time after #72 and #78 |
 
 The sim budgets are provisional until timed on the owner's PC. Big plots and
