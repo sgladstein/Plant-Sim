@@ -1,0 +1,12 @@
+// The heat challenge: pick the sowing date so bloom misses a forecast heat wave.
+Challenge(
+  schema: 1,
+  id: "heat_wave",
+  title: "Dodge the heat wave",
+  brief: "The forecast says a week of heat from day 55. Sow one bean any day up to day 40 and get the most pods by day 120.",
+  hint: "Heat during bloom kills pollen and young pods. In early summer a bean starts flowering about five to seven weeks after sowing.",
+  scenario: "challenges/heat_wave",
+  score: (metric: PeakSum("pods"), label: "pods", higher_is_better: true),
+  rules: (allowed: [Sow, Harvest], sow_window_days: Some((0, 40)), max_sowings: Some(1), sow_species: Some("bush_bean")),
+  medals: (bronze: 9.0, silver: 12.0, gold: 15.0),
+)

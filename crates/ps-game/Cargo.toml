@@ -1,0 +1,20 @@
+[package]
+name = "ps-game"
+description = "Challenges scored from the replay, and the run debrief (what held each plant back)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ps-world.workspace = true
+ps-species.workspace = true
+ps-physio.workspace = true
+ps-units.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+ron.workspace = true
+
+[lints]
+workspace = true

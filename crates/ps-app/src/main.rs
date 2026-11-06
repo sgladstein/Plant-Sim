@@ -30,6 +30,9 @@
 //! `--load DIR` continues from a save folder (one under `<captures>/saves`); the Save
 //! button writes them. `--experiment CARD` starts the experiment card `CARD` (an id under
 //! `data/experiments`) instead of `--scenario`; its notebook goes under `--captures`.
+//! `--challenge ID` starts challenge `ID` (under `data/challenges`) with its default plan,
+//! or sown on `--sow-day N`; at its last day the debrief card opens. `--challenges`
+//! opens the challenge list.
 //! `--card NAME` opens a model card in the side panel (for example `light` for
 //! `docs/models/light.md`).
 //! `--captures DIR` is where the Screenshot and Export CSV buttons write (default
@@ -59,6 +62,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod bench;
 mod breeding;
 mod capture;
+mod challenge;
 mod demo_source;
 mod display;
 mod experiment;
@@ -88,6 +92,9 @@ struct Options {
     inspect: Option<ps_view::Picked>,
     card: Option<String>,
     experiment: Option<String>,
+    challenge: Option<String>,
+    challenges: bool,
+    sow_day: Option<u32>,
     load: Option<PathBuf>,
     captures: PathBuf,
     timelapse: Option<PathBuf>,
@@ -174,6 +181,9 @@ fn parse_args() -> Result<Options> {
         inspect: None,
         card: None,
         experiment: None,
+        challenge: None,
+        challenges: false,
+        sow_day: None,
         load: None,
         captures: PathBuf::from("captures"),
         timelapse: None,
@@ -207,8 +217,16 @@ fn parse_args() -> Result<Options> {
             "--lens" => o.lens = parse_lens(&value()?)?,
             "--charts" => o.charts = true,
             "--breeding" => o.breeding = true,
+            "--challenges" => o.challenges = true,
             "--inspect" => o.inspect = Some(parse_pick(&value()?)?),
             "--experiment" => o.experiment = Some(value()?),
+            "--challenge" => o.challenge = Some(value()?),
+            "--sow-day" => {
+                o.sow_day = Some(anyhow::Context::context(
+                    value()?.parse::<u32>(),
+                    "--sow-day",
+                )?);
+            }
             "--load" => o.load = Some(PathBuf::from(value()?)),
             "--card" => {
                 let name = value()?;
@@ -361,6 +379,7 @@ fn main() -> Result<()> {
     if let Some((sim, data, scenario, ex)) = sim {
         let mut ui_tools = ps_ui::Tools {
             breeding: options.breeding,
+            challenges: options.challenges,
             ..ps_ui::Tools::default()
         };
         tools::init_new_run(&mut ui_tools.new_run, &data, &scenario, &options.scenario);
@@ -372,6 +391,24 @@ fn main() -> Result<()> {
             app.insert_resource(notebook);
         }
         app.insert_resource(ui_ex);
+        if let Some(id) = &options.challenge {
+            let mut ui_ch = ps_ui::Challenges {
+                rows: challenge::load_rows(&data, &options.captures),
+                start_day: options.day,
+                ..ps_ui::Challenges::default()
+            };
+            let i = ui_ch
+                .rows
+                .iter()
+                .position(|r| &r.id == id)
+                .ok_or_else(|| anyhow::anyhow!("--challenge: no challenge {id:?}"))?;
+            ui_ch.choose(i);
+            if let Some(d) = options.sow_day {
+                ui_ch.plan.sow_day = d;
+            }
+            ui_ch.start = true;
+            app.insert_resource(ui_ch);
+        }
         match breeding::Bench::load(&data, &options.captures) {
             Ok((bench, ui)) => {
                 app.insert_resource(bench)
@@ -403,8 +440,10 @@ fn main() -> Result<()> {
             Update,
             (
                 experiment::end_on_new_run,
+                challenge::end_on_new_run,
                 tools::new_run,
                 experiment::experiment,
+                challenge::challenge,
                 saves::save_load,
                 tools::apply_tools,
                 sim_source::drive,
