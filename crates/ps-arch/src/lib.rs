@@ -1387,6 +1387,7 @@ impl Plant {
                 n_floor: Some(&self.params.nitrogen.growth_floor),
                 secondary: &self.wood_potential,
                 filling: self.phenology.stage == Stage::SeedFill,
+                growing: self.phenology.stage < Stage::Mature,
             },
             &mut self.ledger,
             flows,

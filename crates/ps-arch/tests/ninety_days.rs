@@ -208,6 +208,18 @@ fn counts_hold_across_world_seeds() {
             (!(4..=30).contains(&last.pods)).then(|| format!("seed {seed}: pods {}", last.pods)),
         );
         pods.push(f64::from(last.pods));
+        // Nothing grows from maturity (decision 0042): the seeds keep the mass they had.
+        if let Some(m) = reports
+            .iter()
+            .find(|r| r.stage == Some(ps_physio::Stage::Mature))
+        {
+            bad.extend(((last.seed_mass - m.seed_mass).abs() > 1e-12).then(|| {
+                format!(
+                    "seed {seed}: seed mass {} at maturity, {} at the end",
+                    m.seed_mass, last.seed_mass
+                )
+            }));
+        }
     }
     // The §8.2 range (data/validation/targets.ron, pods_at_maturity) holds for the
     // mean over seeds, as the validation report reads it (decision 0026).

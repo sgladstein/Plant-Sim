@@ -85,6 +85,7 @@ fn run_hour(
             n_floor: None,
             secondary: &[],
             filling: false,
+            growing: true,
         },
         ledger,
     )
@@ -285,6 +286,7 @@ fn inputs_must_cover_every_organ() {
             n_floor: None,
             secondary: &[],
             filling: false,
+            growing: true,
         },
         &mut ledger,
     );
@@ -401,6 +403,7 @@ fn secondary_growth_is_a_low_priority_sink() {
         n_floor: None,
         secondary: &pot,
         filling: false,
+        growing: true,
     };
     let rep = allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
     // A large potential is limited by the priority share of the reserve above the
@@ -491,6 +494,7 @@ fn shedding_does_not_resorb_wood() {
         n_floor: None,
         secondary: &pot,
         filling: false,
+        growing: true,
     };
     allocation::hourly(&mut g, &a, &p, &temp(), &inp, &mut ledger).unwrap();
     let wood = g.secondary(i).0;
@@ -625,6 +629,7 @@ fn filling_empties_the_store() {
                 n_floor: None,
                 secondary: &[],
                 filling: true,
+                growing: true,
             },
             &mut ledger,
         )
@@ -643,4 +648,46 @@ fn filling_empties_the_store() {
     let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
     run_hour(&mut g, &none, &mut ledger, 20.0);
     assert!(g.storage(i).0.abs() < 1e-18);
+}
+
+/// R1d (decision 0042): from maturity nothing grows. The organs keep their mass, the
+/// reserve stays in the plant and the ledger stays closed.
+#[test]
+fn nothing_grows_after_maturity() {
+    let p = params();
+    let (mut g, ids) = plant(0.5);
+    let mut ledger = CarbonLedger::start(&g, p.carbon_fraction);
+    let temps = vec![Celsius(25.0); g.len()];
+    let income = vec![GramsC(0.0); g.len()];
+    let mass: Vec<f64> = ids.iter().map(|&id| g.structural(id).0).collect();
+    let reserve: f64 = ids.iter().map(|id| g.reserve[id.index()].0).sum();
+    for _ in 0..24 * 5 {
+        allocation::hourly(
+            &mut g,
+            &Allometry::generic_herb(),
+            &p,
+            &temp(),
+            &HourInputs {
+                temperature: &temps,
+                income: &income,
+                ftsw: 1.0,
+                stress: 1.0,
+                respiring: false,
+                n_floor: None,
+                secondary: &[],
+                filling: false,
+                growing: false,
+            },
+            &mut ledger,
+        )
+        .unwrap();
+    }
+    let after: Vec<f64> = ids.iter().map(|&id| g.structural(id).0).collect();
+    assert!(
+        mass.iter().zip(&after).all(|(a, b)| (a - b).abs() < 1e-15),
+        "{mass:?} -> {after:?}"
+    );
+    let left: f64 = ids.iter().map(|id| g.reserve[id.index()].0).sum();
+    assert!((left - reserve).abs() < 1e-12, "{reserve} -> {left}");
+    assert!(ledger.relative_residual(&g, p.carbon_fraction).abs() < 1e-9);
 }

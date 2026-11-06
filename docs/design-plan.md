@@ -140,6 +140,8 @@ From R1b (decision 0040), with no change to the step list: roots exude a share o
 
 From R1c (decision 0041), with no change to the step list: daily step 6 also casts rays from the tip of each growing shoot apex toward the next day's suns and the sky; in hourly step 3 each apex adds the hour's vector irradiance to what it has seen; and in daily step 3 a new internode turns toward that light before gravitropism.
 
+From R1d (decision 0042), with no change to the step list: from physiological maturity hourly step 12 grows nothing, so seeds stop filling at maturity.
+
 ### 3.3 Plant structure and organ state
 
 An MTG-like organ graph stored as structs-of-arrays indexed by integer ids, with parent pointers and per-node children lists kept in creation order so iteration is deterministic. Organ types: seed, cotyledon, internode, bud, leaf (blade plus petiole), root segment, flower, pod, seed-in-pod, and in M2 nodule. (Decision 0023: common bean twines, so there is no tendril organ; a twining internode carries its support and coil instead. `OrganKind::Tendril` stays unused until the next model bump removes it.)
