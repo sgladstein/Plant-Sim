@@ -1,6 +1,6 @@
 [package]
 name = "ps-soil"
-description = "3D bucket soil water grid: infiltration, drainage, redistribution, evaporation, temperature, uptake, FTSW"
+description = "3D soil water grid: infiltration, Darcy flow, pot drainage, evaporation, temperature, nitrogen, uptake"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

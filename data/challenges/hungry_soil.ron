@@ -8,7 +8,7 @@ Challenge(
   scenario: "challenges/hungry_soil",
   score: (metric: PeakSum("seed_mass_g"), label: "g of seed", higher_is_better: true),
   rules: (allowed: [Fertilize, Harvest], nitrogen_budget: Some(0.5)),
-  medals: (bronze: 5.0, silver: 7.0, gold: 7.9),
+  medals: (bronze: 6.0, silver: 8.0, gold: 9.0),
   seasons: 8,
   // Scored at the detailed water network, whatever the viewer shows (decision 0045).
   fidelity: Some(Locked(Detailed)),

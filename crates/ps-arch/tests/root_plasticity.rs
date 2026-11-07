@@ -67,15 +67,18 @@ fn run(setup: &Setup, plastic: bool, days: u32) -> (Plant, SoilGrid) {
     if !plastic {
         plant.params.root_plasticity = RootPlasticity::default();
     }
-    // Night watering of the west half: its own field-capacity deficit, mm over it.
-    let west_deficit = |soil: &SoilGrid| {
+    // Night watering of the columns west of `x1`: their own field-capacity deficit, mm
+    // over them.
+    let deficit = |soil: &SoilGrid, x1: usize| {
         let mut kg = 0.0;
-        for i in (0..soil.len()).filter(|&i| soil.is_active(i) && soil.cell_of(i).x < nx / 2) {
+        let mut columns = 0_usize;
+        for i in (0..soil.len()).filter(|&i| soil.is_active(i) && soil.cell_of(i).x < x1) {
             kg += (h.field_capacity - soil.theta(i)).max(0.0) * soil.cell_volume() * 1000.0;
+            columns += usize::from(soil.cell_of(i).z == 0);
         }
         #[allow(clippy::cast_precision_loss)]
-        let area = (nx / 2 * ny) as f64 * CELL * CELL;
-        Millimeters(kg / area)
+        let area = columns as f64 * CELL * CELL;
+        Millimeters(kg / area.max(1e-12))
     };
     for tick in 0..u64::from(days) * 24 {
         let w = *wx.at(Hours(tick)).unwrap();
@@ -90,12 +93,20 @@ fn run(setup: &Setup, plastic: bool, days: u32) -> (Plant, SoilGrid) {
         let lai = plant.report().leaf_area / soil.surface_area().max(1e-9);
         let strip =
             (matches!(setup, Setup::Split) && tick >= 15 * 24 && tick % 24 == 0).then(|| Strip {
-                water: west_deficit(&soil),
+                water: deficit(&soil, nx / 2),
                 x0: 0,
                 x1: nx / 2,
             });
+        // The patch pot is watered back to field capacity each night through its
+        // surface, so the water soaking in carries back down the nitrate the day's
+        // evaporation drew up (R5a).
+        let water_in = if matches!(setup, Setup::Patch(_)) && tick > 0 && tick % 24 == 0 {
+            deficit(&soil, nx)
+        } else {
+            Millimeters(0.0)
+        };
         soil.step_hour(&SoilHour {
-            water_in: Millimeters(0.0),
+            water_in,
             surface_radiation: WPerM2(w.global.0 * libm::exp(-0.5 * lai)),
             t_air: w.t_air,
             strip,
@@ -116,7 +127,7 @@ fn run(setup: &Setup, plastic: bool, days: u32) -> (Plant, SoilGrid) {
             }
             plant.nitrogen_alone(&mut soil, Hours(tick + 1)).unwrap();
             plant.day(&soil, &sun, Hours(tick + 1)).unwrap();
-            if matches!(setup, Setup::Patch(_)) || tick < 15 * 24 {
+            if matches!(setup, Setup::Split) && tick < 15 * 24 {
                 soil.fill_to(h.field_capacity);
             }
         }
@@ -161,9 +172,10 @@ fn a_split_pot_roots_more_in_its_wet_half() {
         z: 2,
     });
     assert!(soil_on.cell_ftsw(east) < 0.8, "{}", soil_on.cell_ftsw(east));
-    // 1.15 until R3b; the plant's roots now carry water into the drying half at night
+    // 1.15 until R3b; the plant's roots carry water into the drying half at night
     // (hydraulic redistribution, decision 0044), so that half dries more slowly and
-    // the rules act less: 1.14 on this seed.
+    // the rules act less: 1.14 on this seed at R3b; 1.94 since R5a (1.67 with the
+    // rules against 0.86 without, decision 0046).
     assert!(r_on > 1.1 * r_off, "{r_on} vs {r_off}");
 }
 
@@ -180,6 +192,7 @@ fn laterals_proliferate_in_a_nitrate_patch() {
     let (rich, soil_rich) = run(&Setup::Patch(10.0), true, 40);
     let (plain, soil_plain) = run(&Setup::Patch(1.0), true, 40);
     let (a, b) = (in_patch(&rich, &soil_rich), in_patch(&plain, &soil_plain));
+    // 9.37 m against 7.16 m since R5a (decision 0046).
     println!("lateral length in the patch: {a:.2} m against {b:.2} m");
     assert!(a > 1.2 * b, "{a} vs {b}");
 }

@@ -78,4 +78,8 @@ pub struct SoilLens {
     /// water content (R3a; `ps_soil::SoilGrid::layer_water_potentials`). A cell's own is
     /// `SoilGrid::water_potential`.
     pub layer_water_potential: Vec<KPa>,
+    /// Water ponded on the surface, waiting to soak in, mm over the soil's surface (R5a).
+    pub ponded_mm: f64,
+    /// Water standing in a pot's saucer, mm over the pot's surface (R5a); 0 without one.
+    pub saucer_mm: f64,
 }

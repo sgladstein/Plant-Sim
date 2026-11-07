@@ -133,6 +133,14 @@ fn run(split: bool, days: u32) -> Log {
     #[allow(clippy::cast_precision_loss)]
     let center = [nx as f64 * CELL * 0.5, ny as f64 * CELL * 0.5, -0.03];
     let mut plant = Plant::sow(&species, &traits, 7, 1, center, Hours(0)).unwrap();
+    // The pot's field-capacity deficit, mm over its surface.
+    let deficit = |soil: &SoilGrid| {
+        let kg: f64 = (0..soil.len())
+            .filter(|&i| soil.is_active(i))
+            .map(|i| (h.field_capacity - soil.theta(i)).max(0.0) * soil.cell_volume() * 1000.0)
+            .sum();
+        Millimeters(kg / soil.surface_area().max(1e-12))
+    };
     let west_deficit = |soil: &SoilGrid| {
         let mut kg = 0.0;
         for i in (0..soil.len()).filter(|&i| soil.is_active(i) && soil.cell_of(i).x < nx / 2) {
@@ -162,8 +170,15 @@ fn run(split: bool, days: u32) -> Log {
             x0: 0,
             x1: nx / 2,
         });
+        // Watered through the surface, so the water soaking in carries back down the
+        // nitrate the day's evaporation drew up (R5a).
+        let water_in = if tick > 0 && hour == 0 && (!split || tick < 20 * 24) {
+            deficit(&soil)
+        } else {
+            Millimeters(0.0)
+        };
         soil.step_hour(&SoilHour {
-            water_in: Millimeters(0.0),
+            water_in,
             surface_radiation: WPerM2(w.global.0 * libm::exp(-0.5 * lai)),
             t_air: w.t_air,
             strip,
@@ -202,9 +217,6 @@ fn run(split: bool, days: u32) -> Log {
             }
             plant.nitrogen_alone(&mut soil, Hours(tick + 1)).unwrap();
             plant.day(&soil, &sun, Hours(tick + 1)).unwrap();
-            if !split || tick < 20 * 24 {
-                soil.fill_to(h.field_capacity);
-            }
         }
     }
     log

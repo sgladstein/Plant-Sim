@@ -1,38 +1,46 @@
-//! Soil and water (design plan §3.6, §3.2 hourly steps 4, 5 and 7; WP5).
+//! Soil and water (design plan §3.6, §3.2 hourly steps 4, 5 and 7; WP5; water flow
+//! R5a).
 //!
-//! A 3D bucket model on a regular grid of cubic cells. Each active cell holds water as a
-//! mass (kg). Texture gives field capacity, wilting point and saturation by volume.
-//! Pots are masks on the grid; pot bottoms drain freely.
+//! A 3D grid of cubic cells. Each active cell holds water as a mass (kg). Texture gives
+//! field capacity, wilting point and saturation by volume, and a retention curve and a
+//! conductivity that turn a cell's water into a potential and into how easily water
+//! moves through it. Pots are masks on the grid.
 //!
 //! Hourly order inside [`SoilGrid::step_hour`] (step 4 of §3.2):
-//! 1. infiltration of rain and irrigation, filling each column from the top to field
-//!    capacity, then above it up to saturation; what does not fit runs off;
-//! 2. drainage: every cell's water above field capacity moves one cell down; the bottom
-//!    layer's excess leaves the grid;
+//! 1. infiltration of rain and irrigation, and of water ponded last hour: at most the
+//!    texture's saturated conductivity in an hour enters each column, filling it from
+//!    the top to field capacity, then above it up to saturation; the rest ponds on the
+//!    surface up to [`SoilGrid::pond_capacity`], and what does not fit runs off (R5a);
+//! 2. vertical flow: Darcy's law on the water potential and gravity in each column, the
+//!    Richards equation stepped once an hour ([`flow`]); the bottom drains freely in a
+//!    plot, through a seepage face in a pot with holes, not at all in a pot without, or
+//!    into a saucer that feeds it back ([`Drainage`]); nitrate moves with the water
+//!    (R5a, decision 0046);
 //! 3. lateral redistribution: 10% of the water difference to each horizontal neighbor
 //!    (none across a pot's divider); nitrate moves with that water at the concentration
 //!    of the cell it leaves, plus slow diffusion (R2b, decision 0043);
 //! 4. evaporation from the top layer only, reduced as it dries;
 //! 5. soil temperature by layer from lagged, damped air temperature;
 //! 6. nitrogen: mineralization and nitrification ([`nitrogen`]; nitrate also moves with
-//!    the drainage and lateral water of steps 2 and 3).
+//!    the vertical and lateral water of steps 2 and 3).
 //!
 //! Irrigation can water a strip of columns only ([`SoilHour::strip`]), and a pot can
 //! carry a watertight divider across its center ([`SoilGrid::set_divider`]): the
 //! split-root pot of R2b.
 //!
-//! Uptake (step 7) is [`SoilGrid::take_up`], one call per hour for every plant in the
-//! grid; FTSW and the stress factor (step 5) are [`SoilGrid::ftsw`] and
-//! [`stress_factor`]. Roots enter as sparse [`RootCells`] lists. Every flux is booked in a [`WaterLedger`];
-//! debug builds assert closure to 1e-9 relative.
+//! Uptake (step 7) is [`SoilGrid::take_flows`], one call per hour for every plant in the
+//! grid; FTSW (step 5) is [`SoilGrid::ftsw`]. Roots enter as sparse [`RootCells`]
+//! lists. Every flux is booked in a [`WaterLedger`], whose storage counts the ponded
+//! water and a saucer's; debug builds assert closure to 1e-9 relative.
 //!
 //! Water potential (R3a) is derived from the water content through each texture's
-//! [`Retention`] curve; nothing in the step reads it yet.
+//! [`Retention`] curve; the vertical flow and the plants' root networks read it.
 //!
 //! Model card: docs/models/soil-and-water.md.
 
 use ps_units::{Celsius, GramsN, KPa, KgWater, Meters, Millimeters, WPerM2};
 
+pub mod flow;
 pub mod nitrogen;
 pub mod retention;
 pub use nitrogen::{NitrogenForm, NitrogenLedger, NitrogenRequest, NitrogenUptake, SoilNitrogen};
@@ -64,6 +72,11 @@ pub const DAMPING_DEPTH_M: f64 = 0.10;
 /// which a cell's nitrate evens out, about 5.7e-10 m² s⁻¹: nitrate spreads about 5 cm
 /// in a month by diffusion alone.
 pub const NITRATE_DIFFUSION_FRACTION: f64 = 5.1e-3;
+/// Water a plot's surface holds before the rest runs off, mm ("~", R5a spec §3.2).
+pub const PLOT_POND_MM: f64 = 5.0;
+/// Water a pot holds above its soil before it spills, mm ("~": the 2 to 3 cm a pot is
+/// left unfilled below its rim for watering).
+pub const POT_POND_MM: f64 = 25.0;
 /// Relative conservation tolerance (CLAUDE.md).
 pub const CLOSURE_TOLERANCE: f64 = 1e-9;
 
@@ -158,6 +171,26 @@ pub struct Cell {
     pub z: usize,
 }
 
+/// How water leaves the bottom of a grid (R5a, decision 0046).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum Drainage {
+    /// The soil continues below the grid (a plot): water drains under gravity at the
+    /// bottom cells' conductivity and never comes back.
+    #[default]
+    Free,
+    /// A pot with holes: water leaves only while the soil at the base is saturated (a
+    /// seepage face), so a soaked pot keeps a wet layer at its bottom.
+    Holes,
+    /// A pot without holes: no water leaves.
+    NoHoles,
+    /// A pot with holes standing in a saucer: what drains out fills the saucer, which
+    /// feeds the bottom back while it holds water; past its depth it spills.
+    Saucer {
+        /// The saucer's depth.
+        depth: Millimeters,
+    },
+}
+
 /// Water fluxes over one step, all positive, kg.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WaterLedger {
@@ -165,7 +198,7 @@ pub struct WaterLedger {
     pub applied: KgWater,
     /// Applied water that did not fit and ran off.
     pub runoff: KgWater,
-    /// Water drained out of the bottom.
+    /// Water drained out of the bottom (and spilled from a full saucer).
     pub drained: KgWater,
     /// Water evaporated from the surface.
     pub evaporated: KgWater,
@@ -358,6 +391,16 @@ pub struct SoilGrid {
     /// or nitrate moves across it.
     #[serde(default)]
     divider: Option<usize>,
+    /// How water leaves the bottom (R5a).
+    #[serde(default)]
+    drainage: Drainage,
+    /// Water ponded on each column's surface, waiting to soak in, kg; indexed like the
+    /// top layer.
+    #[serde(default)]
+    pond: Vec<KgWater>,
+    /// Water standing in a saucer, kg.
+    #[serde(default)]
+    saucer: KgWater,
 }
 
 /// Water stress factor from FTSW: 1 above `threshold`, linear to 0 at FTSW 0 (§3.6).
@@ -369,8 +412,44 @@ pub fn stress_factor(ftsw: f64, threshold: f64) -> f64 {
     (ftsw / threshold).clamp(0.0, 1.0)
 }
 
+/// Columns solved together on one thread in the hour's vertical flow.
+const FLOW_COLUMN_CHUNK: usize = 32;
+/// Fewest active columns whose vertical flow is solved in parallel (a 24 cm pot has
+/// 113, a 1 m plot 400).
+const PARALLEL_FLOW_COLUMNS: usize = 256;
+
+/// Scratch for one column's vertical flow, reused across columns.
+struct ColumnWork {
+    scratch: flow::Scratch,
+    theta: Vec<f64>,
+    start: Vec<f64>,
+    moves: Vec<GramsN>,
+}
+
+impl ColumnWork {
+    fn new(nz: usize) -> Self {
+        Self {
+            scratch: flow::Scratch::default(),
+            theta: vec![0.0; nz],
+            start: vec![0.0; nz],
+            moves: vec![GramsN(0.0); nz + 1],
+        }
+    }
+}
+
+/// What a column's hour of vertical flow sends elsewhere.
+struct ColumnOut {
+    /// Nitrate out of its base.
+    leached: GramsN,
+    /// Water pushed back out of its top, to its pond.
+    backed_up: KgWater,
+    /// Water out of its base (negative: in from a saucer).
+    base: KgWater,
+}
+
 impl SoilGrid {
-    /// A box of `nx × ny × nz` active cells at field capacity.
+    /// A box of `nx × ny × nz` active cells at field capacity, draining freely at its
+    /// bottom ([`Drainage::Free`], a plot).
     ///
     /// # Errors
     /// [`SoilError::Geometry`] for empty dimensions or a non-positive cell size.
@@ -386,7 +465,8 @@ impl SoilGrid {
     }
 
     /// A cylindrical pot: a square grid around a circle of `diameter`, `depth` deep,
-    /// with columns whose centers fall inside the circle active. Starts at field capacity.
+    /// with columns whose centers fall inside the circle active, and holes in its bottom
+    /// ([`Drainage::Holes`]). Starts at field capacity.
     ///
     /// # Errors
     /// [`SoilError::Geometry`] if the pot is smaller than one cell.
@@ -408,13 +488,15 @@ impl SoilGrid {
         let r = 0.5 * diameter.0;
         #[allow(clippy::cast_precision_loss)]
         let center = 0.5 * n as f64 * cell.0;
-        Self::with_mask(n, n, nz, cell, texture, t_initial, |x, y| {
+        let mut g = Self::with_mask(n, n, nz, cell, texture, t_initial, |x, y| {
             #[allow(clippy::cast_precision_loss)]
             let cx = (x as f64 + 0.5) * cell.0 - center;
             #[allow(clippy::cast_precision_loss)]
             let cy = (y as f64 + 0.5) * cell.0 - center;
             cx * cx + cy * cy <= r * r
-        })
+        })?;
+        g.drainage = Drainage::Holes;
+        Ok(g)
     }
 
     fn with_mask(
@@ -457,6 +539,9 @@ impl SoilGrid {
             rhizobia: false,
             n_ledger: NitrogenLedger::default(),
             divider: None,
+            drainage: Drainage::Free,
+            pond: vec![KgWater(0.0); nx * ny],
+            saucer: KgWater(0.0),
         };
         g.fill_to(texture.hydraulics().field_capacity);
         Ok(g)
@@ -474,6 +559,56 @@ impl SoilGrid {
     #[must_use]
     pub fn divider(&self) -> Option<usize> {
         self.divider
+    }
+
+    /// Sets how water leaves the bottom. A saucer starts empty; leaving a saucer pours
+    /// its water away (booked as drained at the next step).
+    pub fn set_drainage(&mut self, drainage: Drainage) {
+        self.drainage = drainage;
+    }
+
+    /// How water leaves the bottom.
+    #[must_use]
+    pub fn drainage(&self) -> Drainage {
+        self.drainage
+    }
+
+    /// Water the surface holds before the rest runs off, mm: [`PLOT_POND_MM`] on a plot,
+    /// [`POT_POND_MM`] in a pot.
+    #[must_use]
+    pub fn pond_capacity(&self) -> Millimeters {
+        Millimeters(match self.drainage {
+            Drainage::Free => PLOT_POND_MM,
+            _ => POT_POND_MM,
+        })
+    }
+
+    /// Water ponded on the surface, summed over the columns in index order.
+    #[must_use]
+    pub fn ponded_water(&self) -> KgWater {
+        self.pond.iter().copied().sum()
+    }
+
+    /// Water ponded on column `(x, y)`.
+    #[must_use]
+    pub fn pond(&self, x: usize, y: usize) -> KgWater {
+        self.pond
+            .get(y * self.nx + x)
+            .copied()
+            .unwrap_or(KgWater(0.0))
+    }
+
+    /// Water standing in the saucer.
+    #[must_use]
+    pub fn saucer_water(&self) -> KgWater {
+        self.saucer
+    }
+
+    /// All water the grid holds: the soil's ([`SoilGrid::total_water`]), the ponded
+    /// water and the saucer's. The water ledgers' storage.
+    #[must_use]
+    pub fn stored_water(&self) -> KgWater {
+        self.total_water() + self.ponded_water() + self.saucer
     }
 
     /// Sets every active cell to volumetric water content `theta`.
@@ -595,21 +730,21 @@ impl SoilGrid {
     fn step_hour_with(&mut self, h: &SoilHour, totals: bool) -> WaterLedger {
         let mut ledger = WaterLedger {
             storage_before: if totals {
-                self.total_water()
+                self.stored_water()
             } else {
                 KgWater(0.0)
             },
             ..WaterLedger::default()
         };
         self.infiltrate(h.water_in, h.strip, &mut ledger);
-        self.drain(&mut ledger);
+        self.flow_vertically(&mut ledger);
         self.redistribute_laterally();
         self.evaporate(h.surface_radiation, &mut ledger);
         self.update_temperature(h.t_air);
         self.transform_nitrogen();
         self.assert_nitrogen_closes();
         if totals {
-            ledger.storage_after = self.total_water();
+            ledger.storage_after = self.stored_water();
             debug_assert!(
                 ledger.relative_residual() < CLOSURE_TOLERANCE,
                 "soil water ledger does not close: {ledger:?}"
@@ -630,96 +765,259 @@ impl SoilGrid {
             Some(s) if x >= s.x0 && x < s.x1 => KgWater(s.water.0.max(0.0) * area),
             _ => KgWater(0.0),
         };
-        let fc = self.capacity(self.texture.hydraulics().field_capacity);
-        let sat = self.capacity(self.texture.hydraulics().saturation);
+        let hy = self.texture.hydraulics();
+        let fc = self.capacity(hy.field_capacity);
+        let sat = self.capacity(hy.saturation);
+        // At most the saturated conductivity's depth soaks in each hour (R5a).
+        let rate = KgWater(hy.saturated_conductivity * 3600.0 * area * WATER_DENSITY);
+        let pond_cap = KgWater(self.pond_capacity().0 * area);
+        let layer = self.nx * self.ny;
+        if self.pond.len() != layer {
+            self.pond = vec![KgWater(0.0); layer];
+        }
+        let mut added = vec![KgWater(0.0); self.nz];
         for y in 0..self.ny {
             for x in 0..self.nx {
-                if !self.active[self.index(Cell { x, y, z: 0 })] {
+                let col = y * self.nx + x;
+                if !self.active[col] {
                     continue;
                 }
                 let per_column = everywhere + extra(x);
                 ledger.applied += per_column;
-                let mut left = per_column;
+                let waiting = per_column + self.pond[col];
+                let mut left = waiting.min(rate);
+                let held = waiting - left;
+                added.fill(KgWater(0.0));
                 // Fill to field capacity top-down, then to saturation top-down.
                 for limit in [fc, sat] {
-                    for z in 0..self.nz {
+                    for (z, a) in added.iter_mut().enumerate() {
                         if left.0 <= 0.0 {
                             break;
                         }
-                        let i = self.index(Cell { x, y, z });
-                        let room = (limit - self.water[i]).max(KgWater(0.0));
+                        let i = col + z * layer;
+                        let room = (limit - self.water[i] - *a).max(KgWater(0.0));
                         let add = room.min(left);
-                        self.water[i] += add;
+                        *a += add;
                         left -= add;
                     }
                 }
-                ledger.runoff += left.max(KgWater(0.0));
+                self.carry_nitrate_down(col, &added);
+                let pond = held + left.max(KgWater(0.0));
+                self.pond[col] = pond.min(pond_cap);
+                ledger.runoff += (pond - pond_cap).max(KgWater(0.0));
             }
         }
     }
 
-    fn drain(&mut self, ledger: &mut WaterLedger) {
-        let fc = self.capacity(self.texture.hydraulics().field_capacity);
+    /// Water soaking in passes through the cells above the one that keeps it, and
+    /// carries nitrate down as a mixing cell (Godwin and Jones 1991): a cell sends the
+    /// share of its nitrate, and of what came in from above, that the water passing
+    /// on is of its water plus the water coming in. `added` is what each cell of
+    /// column `col` keeps; the water is added here too.
+    fn carry_nitrate_down(&mut self, col: usize, added: &[KgWater]) {
         let layer = self.nx * self.ny;
-        let n = self.water.len();
-        // Jacobi: every cell's excess, and the nitrate it carries, comes from the
-        // start-of-step state. A layer's moves are computed before the layer above
-        // pours into it, so one layer of scratch is enough.
-        let mut cur = vec![(KgWater(0.0), GramsN(0.0)); layer];
-        let mut next = cur.clone();
-        self.layer_excess(0, fc, &mut cur);
-        for z in 0..self.nz {
-            if z + 1 < self.nz {
-                self.layer_excess(z + 1, fc, &mut next);
-            }
-            let first = z * layer;
-            for (k, &(e, m)) in cur.iter().enumerate() {
-                let i = first + k;
-                let below = i + layer;
-                let into = below < n && self.active[below];
-                if m.0 > 0.0 {
-                    self.no3[i] -= m;
-                    if into {
-                        self.no3[below] += m;
-                    } else {
-                        self.n_ledger.leached += m;
-                    }
-                }
-                if e.0 > 0.0 {
-                    self.water[i] -= e;
-                    if into {
-                        self.water[below] += e;
-                    } else {
-                        ledger.drained += e;
-                    }
-                }
-            }
-            core::mem::swap(&mut cur, &mut next);
-        }
-    }
-
-    /// Water above field capacity in each cell of layer `z`, and the nitrate it
-    /// carries down, from the current state.
-    fn layer_excess(&self, z: usize, fc: KgWater, out: &mut [(KgWater, GramsN)]) {
-        let layer = self.nx * self.ny;
-        let r = z * layer..(z + 1) * layer;
-        let cells = self.water[r.clone()]
-            .iter()
-            .zip(&self.active[r.clone()])
-            .zip(&self.no3[r]);
-        for (o, ((w, a), no3)) in out.iter_mut().zip(cells) {
-            let e = if *a {
-                (*w - fc).max(KgWater(0.0))
+        // The deepest cell the water reaches keeps the rest: nothing passes it.
+        let Some(last) = added.iter().rposition(|a| a.0 > 0.0) else {
+            return;
+        };
+        let mut passing: f64 = added[..=last].iter().map(|a| a.0).sum();
+        let mut carried = GramsN(0.0);
+        for (z, a) in added.iter().enumerate().take(last + 1) {
+            let i = col + z * layer;
+            let coming = passing;
+            passing = if z == last {
+                0.0
             } else {
-                KgWater(0.0)
+                (passing - a.0).max(0.0)
             };
-            let m = if e.0 > 0.0 && w.0 > 0.0 {
-                *no3 * (e.0 / w.0).min(1.0)
+            let mixed = self.water[i].0 + coming;
+            if mixed > 0.0 {
+                let pool = self.no3[i] + carried;
+                carried = pool * (passing / mixed);
+                self.no3[i] = pool - carried;
+            }
+            self.water[i] += *a;
+        }
+    }
+
+    /// Step 2: each active column's water moves by Darcy's law on its potential and
+    /// gravity ([`flow::Column::hour`]), and its nitrate moves with the water at the
+    /// concentration of the cell the water leaves, capped so no cell sends more than it
+    /// holds. Water and nitrate out of the base drain (and leach), into the saucer if
+    /// there is one; a saucer's water feeds the base back while it lasts, in column
+    /// order.
+    fn flow_vertically(&mut self, ledger: &mut WaterLedger) {
+        let (nx, ny, nz) = (self.nx, self.ny, self.nz);
+        let layer = nx * ny;
+        let area = self.cell.0 * self.cell.0;
+        // The saucer's level for the hour, from the water in it at the start; what it
+        // can still give falls as columns take from it.
+        let base_area = self.surface_area().max(1e-12);
+        let saucer_head = self.saucer.0 / (base_area * WATER_DENSITY);
+        let columns: Vec<usize> = (0..layer).filter(|&c| self.active[c]).collect();
+        if matches!(self.drainage, Drainage::Saucer { .. }) {
+            // What one column drains into the saucer, the next can draw back: in order.
+            let mut work = ColumnWork::new(nz);
+            let mut water = vec![KgWater(0.0); nz];
+            let mut no3 = vec![GramsN(0.0); nz];
+            for &col in &columns {
+                let bottom = if self.saucer.0 > 0.0 {
+                    flow::Bottom::Head {
+                        head: saucer_head,
+                        limit: self.saucer.0 / (area * WATER_DENSITY),
+                    }
+                } else {
+                    flow::Bottom::Seepage
+                };
+                let out = self.column_flow(col, bottom, &mut work, &mut water, &mut no3);
+                self.put_column(col, &water, &no3, &out);
+                self.saucer += out.base;
+            }
+        } else {
+            let bottom = match self.drainage {
+                Drainage::Free => flow::Bottom::Free,
+                Drainage::NoHoles => flow::Bottom::Closed,
+                Drainage::Holes | Drainage::Saucer { .. } => flow::Bottom::Seepage,
+            };
+            // Columns are independent: solved in fixed chunks (in parallel on a plot's
+            // many columns; a pot's few are not worth the threads), put back and summed
+            // in column order, so the result is the same on any thread count.
+            let solve = |chunk: &[usize]| {
+                let mut work = ColumnWork::new(nz);
+                let mut water = vec![KgWater(0.0); nz * chunk.len()];
+                let mut no3 = vec![GramsN(0.0); nz * chunk.len()];
+                let outs: Vec<ColumnOut> = chunk
+                    .iter()
+                    .zip(water.chunks_mut(nz).zip(no3.chunks_mut(nz)))
+                    .map(|(&col, (w, n))| self.column_flow(col, bottom, &mut work, w, n))
+                    .collect();
+                (water, no3, outs)
+            };
+            let solved: Vec<_> = if columns.len() >= PARALLEL_FLOW_COLUMNS {
+                use rayon::prelude::*;
+                columns.par_chunks(FLOW_COLUMN_CHUNK).map(solve).collect()
+            } else {
+                columns.chunks(FLOW_COLUMN_CHUNK).map(solve).collect()
+            };
+            for (chunk, (water, no3, outs)) in columns.chunks(FLOW_COLUMN_CHUNK).zip(&solved) {
+                for (k, (&col, out)) in chunk.iter().zip(outs).enumerate() {
+                    let cells = k * nz..(k + 1) * nz;
+                    self.put_column(col, &water[cells.clone()], &no3[cells], out);
+                    ledger.drained += out.base;
+                }
+            }
+        }
+        if let Drainage::Saucer { depth } = self.drainage {
+            let cap = KgWater(depth.0.max(0.0) * base_area);
+            let spill = (self.saucer - cap).max(KgWater(0.0));
+            self.saucer -= spill;
+            ledger.drained += spill;
+        } else if self.saucer.0 > 0.0 {
+            // No saucer any more: its water is poured away.
+            ledger.drained += self.saucer;
+            self.saucer = KgWater(0.0);
+        }
+    }
+
+    /// One column's hour of vertical flow from the grid's state ([`flow::Column::hour`]):
+    /// its cells' new water and nitrate into `water` and `no3`, top first. Nitrate moves
+    /// with each face's net water at the upwind cell's start-of-hour concentration, at
+    /// most the cell's whole store over all the water it sends; what leaves the base
+    /// leaches.
+    fn column_flow(
+        &self,
+        col: usize,
+        bottom: flow::Bottom,
+        work: &mut ColumnWork,
+        water: &mut [KgWater],
+        no3: &mut [GramsN],
+    ) -> ColumnOut {
+        let nz = self.nz;
+        let layer = self.nx * self.ny;
+        let mass = self.cell_volume() * WATER_DENSITY;
+        let area = self.cell.0 * self.cell.0;
+        let column = flow::Column {
+            dz: self.cell.0,
+            table: flow::FlowTable::for_texture(self.texture),
+        };
+        let ColumnWork {
+            scratch,
+            theta,
+            start,
+            moves,
+        } = work;
+        for z in 0..nz {
+            start[z] = self.water[col + z * layer].0;
+            theta[z] = start[z] / mass;
+            no3[z] = self.no3[col + z * layer];
+        }
+        let hour = column.hour(theta, 3600.0, bottom, scratch);
+        for (w, t) in water.iter_mut().zip(theta.iter()) {
+            *w = KgWater(t * mass);
+        }
+        let faces = scratch.faces();
+        let bottom_kg = hour.bottom * area * WATER_DENSITY;
+        let face_kg = |f: usize| {
+            if f < nz - 1 {
+                faces[f] * area * WATER_DENSITY
+            } else {
+                bottom_kg
+            }
+        };
+        let sent = |z: usize| {
+            let down = face_kg(z).max(0.0);
+            let up = if z > 0 {
+                (-face_kg(z - 1)).max(0.0)
+            } else {
+                0.0
+            };
+            down + up
+        };
+        for (f, m) in moves.iter_mut().enumerate().take(nz) {
+            let kg = face_kg(f);
+            let from = if kg > 0.0 { f } else { f + 1 };
+            *m = if kg != 0.0 && from < nz {
+                let held = start[from].max(sent(from));
+                if held > 0.0 {
+                    no3[from] * (kg.abs() / held)
+                } else {
+                    GramsN(0.0)
+                }
             } else {
                 GramsN(0.0)
             };
-            *o = (e, m);
         }
+        let mut leached = GramsN(0.0);
+        for (f, &m) in moves.iter().enumerate().take(nz) {
+            if m.0 <= 0.0 {
+                continue;
+            }
+            let kg = face_kg(f);
+            let (from, to) = if kg > 0.0 { (f, f + 1) } else { (f + 1, f) };
+            no3[from] -= m;
+            if to < nz {
+                no3[to] += m;
+            } else {
+                leached += m;
+            }
+        }
+        ColumnOut {
+            leached,
+            backed_up: KgWater(hour.backed_up * area * WATER_DENSITY),
+            base: KgWater(bottom_kg),
+        }
+    }
+
+    /// Puts a column's solved water and nitrate back; its backed-up water goes to its
+    /// pond (it soaks in next hour) and its leached nitrate to the ledger.
+    fn put_column(&mut self, col: usize, water: &[KgWater], no3: &[GramsN], out: &ColumnOut) {
+        let layer = self.nx * self.ny;
+        for (z, (w, n)) in water.iter().zip(no3).enumerate() {
+            self.water[col + z * layer] = *w;
+            self.no3[col + z * layer] = *n;
+        }
+        self.n_ledger.leached += out.leached;
+        self.pond[col] += out.backed_up;
     }
 
     /// The share of a water difference that moves between two neighboring cells in
@@ -949,7 +1247,7 @@ impl SoilGrid {
             }
         }
         let before = if totals {
-            self.total_water()
+            self.stored_water()
         } else {
             KgWater(0.0)
         };
@@ -1009,7 +1307,7 @@ impl SoilGrid {
         let ledger = WaterLedger {
             uptake,
             storage_before: before,
-            storage_after: self.total_water(),
+            storage_after: self.stored_water(),
             ..WaterLedger::default()
         };
         debug_assert!(
@@ -1048,6 +1346,19 @@ impl SoilGrid {
         if let Some(d) = self.divider {
             f(d as u64);
         }
+        match self.drainage {
+            Drainage::Free => f(0),
+            Drainage::Holes => f(1),
+            Drainage::NoHoles => f(2),
+            Drainage::Saucer { depth } => {
+                f(3);
+                f(depth.to_bits());
+            }
+        }
+        for p in &self.pond {
+            f(p.to_bits());
+        }
+        f(self.saucer.to_bits());
     }
 }
 

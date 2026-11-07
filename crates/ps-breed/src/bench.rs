@@ -192,6 +192,7 @@ impl BenchPlan {
                 depth_cm: k.pot_depth_cm,
                 texture: k.texture,
                 position_m: (x, 0.0),
+                drainage: ps_world::PotDrainage::default(),
             });
             s.irrigation.insert(soil, k.irrigation.clone());
             if (k.radiation_fraction - 1.0).abs() > 0.0 {

@@ -2,8 +2,8 @@
 //! the stem tapers to the tip, the tap root widens most near the collar, pipe targets
 //! never fall, secondary growth leaves lengths and the phloem's radius alone, and a
 //! grass never thickens. One plant in a 24 cm loam pot under the temperate-summer
-//! preset at 45° N from 15 May, watered to field capacity nightly; the driver runs the
-//! §3.2 steps in order as `ninety_days.rs` does.
+//! preset at 45° N from 15 May, watered back to field capacity each night through the
+//! surface; the driver runs the §3.2 steps in order as `ninety_days.rs` does.
 
 use ps_arch::{HourCtx, Plant, Role};
 use ps_graph::OrganKind;
@@ -11,6 +11,15 @@ use ps_soil::{SoilGrid, SoilHour, Texture};
 use ps_species::Species;
 use ps_units::{Celsius, Degrees, Hours, KPa, Meters, Millimeters, Ppm, WPerM2};
 use ps_weather::{DateHour, Preset, WeatherSeries};
+
+/// Water to bring the pot back to volumetric water `theta`, mm over its surface.
+fn deficit(soil: &SoilGrid, theta: f64) -> Millimeters {
+    let kg: f64 = (0..soil.len())
+        .filter(|&i| soil.is_active(i))
+        .map(|i| (theta - soil.theta(i)).max(0.0) * soil.cell_volume() * 1000.0)
+        .sum();
+    Millimeters(kg / soil.surface_area().max(1e-12))
+}
 
 /// Runs one plant of `species` for `days`, calling `after_day` after each daily step.
 fn run(species: &str, days: u32, mut after_day: impl FnMut(u32, &Plant)) -> Plant {
@@ -49,8 +58,15 @@ fn run(species: &str, days: u32, mut after_day: impl FnMut(u32, &Plant)) -> Plan
         };
         plant.water_demand(&ctx, &soil).unwrap();
         let lai = plant.report().leaf_area / soil.surface_area().max(1e-9);
+        // Watered through the surface, so the water soaking in carries back down the
+        // nitrate the day's evaporation drew up (R5a).
+        let water_in = if tick > 0 && tick % 24 == 0 {
+            deficit(&soil, theta)
+        } else {
+            Millimeters(0.0)
+        };
         soil.step_hour(&SoilHour {
-            water_in: Millimeters(0.0),
+            water_in,
             surface_radiation: WPerM2(h.global.0 * libm::exp(-0.5 * lai)),
             t_air: h.t_air,
             strip: None,
@@ -71,7 +87,6 @@ fn run(species: &str, days: u32, mut after_day: impl FnMut(u32, &Plant)) -> Plan
             }
             plant.nitrogen_alone(&mut soil, Hours(tick + 1)).unwrap();
             plant.day(&soil, &sun, Hours(tick + 1)).unwrap();
-            soil.fill_to(theta);
             after_day(u32::try_from(tick / 24).unwrap(), &plant);
         }
     }
@@ -140,7 +155,10 @@ fn bean_stems_and_roots_widen_and_taper() {
     // rule: more than 1.2) and the epicotyl about 1.5 times. From R2b (decision 0043)
     // nitrate no longer spreads sideways at the water's rate, so this garden pot is a
     // little shorter of nitrogen: on day 56 its hypocotyl is about 1.09 times the tip
-    // and the epicotyl about 1.39 times.
+    // and the epicotyl about 1.39 times. From R5a (decision 0046) the pot is watered
+    // through its surface, which carries back down the nitrate the day's evaporation
+    // draws up (refilled in place, the nitrate gathered at the top and the hypocotyl
+    // fell to 4.3 mm): about 1.18 and 1.47 times, the hypocotyl 5.5 mm.
     let widest = hyp.max(d[0]);
     assert!(d.iter().all(|x| *x <= widest + 1e-9), "{d:?}");
     assert!(hyp > 1.05 * d[d.len() - 1], "hypocotyl {hyp} vs tip {d:?}");

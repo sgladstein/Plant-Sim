@@ -33,10 +33,11 @@ negative below ground); organs report the pressure part `ψ_p`.
    through a cylinder of soil from the root's surface to half the distance between
    roots (Gardner 1960), `r_b = 1 / √(π RLD)` with `RLD` this plant's root length per
    volume of the cell, at least `2r`. `K(θ) = K_s · K_rel(θ)` is Mualem's conductivity
-   on the R3a curve (soil-and-water card), so in loam at a pot's root density the soil
-   conducts about 240 times what a young root does at field capacity, as much near
-   −0.3 MPa, and a sixtieth at the wilting point: a root in dry soil neither takes
-   nor loses much water. (R3b used a factor falling from 1 at the wilting point to 0
+   on the R3a curve with R5a's air entry (soil-and-water card, equation 11; decision
+   0046), so in loam at a pot's root density the soil conducts about 1,100 times what
+   a young root does at field capacity, as much near −0.53 MPa, and a fourteenth at
+   the wilting point: a root in dry soil neither takes nor loses much water. (Before
+   the air entry, R3c's curve gave 240 times, −0.3 MPa and a sixtieth.) (R3b used a factor falling from 1 at the wilting point to 0
    at air-dry instead; code review showed it left dry soil conducting as if wet.)
    Each soil cell is a fixed total potential for the hour, its R3a matric potential
    plus gravity at the cell's center.
@@ -222,8 +223,8 @@ stomata closing through a drought before the soil reaches its wilting point.
   (redistribution), `no_flow_means_soil_potential_everywhere`,
   `a_tree_without_roots_has_no_solution`.
 - `ps_arch::tests::rhizosphere_and_stomatal_steps` (the soil term against a young
-  root: more than 100 times at field capacity, 0.5 to 2 times at −0.3 MPa, 0.005 to
-  0.05 at the wilting point), `ps_soil::retention::tests::conductivity_falls_steeply_and_shares_the_potential`.
+  root: more than 100 times at field capacity, 3 to 6 times at −0.3 MPa, 0.8 to 1.25
+  times at −0.53 MPa, 0.05 to 0.1 at the wilting point), `ps_soil::retention::tests::conductivity_falls_steeply_and_shares_the_potential`.
 - `ps-world/tests/fidelity.rs`: `Auto` runs a pot detailed and the 30-bean plot
   simplified; a simplified pot is within 10% of the detailed one's mass at day 30 with
   its ledger closing; `SetFidelity` switches are logged and replay to the same hash; a

@@ -200,14 +200,14 @@ Turbid-medium voxel model (Beer's law with a leaf-angle G-function, RATP and Sin
 
 ### 3.6 Soil and water
 
-- **Grid.** 3D cells, 2 cm in pots (M0, M1) and 5 cm in plots (M2). A pot is a mask: cells outside it are inactive. Pot bottoms drain freely; a plot's bottom drains to a deep layer that never returns water. Default M1 pot: 20 cm diameter, 20 cm deep, loam.
+- **Grid.** 3D cells, 2 cm in pots (M0, M1) and 5 cm in plots (M2). A pot is a mask: cells outside it are inactive. A plot's bottom drains freely to a deep layer that never returns water; from R5a (decision 0046) a pot's base has holes (water leaves only through saturated soil), none, or a saucer that feeds it back. Default M1 pot: 20 cm diameter, 20 cm deep, loam.
 - **Texture** gives field capacity and wilting point by volume: loam \~0.27 and \~0.12, sand \~0.15 and \~0.05, clay \~0.40 and \~0.22. Transpirable water per cell is the difference.
-- **Infiltration** fills cells from the top until field capacity; **drainage** moves excess down one cell per hour; **lateral redistribution** moves 10% of any gradient per hour; **evaporation** takes a fraction of radiation reaching the soil surface from the top layer only, reduced as it dries.
+- **Infiltration** fills cells from the top until field capacity, at most the saturated conductivity's depth an hour (the rest ponds, then runs off); **vertical flow** follows Darcy's law on each cell's water potential and conductivity (the Richards equation, one implicit step an hour; R5a, decision 0046), so soaked soil drains over days and water rises to a drying surface; until R5a **drainage** moved excess down one cell per hour; **lateral redistribution** moves 10% of any gradient per hour; **evaporation** takes a fraction of radiation reaching the soil surface from the top layer only, reduced as it dries.
 - **Uptake.** Potential uptake per cell = root length density × available water × a species uptake rate; actual uptake is the lesser of demand and total potential, distributed in proportion.
 - **FTSW** over root-occupied cells weighted by root length density. Stress factor = 1 above FTSW 0.4, falling linearly to 0 at 0 (the 0.4 threshold is a species parameter).
 - **Soil temperature** follows air temperature with a depth-dependent lag (daily mean plus a damped diurnal cycle); drives germination and root elongation.
 - **Nitrogen (M2).** Mineral nitrogen pool per cell; mineralization from an organic matter pool at a temperature- and moisture-dependent rate; leaching with drainage; root uptake by Michaelis-Menten in concentration × root length. Leaf nitrogen per area drives Vcmax linearly. Nodules (bean) are root-attached organs that cost \~10 to 15% of assimilate when active and fix nitrogen when soil mineral nitrogen is low.
-- **Known limits**, written in the model card: no matric potential, no hysteresis, no capillary rise. A retention curve is added only if water potential is ever shown in a lens.
+- **Known limits**, written in the model card: no hysteresis; lateral flow by the diffusion rule, not Darcy. Until R3a there was no matric potential and until R5a no capillary rise.
 
 ### 3.7 Roots
 
@@ -698,7 +698,7 @@ crates/
   ps-species  species and genome schema, genotype to phenotype     M0
   ps-weather  presets, hourly CSV, daily-to-hourly, solar geometry M0
   ps-light    turbid-medium voxel light, sky sectors, R:FR         M0
-  ps-soil     3D bucket soil grid, FTSW, uptake, (N in M2)         M0
+  ps-soil     3D soil grid (Darcy flow from R5a), FTSW, uptake, N   M0
   ps-physio   FvCB+Medlyn, respiration, phenology, allocation      M0
   ps-arch     growth-form modules: herb (M0), vine, grass (M2), tree (M4)
   ps-world    scheduler, action log, snapshots, state hash, ledger M0

@@ -26,13 +26,13 @@ pub use lens::{LensData, PlantLens, SoilLens};
 pub use ps_arch::HydraulicsLevel;
 pub use scenario::{
     Action, ActionKind, Fidelity, FieldVariation, Irrigation, MAX_DETAILED, NitratePatch,
-    ObstacleSpec, SCENARIO_SCHEMA, Scenario, SeedChoice, SoilSpec, Sowing, Start, SupportSpec,
-    WeatherSource,
+    ObstacleSpec, PotDrainage, SCENARIO_SCHEMA, Scenario, SeedChoice, SoilSpec, Sowing, Start,
+    SupportSpec, WeatherSource,
 };
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.26.0";
+pub const MODEL_VERSION: &str = "0.27.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -526,14 +526,19 @@ fn soil_grid(spec: &SoilSpec) -> Result<SoilGrid, WorldError> {
             diameter_cm,
             depth_cm,
             texture,
+            drainage,
             ..
-        } => Ok(SoilGrid::new_pot(
-            Meters(diameter_cm * 0.01),
-            Meters(depth_cm * 0.01),
-            Meters(POT_CELL),
-            *texture,
-            Celsius(SOIL_T_INITIAL),
-        )?),
+        } => {
+            let mut g = SoilGrid::new_pot(
+                Meters(diameter_cm * 0.01),
+                Meters(depth_cm * 0.01),
+                Meters(POT_CELL),
+                *texture,
+                Celsius(SOIL_T_INITIAL),
+            )?;
+            g.set_drainage(drainage.grid());
+            Ok(g)
+        }
         SoilSpec::Plot {
             width_cm,
             length_cm,
@@ -720,10 +725,13 @@ fn soil_lens(soils: &[SoilEntry]) -> Vec<SoilLens> {
         .iter()
         .map(|e| {
             let (_, _, nz) = e.grid.dims();
+            let area = e.grid.surface_area().max(1e-12);
             SoilLens {
                 soil: e.id,
                 layer_temperature: (0..nz).map(|z| e.grid.layer_temperature(z)).collect(),
                 layer_water_potential: e.grid.layer_water_potentials(),
+                ponded_mm: e.grid.ponded_water().0 / area,
+                saucer_mm: e.grid.saucer_water().0 / area,
             }
         })
         .collect()
@@ -1519,6 +1527,7 @@ impl World {
         let fc = g.texture().hydraulics().field_capacity * g.cell_volume() * 1000.0;
         // Water to bring the active cells of columns x0..x1 to field capacity, kg, and
         // their surface, m².
+        // Water already ponded on those columns counts as given (R5a).
         let deficit = |x0: usize, x1: usize| {
             let (nx, _, _) = g.dims();
             let (mut kg, mut top) = (0.0, 0usize);
@@ -1526,9 +1535,13 @@ impl World {
                 let c = g.cell_of(i);
                 if c.x >= x0 && c.x < x1.min(nx) {
                     kg += (fc - g.water(i).0).max(0.0);
-                    top += usize::from(c.z == 0);
+                    if c.z == 0 {
+                        top += 1;
+                        kg -= g.pond(c.x, c.y).0;
+                    }
                 }
             }
+            let kg = kg.max(0.0);
             #[allow(clippy::cast_precision_loss)] // cell counts are small
             (kg, top as f64 * g.cell_size().0 * g.cell_size().0)
         };
@@ -1542,7 +1555,9 @@ impl World {
                     let deficit: f64 = (0..g.len())
                         .filter(|i| g.is_active(*i))
                         .map(|i| (fc - g.water(i).0).max(0.0))
-                        .sum();
+                        .sum::<f64>()
+                        - g.ponded_water().0;
+                    let deficit = deficit.max(0.0);
                     // kg over the surface area in m² is mm.
                     (deficit / g.surface_area().max(1e-12), None)
                 } else {

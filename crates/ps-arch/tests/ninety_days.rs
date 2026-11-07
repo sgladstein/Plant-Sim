@@ -110,6 +110,11 @@ fn run_env(
             plant.nitrogen_alone(&mut soil, Hours(tick + 1)).unwrap();
             let rep = plant.day(&soil, &sun, Hours(tick + 1)).unwrap();
             reports.push(rep);
+            // Refilled in place, as WP8's done-when was set. From R5a (decision 0046)
+            // this leaves at the top the nitrate the day's evaporation draws up; the
+            // other whole-plant tests water through the surface instead. Watered that
+            // way, the plants here are larger and the eight seeds average 9.0 pods
+            // (inside §8.2's 6 to 20), but seed 7 sets 8, under §3.16's 10 to 20.
             soil.fill_to(theta);
         }
     }
