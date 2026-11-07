@@ -144,7 +144,8 @@ there; determinism and ledgers hold.
   `pan_root_shift_above` (+21%; +8 to +68%) pass; every other check gives 0.29.0's value.
 - **Fidelity**: 111 of 111, seed-yield bias −2.57% ± 1.65%, as at 0.29.0.
 - **Challenges**: every challenge log and the thirsty-summer window plans (121 plans,
-  eight-season means) score as at 0.29.0; no medal moves.
+  eight-season means) score as at 0.29.0, hungry soil's 14 plans also under #151's
+  rain shelter; no medal moves.
 - **Cost**: within this container's noise for soil without structure (best of 5,
   alternating builds: single_pot 8.0 and 8.9 against 8.3 and 8.4 ms per sim-day,
   plot_30_beans over 30 days 21.5 and 24.8 against 21.3 and 24.5 ms). A plot with
