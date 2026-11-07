@@ -479,6 +479,8 @@ struct ColumnOut {
     backed_up: KgWater,
     /// Water out of its base (negative: in from a saucer).
     base: KgWater,
+    /// Water it took in from its pond.
+    soaked: KgWater,
 }
 
 impl SoilGrid {
@@ -1115,7 +1117,8 @@ impl SoilGrid {
             theta[z] = start[z] / mass;
             no3[z] = self.no3[col + z * layer];
         }
-        let hour = column.hour(theta, 3600.0, bottom, scratch);
+        let pond = self.pond.get(col).map_or(0.0, |p| p.0) / (area * WATER_DENSITY);
+        let hour = column.hour(theta, 3600.0, pond, bottom, scratch);
         for (w, t) in water.iter_mut().zip(theta.iter()) {
             *w = KgWater(t * mass);
         }
@@ -1163,6 +1166,7 @@ impl SoilGrid {
             leached,
             backed_up: KgWater(hour.backed_up * area * WATER_DENSITY),
             base: KgWater(bottom_kg),
+            soaked: KgWater(hour.from_pond * area * WATER_DENSITY),
         }
     }
 
@@ -1175,7 +1179,7 @@ impl SoilGrid {
             self.no3[col + z * layer] = *n;
         }
         self.n_ledger.leached += out.leached;
-        self.pond[col] += out.backed_up;
+        self.pond[col] = (self.pond[col] - out.soaked).max(KgWater(0.0)) + out.backed_up;
     }
 
     /// The share of a water difference that moves between two neighboring cells in

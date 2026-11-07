@@ -85,6 +85,13 @@ The bloom fixture waters every 3 days from day 40 to day 61 (10.0, gold). On 0.2
 window ranges hold (days 35 to 80 2.1 to 4.2, days 42 to 70 4.0 to 6.1, days 42 to 62
 6.5 to 9.5, days 44 to 62 5.1 to 9.25, the others unchanged), single plans move by up
 to 0.6 pods, and the fixture still scores 10.0.
+On 0.30.0 (R5c) every plan scores as on 0.29.0. On 0.31.0 (decision 0050) a dose
+that ponds on the pot soaks in within the hour instead of over days: days 35 to 80 2.1
+to 4.25 (unchanged), days 38 to 62 8.1 to 10.5, days 40 to 62 8.25 to 10.6, days 42 to
+62 6.5 to 10.4, days 42 to 64 unchanged, days 42 to 70 3.9 to 5.0, days 44 to 62 5.75
+to 7.75; the fixture scores 10.38. The heat wave moves by up to 0.5 pods (day 24 12.0;
+the day-28 fixture 11.0), hungry soil not at all; no threshold moves, and 10 of the
+94 thirsty-summer plans change tier (gold 22 → 20).
 
 On 0.27.0 (R5a) water rises to the pot's drying surface, so bare soil loses far more to
 evaporation: in the thirsty-summer fixture 2.4 of the 7.5 L the pot gives up over the

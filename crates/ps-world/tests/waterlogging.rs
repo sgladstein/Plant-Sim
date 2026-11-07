@@ -102,7 +102,9 @@ fn a_waterlogged_pot_loses_its_fine_roots_wilts_and_recovers_slowly() {
     assert!(day(&wet, last).env.denitrified_n_total_g > 0.0);
     assert!(day(&dry, last).env.denitrified_n_total_g.abs() < 1e-15);
     // Slow recovery: new roots after the soil at the collar has air again, but by the
-    // end the plant has far less root than the control.
+    // end the plant has well under the control's root. Since the pot drains the day
+    // its holes open (decision 0050) its laterals and axis tips outlive the soak, so it
+    // ends at about two thirds of the control's root (a fifth before).
     let least = (50..=last).map(|d| roots(&wet, d)).fold(f64::MAX, f64::min);
     println!(
         "root length: least after the soak {least:.1} m, day {last} {:.1} m (control {:.1} m)",
@@ -110,7 +112,7 @@ fn a_waterlogged_pot_loses_its_fine_roots_wilts_and_recovers_slowly() {
         roots(&dry, last)
     );
     assert!(roots(&wet, last) > 1.1 * least);
-    assert!(roots(&wet, last) < 0.5 * roots(&dry, last));
+    assert!(roots(&wet, last) < 0.75 * roots(&dry, last));
 }
 
 /// The simplified water network (decision 0045) makes a new summary within the day
