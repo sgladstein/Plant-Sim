@@ -228,6 +228,27 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+### R3c cost (model 0.26.0, 2026-11-07)
+
+R3c (#144, decision 0045) adds the simplified water network (plots over 8 plants use it
+by default) and dry-soil limits on the detailed network: a third `pow` per root cell
+for the soil conductivity, and a rhizosphere conductance (a `sqrt` and a `log`) per
+root span. Wall time, 4 cores, interleaved best of 3, one container (slower than the
+earlier ones), 90 days, against ec05aba (0.25.0 with #142):
+
+| Scenario | 0.25.0 + #142 | 0.26.0 (65915ce) |
+| --- | --- | --- |
+| single_pot (detailed) | 7.08 to 7.11 ms per sim-day | 7.84 to 7.92 (+11%) |
+| single_pot_simplified | | 6.29 to 6.37 (-11% against detailed 0.25.0) |
+| plot_30_beans (simplified, Auto) | 52.0 to 53.9 | 46.8 to 48.3 (-10%) |
+
+Callgrind (one thread): single_pot 5.24 G to 5.62 G instructions, and
+single_pot_simplified 4.54 G. Estimated on the owner's PC, chained from its 0.20.0
+timings: detailed pot about 6.4 ms, simplified pot about 5.2, plot about 41 ms per
+sim-day. All three are over the 4 ms and 30 ms budgets. No result-identical cut of
+size was found. A per-span memo of the rhizosphere term would hit only 22% of the
+time, because root radius and root density per cell change most hours.
+
 ### R3a and R3b cost (model 0.25.0, 2026-11-06)
 
 R3a (#140, soil water potential) and R3b (#141, the plant water network, decision 0044).
