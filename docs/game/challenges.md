@@ -49,7 +49,8 @@ on 0.27.0 (R5a, decision 0046), where thirsty summer's moved to 4 / 6.5 / 8.5 on
 hungry soil's rose to 6 / 8 / 9, then its gold came down to 8.75 so that any sound early
 feeding can reach it (the top four plans sat within 0.15 g of 9.0), and again on 0.29.0
 (R5b, decision 0048), where hungry soil's gold came down to 8.4 (one rainy season of the
-eight now waterlogs its pot).
+eight now waterlogs its pot), and then the hungry-soil pot went under a rain shelter
+(below) and its medals were re-swept to 6 / 7.5 / 8.75.
 Single-seed sweeps on 0.23.0 to 0.25.0 are in the git history of this file; the
 review's eight-seed sweep is in the project files (reviews/wp32-challenges-137-review.md
 and reviews/wp32-seasons-143-review.md). Even the mean of 8 moves from one strategy to
@@ -63,7 +64,7 @@ score.
 | --- | --- | --- | --- | --- |
 | Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | no water 1.1 pods; 6 L spread daily over the season 1.1 to 1.9; see the window sweep below: days 35 to 80 2.1 to 4.2, days 42 to 70 4.0 to 6.1, days 40 to 62 8.0 to 11.0 (the fixture, every 3 days from day 40 to 61, 10.0) | 4 / 6.5 / 8.5 pods, unchanged since 0.27.0 |
 | Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 8 (blooms into the heat) 3.1 to 4.5 pods; days 12 and 16 4.9 and 8.0; days 20 to 26 8.1 to 11.8 (day 24 11.8); days 28 to 40 8.4 to 11.3 (day 28, the fixture, 11.0; day 32 8.5) | 5 / 7.5 / 9.5 pods, unchanged |
-| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none 1.5 g seed; all on day 45 4.8; all on day 35 6.7; all at sowing 7.5; one dose on day 15, 20 or 25 7.6, 8.5 and 7.9; two or three doses from day 10 to 45 7.9 to 8.7 (days 15, 30 and 45, the fixture, 8.6; days 18, 28 and 38 8.7) | 6 / 8 / 8.4 g seed (0.28.0: 6 / 8 / 8.75) |
+| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily, under a rain shelter | 0.5 g N of fertilizer | none 1.6 g seed; all on day 45 5.5; all on day 35 7.5; all at sowing 8.1; one dose on day 15, 20, 25 or 30 7.7 to 8.3; two doses by day 30 7.6 to 8.3; doses carried into bloom (days 15, 30 and 45, the fixture, 9.1; days 20, 30 and 40 9.1; days 20 and 40 8.9; days 18, 28 and 38 8.9) | 6 / 7.5 / 8.75 g seed (0.29.0 in the rain: 6 / 8 / 8.4) |
 
 On the mean the lessons hold: water through the flowering weeks beats water spread thin by six to
 nine pods, sowing after day 20 beats blooming into the heat by four to seven, and feeding
@@ -101,6 +102,12 @@ rain leaves their garden loam short of air for days: the hungry-soil fixture's s
 that season falls from 8.7 to 5.5 g while the other seven are unchanged. Every
 hungry-soil plan lost 0.1 to 0.6 g on the mean (best 8.7, was 9.0), so its gold came
 down from 8.75 to 8.4, where the top five plans (8.4 to 8.7) still reach it.
+The code review of R5b (#150) suggested a rain shelter for hungry soil so that its lesson
+stays nitrogen timing alone, and it now has one (`rain_fraction: 0`; it is watered to
+field capacity every morning as before). Under the shelter, carrying the half gram into
+bloom in two or three doses leads (8.9 to 9.1 g), one early dose or all at sowing earns
+silver (7.7 to 8.3), and feeding late earns nothing (5.5), so the hint now says to split
+it.
 Heat-wave plans moved by up to 0.75 pods either way, and thirsty summer, under its
 rain shelter, by up to 0.6.
 
