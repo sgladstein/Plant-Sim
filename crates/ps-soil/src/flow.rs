@@ -339,21 +339,24 @@ impl Column<'_> {
     fn assemble(&self, dt: f64, s: &mut Scratch) {
         let nz = s.h.len();
         let dz = self.dz;
-        let cells = s.diag.iter_mut().zip(s.rhs.iter_mut());
+        // Slices of one length, so the face loop needs no bounds checks.
+        let (k, sub, sup) = (&s.k[..nz], &mut s.sub[..nz], &mut s.sup[..nz]);
+        let (diag, rhs) = (&mut s.diag[..nz], &mut s.rhs[..nz]);
+        let cells = diag.iter_mut().zip(rhs.iter_mut());
         for ((d, r), (&c, &h)) in cells.zip(s.c.iter().zip(&s.h)) {
             let storage = c * dz / dt;
             *d = storage;
             *r = storage * h;
         }
         for f in 0..nz - 1 {
-            let kf = 0.5 * (s.k[f] + s.k[f + 1]);
+            let kf = 0.5 * (k[f] + k[f + 1]);
             let g = kf / dz;
-            s.diag[f] += g;
-            s.sup[f] = -g;
-            s.rhs[f] -= kf;
-            s.diag[f + 1] += g;
-            s.sub[f + 1] = -g;
-            s.rhs[f + 1] += kf;
+            diag[f] += g;
+            sup[f] = -g;
+            rhs[f] -= kf;
+            diag[f + 1] += g;
+            sub[f + 1] = -g;
+            rhs[f + 1] += kf;
         }
     }
 
@@ -363,13 +366,14 @@ impl Column<'_> {
     fn apply(&self, theta: &mut [f64], dt: f64, q_bottom: f64, s: &mut Scratch) -> (f64, f64) {
         let n = theta.len() - 1;
         let dz = self.dz;
+        let (k, h, faces) = (&s.k[..=n], &s.rhs[..=n], &mut s.faces[..n]);
         let mut change = 0.0_f64;
         let mut above = 0.0;
         for (i, t) in theta.iter_mut().enumerate() {
             let below = if i < n {
-                let kf = 0.5 * (s.k[i] + s.k[i + 1]);
-                let q = kf * ((s.rhs[i] - s.rhs[i + 1]) / dz + 1.0);
-                s.faces[i] += q * dt;
+                let kf = 0.5 * (k[i] + k[i + 1]);
+                let q = kf * ((h[i] - h[i + 1]) / dz + 1.0);
+                faces[i] += q * dt;
                 q
             } else {
                 q_bottom
@@ -409,6 +413,7 @@ fn back_up(theta: &mut [f64], wettest: f64, dz: f64, faces: &mut [f64]) -> f64 {
 /// diagonally dominant (storage terms are positive), so no pivoting is needed.
 fn thomas(sub: &[f64], diag: &mut [f64], sup: &[f64], rhs: &mut [f64]) {
     let n = rhs.len();
+    let (sub, diag, sup) = (&sub[..n], &mut diag[..n], &sup[..n]);
     for i in 1..n {
         let w = sub[i] / diag[i - 1];
         diag[i] -= w * sup[i - 1];
