@@ -228,6 +228,15 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+### Pot drain fix cost (model 0.31.0, 2026-11-07)
+
+#155 (decision 0050: the pond soaks in during the flow solve, and the seepage face opens
+within the step), against 0602d77 (0.30.0). Callgrind instructions, one thread:
+single_pot 7.24 G to 7.27 G (+0.4%), single_pot_simplified 6.00 G to 6.03 G (+0.5%),
+plot_30_beans over 30 days 7.28 G to 7.33 G (+0.6%), m2/plough_pan 9.33 G to 9.38 G
+(+0.5%). The +1 to +6% wall-time readings taken elsewhere are noise. The owner-PC
+estimates stay at about 8.2 ms for the pot and 47 ms for the plot.
+
 ### R5c cost (model 0.30.0, 2026-11-07)
 
 R5c (#153, decision 0049: compacted and loosened soil), against af07707 (0.29.0).
