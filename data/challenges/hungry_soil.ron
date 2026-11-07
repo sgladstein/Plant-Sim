@@ -4,11 +4,11 @@ Challenge(
   id: "hungry_soil",
   title: "Hungry soil",
   brief: "Worn-out soil and no rhizobia to fix nitrogen. You have half a gram of nitrogen fertilizer. Grow the most seed weight by day 90.",
-  hint: "Leaves need nitrogen while they are growing. Feed once the plant has roots to take it up, before the pods start to fill.",
+  hint: "Leaves need nitrogen while they grow, and pods while they fill. Split the half gram: feed once the plant has roots to take it up, and again into bloom.",
   scenario: "challenges/hungry_soil",
   score: (metric: PeakSum("seed_mass_g"), label: "g of seed", higher_is_better: true),
   rules: (allowed: [Fertilize, Harvest], nitrogen_budget: Some(0.5)),
-  medals: (bronze: 6.0, silver: 8.0, gold: 8.4),
+  medals: (bronze: 6.0, silver: 7.5, gold: 8.75),
   seasons: 8,
   // Scored at the detailed water network, whatever the viewer shows (decision 0045).
   fidelity: Some(Locked(Detailed)),

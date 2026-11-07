@@ -1,7 +1,8 @@
 // Challenge "Hungry soil" (data/challenges/hungry_soil.ron): one bush bean in a 24 cm
 // pot of worn-out loam (5 ppm nitrate, little organic matter, no rhizobia), watered to
-// field capacity every morning, temperate summer at 45 N. Nitrogen comes from the
-// player's fertilizer budget.
+// field capacity every morning, under a rain shelter (so a rainy season cannot waterlog
+// the pot and wash out the fertilizer: the challenge is about nitrogen timing alone),
+// temperate summer at 45 N. Nitrogen comes from the player's fertilizer budget.
 Scenario(
   schema: 1,
   model_version: "0.29.0",
@@ -10,6 +11,7 @@ Scenario(
   start: (year: 2026, month: 5, day: 15, hour: 0),
   weather: Preset("temperate_summer"),
   soils: [ Pot(id: 0, diameter_cm: 24.0, depth_cm: 24.0, texture: Loam, position_m: (0.0, 0.0)) ],
+  rain_fraction: { 0: 0.0 },
   irrigation: { 0: ToFieldCapacity(every_days: 1) },
   nitrogen: { 0: (no3_ppm: 5.0, nh4_ppm: 1.0, organic_g_per_kg: 0.5, rhizobia: false) },
   co2_ppm: 420.0,
