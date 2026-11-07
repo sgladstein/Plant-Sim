@@ -1,14 +1,15 @@
 //! CSV export of a world (design plan §6.6, WP10): the daily time series, the
 //! per-organ table, and the daily hashes. Plain text with a header row, comma
 //! separated, `.` decimal point, numbers in Rust's shortest round-trip form so a value
-//! read back is bit-identical. Column names carry their units.
+//! read back is bit-identical. Column names carry their units; `_total` columns are
+//! sums since the start of the run.
 
 use std::fmt::Write as _;
 
 use ps_world::{DayRow, WorldState};
 
 /// Columns of [`daily_csv`], in order.
-pub const DAILY_COLUMNS: [&str; 56] = [
+pub const DAILY_COLUMNS: [&str; 61] = [
     "day",
     "plant",
     "soil",
@@ -65,6 +66,11 @@ pub const DAILY_COLUMNS: [&str; 56] = [
     "leaf_turgor_predawn",
     "root_conductance_kg_h_mpa",
     "uptake_depth_m",
+    "soil_drained_total_kg",
+    "soil_runoff_total_kg",
+    "soil_evaporated_total_kg",
+    "soil_leached_n_total_g",
+    "soil_mineralized_n_total_g",
 ];
 
 /// Columns of [`organs_csv`], in order.
@@ -117,7 +123,7 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
     // Writing to a String cannot fail.
     let _ = writeln!(
         out,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         row.day,
         row.plant,
         soil_id(state, row.plant),
@@ -174,6 +180,11 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
         r.leaf_turgor_predawn,
         r.root_conductance,
         r.uptake_depth,
+        e.drained_total_kg,
+        e.runoff_total_kg,
+        e.evaporated_total_kg,
+        e.leached_n_total_g,
+        e.mineralized_n_total_g,
     );
 }
 
@@ -310,6 +321,11 @@ pub fn daily_number(state: &WorldState, row: &DayRow, column: &str) -> Option<f6
         "leaf_turgor_predawn" => r.leaf_turgor_predawn,
         "root_conductance_kg_h_mpa" => r.root_conductance,
         "uptake_depth_m" => r.uptake_depth,
+        "soil_drained_total_kg" => e.drained_total_kg,
+        "soil_runoff_total_kg" => e.runoff_total_kg,
+        "soil_evaporated_total_kg" => e.evaporated_total_kg,
+        "soil_leached_n_total_g" => e.leached_n_total_g,
+        "soil_mineralized_n_total_g" => e.mineralized_n_total_g,
         _ => return None,
     })
 }

@@ -1,7 +1,9 @@
 //! WP8 done-when: a 90-day run produces node, branch, pod and root counts inside the
 //! §3.16 ranges. One bush bean in a 24 cm loam pot, watered to field capacity daily,
 //! under the temperate-summer preset at 45° N from 15 May. The driver stands in for the
-//! world loop of WP9 and runs the §3.2 steps in order.
+//! world loop of WP9 and runs the §3.2 steps in order. The count tests grow the plant at
+//! the world pot's non-limiting 300 ppm nitrate (decisions 0020 and 0047): WP8 came
+//! before the nitrogen model.
 
 use ps_arch::{DayReport, HourCtx, Plant};
 use ps_soil::{SoilGrid, SoilHour, Texture};
@@ -11,11 +13,32 @@ use ps_weather::{DateHour, Preset, WeatherSeries};
 
 const DAYS: u32 = 90;
 
+/// The world pot's non-limiting nitrogen control: 300 ppm nitrate (decision 0020).
+const FED: ps_soil::SoilNitrogen = ps_soil::SoilNitrogen {
+    no3_ppm: 300.0,
+    ..ps_soil::SoilNitrogen::GARDEN
+};
+
+/// Water to bring the pot back to volumetric water `theta`, mm over its surface.
+fn deficit(soil: &SoilGrid, theta: f64) -> Millimeters {
+    let kg: f64 = (0..soil.len())
+        .filter(|&i| soil.is_active(i))
+        .map(|i| (theta - soil.theta(i)).max(0.0) * soil.cell_volume() * 1000.0)
+        .sum();
+    Millimeters(kg / soil.surface_area().max(1e-12))
+}
+
 fn run(days: u32, seed: u64) -> (Plant, Vec<DayReport>) {
     run_watered(days, seed, Texture::Loam.hydraulics().field_capacity)
 }
 
-/// Runs one plant for `days`, refilling the pot to volumetric water `theta` each night.
+/// As [`run`], at 300 ppm nitrate ([`FED`]).
+fn run_fed(days: u32, seed: u64) -> (Plant, Vec<DayReport>) {
+    run_soil(days, seed, Texture::Loam.hydraulics().field_capacity, &FED)
+}
+
+/// Runs one plant for `days`, watering the pot back to volumetric water `theta` each
+/// night through its surface.
 fn run_watered(days: u32, seed: u64, theta: f64) -> (Plant, Vec<DayReport>) {
     run_soil(days, seed, theta, &ps_soil::SoilNitrogen::GARDEN)
 }
@@ -85,8 +108,15 @@ fn run_env(
         };
         plant.water_demand(&ctx, &soil).unwrap();
         let lai = plant.report().leaf_area / soil.surface_area().max(1e-9);
+        // Watered through the surface, so the water soaking in carries back down the
+        // nitrate the day's evaporation drew up (R5a).
+        let water_in = if tick > 0 && tick % 24 == 0 {
+            deficit(&soil, theta)
+        } else {
+            Millimeters(0.0)
+        };
         soil.step_hour(&SoilHour {
-            water_in: Millimeters(0.0),
+            water_in,
             surface_radiation: WPerM2(h.global.0 * libm::exp(-0.5 * lai)),
             t_air: h.t_air,
             strip: None,
@@ -110,12 +140,6 @@ fn run_env(
             plant.nitrogen_alone(&mut soil, Hours(tick + 1)).unwrap();
             let rep = plant.day(&soil, &sun, Hours(tick + 1)).unwrap();
             reports.push(rep);
-            // Refilled in place, as WP8's done-when was set. From R5a (decision 0046)
-            // this leaves at the top the nitrate the day's evaporation draws up; the
-            // other whole-plant tests water through the surface instead. Watered that
-            // way, the plants here are larger and the eight seeds average 9.0 pods
-            // (inside §8.2's 6 to 20), but seed 7 sets 8, under §3.16's 10 to 20.
-            soil.fill_to(theta);
         }
     }
     (plant, reports, absorbed)
@@ -123,7 +147,7 @@ fn run_env(
 
 #[test]
 fn ninety_day_counts_are_in_the_bean_ranges() {
-    let (plant, reports) = run(DAYS, 7);
+    let (plant, reports) = run_fed(DAYS, 7);
     for r in reports.iter().step_by(5) {
         println!(
             "day {:>3} {:?} nodes {} branches {} leaves {} area {:.0} cm2 racemes {} flowers {} pods {} seeds {} roots {}+{} {:.1} m {:.2} g dm {:.2} g fruit {:.2} g h {:.0} cm fb {:.2} N {:.0} mg up {:.1} fix {:.1} mine {:.1} unmet {:.1} st {:.2} nod {:.0} mg",
@@ -167,6 +191,7 @@ fn ninety_day_counts_are_in_the_bean_ranges() {
         "branches {}",
         last.branches
     );
+    // §3.16 gives 10 to 20 pods a plant.
     assert!((10..=20).contains(&last.pods), "pods {}", last.pods);
     // §3.16 gives no root count; the seed-borne axes are the species' type counts.
     assert_eq!(last.root_axes, 19);
@@ -184,7 +209,7 @@ fn counts_hold_across_world_seeds() {
     let mut bad = Vec::new();
     let mut pods = Vec::new();
     for seed in 1..=8 {
-        let (plant, reports) = run(DAYS, seed);
+        let (plant, reports) = run_fed(DAYS, seed);
         let last = reports.last().unwrap();
         let reserve: f64 = plant.arena.reserve.iter().map(|r| r.0).sum();
         println!(
@@ -233,11 +258,11 @@ fn counts_hold_across_world_seeds() {
             }));
         }
     }
-    // The §8.2 range (data/validation/targets.ron, pods_at_maturity) holds for the
-    // mean over seeds, as the validation report reads it (decision 0026).
+    // §3.16's 10 to 20 holds for the mean over seeds, as the validation report reads
+    // its bands (decision 0026).
     #[allow(clippy::cast_precision_loss)]
     let mean = pods.iter().sum::<f64>() / pods.len() as f64;
-    if !(6.0..=20.0).contains(&mean) {
+    if !(10.0..=20.0).contains(&mean) {
         bad.push(format!("mean pods {mean:.1}"));
     }
     assert!(bad.is_empty(), "{bad:?}");
@@ -368,11 +393,7 @@ fn seed_fill_drops_leaves_from_the_bottom_up() {
 #[test]
 fn seed_fill_mines_first_in_a_fertilized_pot() {
     use ps_physio::Stage;
-    let fed = ps_soil::SoilNitrogen {
-        no3_ppm: 300.0,
-        ..ps_soil::SoilNitrogen::GARDEN
-    };
-    let (_, reports) = run_soil(DAYS, 7, Texture::Loam.hydraulics().field_capacity, &fed);
+    let (_, reports) = run_fed(DAYS, 7);
     let before: f64 = reports
         .iter()
         .filter(|r| r.stage.is_some_and(|s| s < Stage::SeedFill))

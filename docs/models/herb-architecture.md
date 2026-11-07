@@ -228,9 +228,11 @@ shade, and where roots end up.
 
 ## Validation
 - `tests/ninety_days.rs::ninety_day_counts_are_in_the_bean_ranges` (WP8 done-when,
-  world seed 7): main-stem nodes 6 to 8, branches 3 to 6, pods 10 to 20 (§3.16), 19
-  seed-borne root axes, more than 50 lateral cohorts and 10 m of root.
-- `counts_hold_across_world_seeds` takes pods 6 to 20 (the §8.2 range) for seeds 1 to 8.
+  world seed 7, at the world pot's 300 ppm nitrate, decision 0047): main-stem nodes 6
+  to 8, branches 3 to 6, pods 10 to 20 (§3.16), 19 seed-borne root axes, more than 50
+  lateral cohorts and 10 m of root.
+- `counts_hold_across_world_seeds` (300 ppm, seeds 1 to 8) takes 4 to 30 pods on each
+  plant and §3.16's 10 to 20 on the mean.
 - The WP11 validation report (`ps-cli validate`): the §8.3 shade, drought, heat and
   frost responses, gated for M0. `ps-cli/tests/cli.rs::a_frost_night_kills_the_leaves_for_good`.
   `ps-arch/tests/leaf_energy.rs::a_clear_calm_night_frosts_exposed_leaves_but_not_the_growing_points`.

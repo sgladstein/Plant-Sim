@@ -80,7 +80,7 @@ replayed exactly.
 | in | supports (stakes, strings) | cm | the scenario (WP22) |
 | in | scenario events, heat wave, shade cloth, rain shelter | tick, kind; °C; - | the scenario's treatments (decisions 0015, 0018) |
 | in | actions | tick, kind | player, scripts, replay |
-| out | daily rows per plant, with the day's weather and soil water | - | `ps-export` CSV (decision 0015) |
+| out | daily rows per plant, with the day's weather and soil water, and the soil's drained, run-off and evaporated water and leached and mineralized nitrogen since the start (decision 0047) | - | `ps-export` CSV (decision 0015) |
 | out | full-state hash per day | u64 | golden tests |
 | out | snapshot | RON | saves, the viewer (WP16) |
 | out | lens data per hour (not state; WP26) | see below | `World::lens`, `ps_session::Snapshot::lens` |

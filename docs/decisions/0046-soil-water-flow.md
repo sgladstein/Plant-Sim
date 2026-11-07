@@ -103,9 +103,14 @@ capillary rise, a perched water table in pots, and pot drainage options.
   0043) takes most of it either way, so most of the drop is in how the roots respond
   to a more uneven pot, not in the patch washing out; not isolated further.
   drought_pods −75% (was −70%), drought_shoot_mass −67% (−62%), shade_total_mass −37%
-  (−45%), heat_seeds −34%; pods 9.25 and seed 6.8 g in the watered pot (10.8 and
-  8.1 at 0.26.0; 4.0 to 9.5 g over the four seeds, not yet checked on eight). The R2b test pot (now watered through its surface, so the nightly
-  water carries nitrate back down) gives 9.37 against 7.16 m of laterals in the patch
+  (−45%), heat_seeds −34%. The watered pot is unchanged: on the four validation seeds
+  pods 9.25 and seed 6.8 g (10.8 and 8.1 at 0.26.0), but on eight seeds (world seeds
+  7 to 14, code review) pods 11.6 → 11.1, seed 8.34 → 8.12 g and total mass 28.3 →
+  28.5 g, inside the noise (the pods' standard error is about 1.3); seeds 7 and 9 lose
+  four and five pods while seed 8 gains six. Over its bloom window it is a little
+  wetter (mean daily FTSW 0.77 → 0.81) and no more stressed. On eight seeds the split
+  pot passes at 1.536 and the nitrate patch falls from +46% to +19%. The R2b test pot
+  (now watered through its surface, so the nightly water carries nitrate back down) gives 9.37 against 7.16 m of laterals in the patch
   and a wet:dry ratio of 1.67 against 0.86 without the rules. The flow table (item 4)
   moved no verdict: the numbers here are with it.
 - **Test pots.** The whole-plant tests in `ps-arch/tests` refilled their pots in

@@ -175,7 +175,13 @@ drainage instead (decision 0046). A soaked loam pot with holes rests near satura
 (about 0.43): its 24 cm of height can hold only 24 cm of suction. Water rising to an
 evaporating surface carries nitrate with it and leaves it there, and the next watering
 carries most of it back down: a bare loam column refilled each night for 40 days ends
-with 40% more nitrate in its top 2 cm. No hysteresis. Air-dry soil reads far
+with 40% more nitrate in its top 2 cm. A face's conductivity is the arithmetic mean
+of its two cells' (equation 11), which overstates flow into a dry cell from a wet one,
+as into a dried surface over wet soil (the harmonic or upstream mean would give less);
+bare loam's evaporation lands a little under Ritchie's two stages (24 mm in 20 days
+against about 28), so it does not show, but it is the first thing to check if
+evaporation ever reads high (R5a review). A saucer feeds its pot's columns in index
+order, so when it is nearly empty the low-index columns drink first. No hysteresis. Air-dry soil reads far
 below any plant's reach (loam about −88 MPa, sand −36, clay −178), since the curve has
 no residual content to level off at; that only matters for the dry surface layer.
 Evaporation ignores humidity and wind; ponded and saucer water do not evaporate. In a plot the
