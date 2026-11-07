@@ -228,6 +228,29 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+### R5c cost (model 0.30.0, 2026-11-07)
+
+R5c (#153, decision 0049: compacted and loosened soil), against af07707 (0.29.0).
+Callgrind instructions, one thread:
+
+| Scenario | 0.29.0 | 0.30.0 (0602d77) |
+| --- | --- | --- |
+| single_pot | 7.04 G | 7.24 G (+2.9%) |
+| single_pot_simplified | 5.79 G | 6.00 G (+3.6%) |
+| plot_30_beans, first 30 days | 6.98 G | 7.28 G (+4.3%) |
+| m2/plough_pan_control (0.30.0) | | 8.15 G |
+| m2/plough_pan (0.30.0) | | 9.33 G (+14.5% over its control) |
+
+Without structure the extra cost is spread thin: per-cell saturation in the column
+solve's back-up limit, the class lookups, and the nitrogen step. In a structured grid
+(the plough pan) the column solve reads each cell's table through the `Tables` enum,
+face conductivities take the series mean across class boundaries, and per-cell loops
+look up each cell's class through the palette's `OnceLock` (about 1.5% of that run).
+Result-identical levers, not taken (a few percent of structured runs only): resolve
+each column's tables once per hour, and hoist `cell_classes` out of the per-cell
+loops. Estimated on the owner's PC, chained from the R5b figures: detailed pot about
+8.2 ms, simplified about 6.8, plot about 47 ms per sim-day.
+
 ### R5b cost (model 0.29.0, 2026-11-07)
 
 R5b (#150, decision 0048: waterlogged soil runs short of oxygen) and the R5a review
