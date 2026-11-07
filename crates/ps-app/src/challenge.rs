@@ -6,16 +6,19 @@
 //!   action and the replay scores them.
 //! - While the run goes, the live panel reads the run on screen once per sim day: the
 //!   score so far, the budget left, any broken rule.
-//! - On the last day, `Challenge::judge` scores the run and `ps_game::debrief` explains
-//!   it. The best run of each challenge, with its action log, is kept in
+//! - On the last day, `Challenge::judge` scores the run on screen and `ps_game::debrief`
+//!   explains it. A challenge is scored over several seasons (world seeds), so a
+//!   background thread replays the log on the others; the card shows the mean when they
+//!   are done, and only then is the medal given and the best kept. The best run of each challenge, with its action log, is kept in
 //!   `<captures>/challenge_scores.ron`, so the score can be replayed.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result};
 use bevy::prelude::{Commands, Res, ResMut, Resource};
-use ps_game::{Challenge, DebriefRefs, Factor, Medal, Metric};
+use ps_game::{Challenge, DebriefRefs, Factor, Medal, Metric, Outcome};
 use ps_ui::{
     ChallengeResult, ChallengeRow, Challenges, Charts, Experiment, Inspector, Live, Plan,
     PlantStory, WeekCell,
@@ -31,6 +34,9 @@ use crate::tools::RunSettings;
 /// Hour of the day planned actions apply.
 const PLAN_HOUR: u64 = 8;
 
+/// The other seasons' scores, or why they could not be run.
+type SeasonScores = Result<Vec<f64>, String>;
+
 /// The challenge being played.
 #[derive(Clone, Debug, Resource)]
 pub struct ActiveChallenge {
@@ -39,6 +45,10 @@ pub struct ActiveChallenge {
     /// (tick, days of history) last read, so the live panel updates once a sim day.
     seen: (u64, usize),
     finished: bool,
+    /// The first season's outcome and log, waiting for the other seasons.
+    first: Option<(Outcome, Vec<Action>)>,
+    /// Filled by the thread scoring the other seasons.
+    others: Arc<Mutex<Option<SeasonScores>>>,
 }
 
 /// The best run of one challenge.
@@ -69,7 +79,7 @@ fn fmt_score(c: &Challenge, v: f64) -> String {
     if (v - v.round()).abs() < 1e-9 {
         format!("{v:.0} {}", c.score.label)
     } else {
-        format!("{v:.1} {}", c.score.label)
+        format!("{v:.2} {}", c.score.label)
     }
 }
 
@@ -247,6 +257,8 @@ pub fn launch(
             refs,
             seen: (u64::MAX, usize::MAX),
             finished: false,
+            first: None,
+            others: Arc::default(),
         },
     ))
 }
@@ -269,6 +281,14 @@ fn live(c: &Challenge, state: &WorldState) -> Live {
         next_medal
     } else {
         format!("{next_medal} (scored on the last day)")
+    };
+    let next_medal = if c.seasons > 1 {
+        format!(
+            "{next_medal}. The medal goes to your plan's mean over {} seasons.",
+            c.seasons
+        )
+    } else {
+        next_medal
     };
     let mut budgets = Vec::new();
     if let Some(b) = c.rules.water_budget {
@@ -297,7 +317,11 @@ fn live(c: &Challenge, state: &WorldState) -> Live {
         title: c.title.clone(),
         brief: c.brief.clone(),
         hint: c.hint.clone(),
-        score: format!("So far: {}", fmt_score(c, score)),
+        score: if c.seasons > 1 {
+            format!("This season so far: {}", fmt_score(c, score))
+        } else {
+            format!("So far: {}", fmt_score(c, score))
+        },
         next_medal,
         budgets,
         breaks: breaks
@@ -347,15 +371,59 @@ fn story(snap: &ps_session::Snapshot, p: &ps_game::PlantDebrief, notable: f64) -
     }
 }
 
+/// The result card for the run on screen: its debrief now, the score once the other
+/// seasons are in ([`settle`]).
 fn finish(
     a: &ActiveChallenge,
+    o: &Outcome,
     state: &WorldState,
     snap: &ps_session::Snapshot,
-    captures: &Path,
 ) -> ChallengeResult {
     let c = &a.challenge;
-    let o = c.judge(state);
     let d = ps_game::debrief(state, &a.refs);
+    let mut legend: Vec<(String, [u8; 3])> = Factor::PRIMARY
+        .iter()
+        .map(|f| (f.name().to_owned(), factor_color(*f)))
+        .collect();
+    legend.dedup();
+    let mut r = ChallengeResult {
+        title: c.title.clone(),
+        breaks: o.breaks.iter().map(ToString::to_string).collect(),
+        plants: d
+            .plants
+            .iter()
+            .map(|p| story(snap, p, a.refs.notable_pressure.value))
+            .collect(),
+        legend,
+        ..ChallengeResult::default()
+    };
+    if c.seasons > 1 {
+        r.score = format!(
+            "This season {}; scoring your plan over {} seasons…",
+            fmt_score(c, o.score),
+            c.seasons
+        );
+        r.medal_color = medal_color(None);
+    }
+    r
+}
+
+/// Fills the score, the medal and the best on the result card from the full outcome,
+/// and keeps the best run when `save`.
+fn settle(c: &Challenge, o: &Outcome, log: &[Action], captures: &Path, r: &mut ChallengeResult) {
+    if o.season_scores.len() > 1 {
+        let each: Vec<String> = o.season_scores.iter().map(|v| fmt_score(c, *v)).collect();
+        r.seasons = format!(
+            "Mean of {} seasons, each a new draw of weather and chance: {}. The season you \
+             watched is the first; the debrief below is that season. Harvests and pruning count \
+             only in that one; the plan (sowing, water, fertilizer) runs in all.",
+            o.season_scores.len(),
+            each.join(", ")
+        );
+    }
+    r.score = fmt_score(c, o.score);
+    r.medal = o.medal.map(|m| medal_name(m).to_owned());
+    r.medal_color = medal_color(o.medal);
     let mut scores = read_scores(captures);
     let better = |old: &Best| {
         let ranked = o.breaks.is_empty();
@@ -367,16 +435,15 @@ fn finish(
                     o.score < old.score
                 })
     };
-    let new_best = o.breaks.is_empty() && scores.get(&c.id).is_none_or(better);
-    let mut saved = String::new();
-    if new_best {
+    r.new_best = o.breaks.is_empty() && scores.get(&c.id).is_none_or(better);
+    if r.new_best {
         scores.insert(
             c.id.clone(),
             Best {
                 score: o.score,
                 medal: o.medal,
                 model_version: o.model_version.clone(),
-                log: state.log.clone(),
+                log: log.to_vec(),
             },
         );
         let path = scores_path(captures);
@@ -387,31 +454,27 @@ fn finish(
                     .map_err(anyhow::Error::from)
             })
             .and_then(|t| std::fs::write(&path, t).map_err(anyhow::Error::from));
-        saved = match write {
+        r.saved = match write {
             Ok(()) => format!("Best run and its action log saved to {}", path.display()),
             Err(e) => format!("Could not save the best run: {e:#}"),
         };
     }
-    let mut legend: Vec<(String, [u8; 3])> = Factor::PRIMARY
-        .iter()
-        .map(|f| (f.name().to_owned(), factor_color(*f)))
-        .collect();
-    legend.dedup();
-    ChallengeResult {
-        title: c.title.clone(),
-        score: fmt_score(c, o.score),
-        medal: o.medal.map(|m| medal_name(m).to_owned()),
-        medal_color: medal_color(o.medal),
-        new_best,
-        breaks: o.breaks.iter().map(ToString::to_string).collect(),
-        plants: d
-            .plants
-            .iter()
-            .map(|p| story(snap, p, a.refs.notable_pressure.value))
-            .collect(),
-        legend,
-        saved,
-    }
+}
+
+/// Starts scoring seasons 2 and on in the background.
+fn score_others(data: &Path, a: &ActiveChallenge, log: &[Action]) {
+    let (data, c, log, slot) = (
+        data.to_path_buf(),
+        a.challenge.clone(),
+        log.to_vec(),
+        a.others.clone(),
+    );
+    std::thread::spawn(move || {
+        let r = ps_game::score_other_seasons(&data, &c, &log).map_err(|e| format!("{e:#}"));
+        if let Ok(mut s) = slot.lock() {
+            *s = Some(r);
+        }
+    });
 }
 
 /// Starts challenges, keeps the live panel current and scores the last day.
@@ -479,6 +542,22 @@ pub fn challenge(
     let (Some(src), Some(mut a)) = (src, active) else {
         return;
     };
+    if a.first.is_some() {
+        let done = a.others.lock().ok().and_then(|mut s| s.take());
+        if let Some(done) = done
+            && let Some((o, log)) = a.first.take()
+            && let Some(r) = ui.result.as_mut()
+        {
+            match done {
+                Ok(more) => {
+                    let o = o.with_seasons(&a.challenge, &more);
+                    settle(&a.challenge, &o, &log, &config.dir, r);
+                    ui.rows = load_rows(&settings.data, &config.dir);
+                }
+                Err(e) => r.score = format!("Could not score the other seasons: {e}"),
+            }
+        }
+    }
     let snap = src.snapshot();
     let seen = (snap.tick, snap.history.len());
     let at_end = snap.tick >= src.end_tick();
@@ -491,9 +570,16 @@ pub fn challenge(
     ui.live = Some(live(&a.challenge, &state));
     if score_now {
         a.finished = true;
-        ui.result = Some(finish(&a, &state, snap, &config.dir));
+        let o = a.challenge.judge(&state);
+        ui.result = Some(finish(&a, &o, &state, snap));
         ui.result_open = true;
-        ui.rows = load_rows(&settings.data, &config.dir);
+        if a.challenge.seasons > 1 {
+            score_others(&settings.data, &a, &state.log);
+            a.first = Some((o, state.log.clone()));
+        } else if let Some(r) = ui.result.as_mut() {
+            settle(&a.challenge, &o, &state.log, &config.dir, r);
+            ui.rows = load_rows(&settings.data, &config.dir);
+        }
     }
 }
 

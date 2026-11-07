@@ -46,6 +46,9 @@ pub enum GameError {
         "challenge {0}: medal thresholds must run bronze, silver, gold in the score's direction"
     )]
     Medals(String),
+    /// A season's replay panicked.
+    #[error("a season's replay panicked")]
+    Panicked,
 }
 
 /// A scored scenario (design plan §6.4).
@@ -70,6 +73,16 @@ pub struct Challenge {
     pub rules: Rules,
     /// Medal thresholds, in score units.
     pub medals: Medals,
+    /// Seasons scored: the log is replayed on this many world seeds (the scenario's,
+    /// then the next ones up) and the medal goes to the mean. One season's pod set is
+    /// chance enough to swing a score by a few pods, so a single run can reward a poor
+    /// plan; the mean rewards the plan.
+    #[serde(default = "one_season")]
+    pub seasons: u32,
+}
+
+fn one_season() -> u32 {
+    1
 }
 
 /// The score: a metric and its direction.
@@ -258,6 +271,26 @@ pub struct Outcome {
     pub model_version: String,
     /// Whether it matches the scenario's pinned version (scores across versions differ).
     pub version_matches: bool,
+    /// Each season's score, the scenario's own world seed first; `score` is their mean.
+    pub season_scores: Vec<f64>,
+}
+
+impl Outcome {
+    /// Adds the scores of the other seasons: `score` becomes the mean over all of them
+    /// and the medal follows it.
+    #[must_use]
+    pub fn with_seasons(mut self, c: &Challenge, more: &[f64]) -> Self {
+        self.season_scores.extend_from_slice(more);
+        #[allow(clippy::cast_precision_loss)]
+        let n = self.season_scores.len().max(1) as f64;
+        self.score = self.season_scores.iter().sum::<f64>() / n + 0.0;
+        self.medal = if self.breaks.is_empty() {
+            c.medal_for(self.score)
+        } else {
+            None
+        };
+        self
+    }
 }
 
 impl Challenge {
@@ -385,6 +418,7 @@ impl Challenge {
             nitrogen_used: usage.nitrogen,
             model_version: state.model_version.clone(),
             version_matches: state.model_version == state.scenario.model_version,
+            season_scores: vec![score],
         }
     }
 }
@@ -417,17 +451,99 @@ fn read(path: &Path) -> Result<String, GameError> {
 }
 
 /// Replays a log on the challenge's scenario to its last day and scores it: the
-/// reproducible score of design plan §6.4.
+/// reproducible score of design plan §6.4. The world returned is the first season's,
+/// on the scenario's own seed; the score is the mean over [`Challenge::seasons`].
 ///
 /// # Errors
 /// [`GameError`] when the scenario cannot be loaded or run.
 pub fn play(data_dir: &Path, c: &Challenge, log: &[Action]) -> Result<(World, Outcome), GameError> {
     let scenario = load_scenario(data_dir, c)?;
     let catalog = catalog_for(data_dir, c, &scenario, log)?;
-    let end = u64::from(scenario.duration_days) * 24;
-    let w = World::replay(scenario, catalog, log, end)?;
-    let o = c.judge(w.state());
+    let w = replay_season(&scenario, &catalog, log, 0)?;
+    let more = other_seasons(c, &scenario, &catalog, log)?;
+    let o = c.judge(w.state()).with_seasons(c, &more);
     Ok((w, o))
+}
+
+/// The scores of seasons 2 and on, for a run whose first season is already scored
+/// (the viewer plays the first on screen).
+///
+/// # Errors
+/// [`GameError`] when the scenario cannot be loaded or run.
+pub fn score_other_seasons(
+    data_dir: &Path,
+    c: &Challenge,
+    log: &[Action],
+) -> Result<Vec<f64>, GameError> {
+    let scenario = load_scenario(data_dir, c)?;
+    let catalog = catalog_for(data_dir, c, &scenario, log)?;
+    other_seasons(c, &scenario, &catalog, log)
+}
+
+/// The scenario of season `k`: the world seed moved up by `k`, which redraws the
+/// weather, the field and every chance in the plant (pod set among them).
+#[must_use]
+pub fn season_scenario(scenario: &Scenario, k: u32) -> Scenario {
+    let mut s = scenario.clone();
+    s.world_seed = s.world_seed.wrapping_add(u64::from(k));
+    s
+}
+
+/// The log for season `k`. The plan carries over; actions on one particular organ
+/// (pick this pod, prune that shoot) do not, because another season grows other
+/// organs. Season 0 keeps everything.
+#[must_use]
+pub fn season_log(log: &[Action], k: u32) -> Vec<Action> {
+    log.iter()
+        .filter(|a| {
+            k == 0
+                || !matches!(
+                    a.kind,
+                    ActionKind::Prune { .. }
+                        | ActionKind::Harvest { .. }
+                        | ActionKind::Pollinate { .. }
+                )
+        })
+        .cloned()
+        .collect()
+}
+
+fn replay_season(
+    scenario: &Scenario,
+    catalog: &Catalog,
+    log: &[Action],
+    k: u32,
+) -> Result<World, GameError> {
+    let end = u64::from(scenario.duration_days) * 24;
+    Ok(World::replay(
+        season_scenario(scenario, k),
+        catalog.clone(),
+        &season_log(log, k),
+        end,
+    )?)
+}
+
+/// Seasons 1.. scored, one thread each, gathered in season order.
+fn other_seasons(
+    c: &Challenge,
+    scenario: &Scenario,
+    catalog: &Catalog,
+    log: &[Action],
+) -> Result<Vec<f64>, GameError> {
+    let runs: Vec<Result<f64, GameError>> = std::thread::scope(|s| {
+        let handles: Vec<_> = (1..c.seasons)
+            .map(|k| {
+                s.spawn(move || {
+                    replay_season(scenario, catalog, log, k).map(|w| c.measure(w.state()))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or(Err(GameError::Panicked)))
+            .collect()
+    });
+    runs.into_iter().collect()
 }
 
 /// The catalog a challenge run needs: the scenario's, plus the challenge's sowing
@@ -601,6 +717,7 @@ mod tests {
             },
             rules: Rules::default(),
             medals,
+            seasons: 1,
         }
     }
 

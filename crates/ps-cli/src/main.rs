@@ -703,7 +703,13 @@ fn cmd_challenge(a: &Args) -> Result<()> {
     let id = id.to_string_lossy();
     let c = ps_game::load_challenge(&data, &id)?;
     let (w, o) = ps_game::play(&data, &c, &log)?;
-    println!("{}: {:.2} {}", c.title, o.score, c.score.label);
+    println!(
+        "{}: {:.2} {} (mean of {} seasons)",
+        c.title,
+        o.score,
+        c.score.label,
+        o.season_scores.len()
+    );
     println!(
         "medal: {}",
         o.medal
@@ -713,6 +719,8 @@ fn cmd_challenge(a: &Args) -> Result<()> {
         "water by can: {:.2} L, nitrogen added: {:.3} g",
         o.water_used.0, o.nitrogen_used.0
     );
+    let seasons: Vec<String> = o.season_scores.iter().map(|v| format!("{v:.2}")).collect();
+    println!("seasons: {}", seasons.join(" "));
     for b in &o.breaks {
         println!("rule broken: {b}");
     }
@@ -726,7 +734,7 @@ fn cmd_challenge(a: &Args) -> Result<()> {
     let refs = ps_game::load_debrief_refs(&data)?;
     let d = ps_game::debrief(w.state(), &refs);
     for p in &d.plants {
-        println!("plant {} ({}):", p.plant, p.species);
+        println!("plant {} ({}), first season:", p.plant, p.species);
         for w in &p.weeks {
             let top = w.top.map_or("-", ps_game::Factor::name);
             let pr: Vec<String> = w.pressure.iter().map(|x| format!("{x:.2}")).collect();

@@ -18,43 +18,50 @@ CLI: `ps-cli challenge ID [LOG] [--out DIR]`.
 | `score` | `PeakSum(column)` (each plant's highest daily value, summed: harvesting pods does not lower a pod count) or `FinalSum(column)`; a label; the direction |
 | `rules` | allowed action types, and optional water budget (kg = L, by can), nitrogen budget (g N), sowing window (scenario days) and most sowings |
 | `medals` | bronze, silver and gold thresholds in score units |
+| `seasons` | seasons scored (default 1): the log is replayed on this many world seeds and the medal goes to the mean |
 
 A score is recomputed from the replay (`ps_game::play`: scenario plus log, run to the
 last day, then `Challenge::judge`), so anyone with the log gets the same number. A run
 with a broken rule, or scored before the last day, gets its score but no medal. A run
 on a model version other than the scenario's pin is flagged.
 
+### Seasons
+
+One season is one draw: each flower's set is a chance, and the weather is generated from
+the world seed, so a single run can swing a pod count by several pods. On 0.25.0 (R3b)
+thirsty summer on seed 7 gave 2 pods for watering daily in bloom and gold for watering
+every 4 days, the reverse of the lesson. So each shipped challenge is scored over
+8 seasons: the log replays on the scenario's world seed and the next seven up
+(`ps_game::season_scenario`), and the score is the mean of the eight. Actions on one
+particular organ (harvest, prune, pollinate) are dropped from seasons 2 and on
+(`ps_game::season_log`), since another seed grows other organs; the plan (sowing,
+watering, fertilizer) carries over, so a harvest counts in one season of the eight; the
+result card says so. The first season is the scenario as written, and it
+is the one the viewer shows and the debrief explains. The other seven run on threads,
+about 2 s in a release build.
+
 ## The first three challenges
 
-Medal thresholds come from strategy sweeps on world seed 7: on model 0.23.0 (re-swept
-after the PR #137 review), checked again on 0.24.0 (R2b, decision 0043), where hungry
-soil's medals moved and thirsty summer's silver and gold came down a pod each (its best
-bloom schedules made 6 to 10 pods, so gold at 11 was out of reach), and on 0.25.0 (R3b,
-plant hydraulics, decision 0044) over world seeds 7 to 14, where thirsty summer's gold
-came down to 9 and the heat wave's medals to 8 / 10 / 12. Pod counts are noisy from one strategy to the next (each
-flower's set is a draw), so thresholds sit where a sound strategy usually lands, not at
-the best single draw. The review's eight-seed sweep is in the project files
-(reviews/wp32-challenges-137-review.md).
+Medal thresholds come from strategy sweeps of the 8-season mean (world seeds 7 to 14)
+on model 0.25.0 (R3b). Single-seed sweeps on 0.23.0 to 0.25.0 are in the git history of
+this file; the review's eight-seed sweep is in the project files
+(reviews/wp32-challenges-137-review.md). Even the mean of 8 moves from one strategy to its neighbour (by about a pod in the heat
+wave, whose seasons spread about 3 pods), so thresholds sit where a sound strategy lands.
 
-| Challenge | Setting | Player controls | Sweep (seed 7) | Medals (B / S / G) |
+| Challenge | Setting | Player controls | Sweep, mean of 8 seasons (0.25.0) | Medals (B / S / G) |
 | --- | --- | --- | --- | --- |
-| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | 0.23.0: 6 L spread over the whole season 2 to 5 pods; the same 6 L in bloom (days 40 to 75, every 1 to 4 days) 9 to 14. 0.24.0: no water 4, spread daily 1, bloom every 1 to 4 days 6 to 10. 0.25.0 (seed 7; seeds 7 to 14 mean): no water 1 (1.9), spread daily 1 (1.8); the 6 L from day 40 every 1 to 7 days 2 to 9 (4.9 to 7.3), every 4 days 9 (7.3); from day 35 3 to 8 (4.9 to 6.4) | 5 / 7 / 9 pods (0.24.0: 5 / 7 / 10; 0.23.0: 5 / 8 / 11) |
-| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | 0.23.0: sown days 0 to 20 (blooms into the heat) 1 to 8 pods; days 22 to 40 6 to 18, mostly 11 to 18. 0.24.0: days 0 to 16 2 to 7; days 20 to 36 10 to 15; day 40 6. 0.25.0 (seed 7; seeds 7 to 14 mean): days 0 to 16 1 to 7 (3.3 to 6.4); days 20 to 40 9 to 12 (6.8 to 10.4), best days 28 and 32 | 8 / 10 / 12 pods (0.24.0: 9 / 12 / 15) |
-| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | 0.23.0: none 0.5 g seed; all at sowing 4.0; all on day 45 2.1; split or mid-season (days 25 to 35, or several doses from day 15 to 55) 4.9 to 7.4. 0.24.0: none 0.8; all on day 45 4.9; days 20 and 35 6.7; days 15, 30 and 45 7.3; all at sowing 8.0; days 25 and 40 8.2. 0.25.0 (seed 7; seeds 7 to 14 mean): none 1.0 (0.7); all on day 45 3.7 (3.2); all at sowing 7.0 (6.5); days 25 and 40 9.0 (7.2), days 20 and 35 9.0 (7.6), days 15, 30 and 45 9.3 (7.5) | 5.5 / 7 / 8.5 g seed, unchanged (0.23.0: 4.5 / 6 / 7) |
+| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | no water 1.9 pods; 6 L spread daily over the season 1.6; days 30 to 85 every 1 to 7 days 4.2 to 5.0; days 40 to 75 or 45 to 75 4.8 to 7.3 (every 4 days from day 40, the fixture, 7.3); days 42 to 70 every 1 to 4 days 7.1 to 8.5 | 4 / 6 / 7.5 pods |
+| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 6 (blooms into the heat) 3.3 to 3.5 pods; days 8 to 16 4.8 to 6.4; days 18 to 24 6.8 to 8.6; days 26 to 40 7.8 to 11.0 (day 28 10.4) | 5 / 7.5 / 9.5 pods |
+| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none 0.7 g seed; all on day 45 3.2; all on day 35 5.2; all at sowing 6.5; one dose between days 15 and 25 7.4; two or three doses from day 10 to 45 7.2 to 8.1 (days 15, 25 and 35 8.0; days 18, 28 and 38 8.1) | 5 / 7 / 7.9 g seed |
 
-On 0.24.0 hungry soil pays more for every feeding (water now carries nitrate to the
-roots, and roots proliferate where it lands), and on world seed 7 feeding all at sowing
-does as well as splitting. Over world seeds 7 to 14 it does not: all at sowing averages
-6.6 g (2.3 to 8.8), split or mid-season 7.3 to 7.6 g (5.8 to 9.6), all on day 45 3.2 g,
-none 0.7 g. So the hint stands. On 0.25.0 seed 7 favours splitting again (9.0 to 9.3 g
-against 7.0 at sowing), and over seeds 7 to 14 splitting averages 7.2 to 7.6 g against
-6.5 g.
+On the mean the lessons hold: water in bloom beats water spread thin by about five pods,
+sowing after day 25 beats blooming into the heat by six, and feeding before and through
+early bloom beats feeding late by four grams.
 
-On 0.25.0 daily doses in bloom no longer stand out: over seeds 7 to 14 they average 5.4
-pods and doses every 4 days 7.3, and on seed 7 the daily schedule draws only 2. Each
-flower's set is a draw, and pod abortion still reads the root zone's lowest FTSW of the
-day, which under any bloom schedule sits at 0.25 to 0.45 most afternoons against the
-0.5 threshold (decision 0044), so the fixture's bloom strategy waters every 4 days from day 40.
+Daily watering in bloom is no longer the best thirsty plan on 0.25.0 (bronze, 5.4 pods
+for days 40 to 75): pod abortion still reads the root zone's lowest FTSW of the day,
+which under any bloom schedule sits at 0.25 to 0.45 most afternoons against the 0.5
+threshold (decision 0044), so larger doses every 3 or 4 days do better.
 
 The tests in `crates/ps-game/tests/challenges.rs` replay a good and a poor strategy for
 each challenge (tests/fixtures/challenges) and check the good one beats the poor one and
@@ -108,7 +115,10 @@ yet.
 - While the run goes, a panel above the lenses shows the score so far, the next medal,
   budgets left and any broken rule. It updates once a sim day. Watering uses the
   ordinary Water tool; the panel converts the pot's mm to litres.
-- At the last day the **Season debrief** card shows the score, medal, a week strip per
+- At the last day the **Season debrief** card shows the season on screen while the
+  other seven seasons score in the background ("scoring your plan over 8 seasons…"),
+  then the mean, each season's score, and the medal. The best is kept only then. The
+  card has a week strip per
   plant coloured by that week's worst event (season-long backdrop factors stay grey;
   hover a week for every number) and the summary sentences. Try again replays the
   challenge with the same plan.
