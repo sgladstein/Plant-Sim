@@ -392,6 +392,12 @@ quantity!(
     "kg/h/MPa"
 );
 quantity!(
+    /// A soil cell's oxygen deficit (0 to 1) summed over hours, full-deficit hours: the
+    /// waterlogging clock roots die by (R5b, decision 0048).
+    DeficitHours,
+    "h"
+);
+quantity!(
     /// Angle in degrees.
     Degrees,
     "deg"

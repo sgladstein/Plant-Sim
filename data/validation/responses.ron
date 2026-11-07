@@ -350,7 +350,7 @@ ValidationResponses(
       sources: ["plan_r5c_compaction", "bengough2011"],
       gate: Info,
       tag: Encoded,
-      note: "R5c (decision 0049) done-when: a plough pan from 15 to 20 cm at 1.2 times the loam's bulk density leaves fewer roots in and below it on day 70 than the same plot without the pan. The strength function and the slowing it causes are encoded (~); root elongation halves at penetrometer resistances of 0.8 to 2 MPa (Bengough 2011). A wet season softens the pan and lets roots through (world seed 11).",
+      note: "R5c (decision 0049) done-when: a plough pan from 15 to 20 cm at 1.2 times the loam's bulk density leaves fewer roots in and below it on day 70 than the same plot without the pan. The strength function and the slowing it causes are encoded (~); root elongation halves at penetrometer resistances of 0.8 to 2 MPa (Bengough 2011). The pan is also short of air at field capacity (8% air), which slows tips further; where a season leaves it drier and so harder but aerated (world seed 11) roots cross more often, and in the wettest (seed 9) the pan's own waterlogging clock stops them.",
     ),
     Response(
       id: "pan_root_shift_above",

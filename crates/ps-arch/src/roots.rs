@@ -13,10 +13,10 @@ use ps_graph::{OrganId, OrganKind, SpecificSize};
 use ps_rng::Purpose;
 use ps_soil::SoilGrid;
 use ps_species::RootOrigin;
-use ps_units::{DegreeDays, GramsDM, Hours};
+use ps_units::{DeficitHours, DegreeDays, GramsDM, Hours};
 
 use crate::geometry::{V3, add, deflect, from_azimuth, norm, soil_cell, unit};
-use crate::{ArchError, PRIMORDIUM, Plant, Role, RootAxis, Spawn, curve};
+use crate::{ArchError, PRIMORDIUM, Plant, Role, RootAxis, RootSpan, Spawn, curve};
 
 /// Golden angle, rad: the azimuth step between successive lateral cohorts.
 const GOLDEN_ANGLE: f64 = 2.399_963_229_728_653;
@@ -44,8 +44,11 @@ impl Plant {
             && self.collar_flooded
             && collar.is_none_or(|c| soil.hypoxia(c) < LATERAL_HYPOXIA);
         if regrow {
+            // One flood, one set: a tip lost later licenses another only if the collar
+            // is hypoxic again.
             self.drowned = false;
             self.collar_flooded = false;
+            self.collar_hypoxic_at = None;
         }
         let mut whorl = 0u32;
         for t in 0..self.params.roots.len() {
@@ -638,8 +641,14 @@ impl Plant {
         if w.fine_root_hours == u32::MAX && w.root_hours == u32::MAX {
             return Ok(());
         }
-        if soil_cell(soil, self.collar_position).is_some_and(|c| soil.hypoxia(c) > 0.0) {
-            self.collar_flooded = true;
+        // Each root's clock: the cell's count gained since the last look, or the whole
+        // count if the cell had air in between. A root new to a cell started from the
+        // cell's count then (`carry_exposure`), so it is not charged the hours the cell
+        // was short of air before it arrived.
+        for sp in &mut self.root_spans {
+            if sp.cell < soil.len() {
+                advance_clock(sp, soil.hypoxic_hours(sp.cell));
+            }
         }
         let n = self.arena.len();
         // Of an axis only the tip segment dies: the older, thicker parts live on.
@@ -663,7 +672,7 @@ impl Plant {
                 w.root_hours
             };
             total[o] += sp.length.0;
-            if soil.hypoxic_hours(sp.cell) >= f64::from(limit) {
+            if sp.exposure.0 >= f64::from(limit) {
                 drowned[o] += sp.length.0;
             }
         }
@@ -674,8 +683,13 @@ impl Plant {
                 let parent = self.arena.parent[o];
                 self.shed_organ(id, now)?;
                 if order == 0 {
-                    // An axis tip lost: the hypocotyl roots again once it has air.
+                    // An axis tip lost: the hypocotyl roots again once it has air, if
+                    // the flood reached it within the tip's death clock.
                     self.drowned = true;
+                    let clock = Hours(u64::from(w.root_hours));
+                    self.collar_flooded |= self
+                        .collar_hypoxic_at
+                        .is_some_and(|t| now.0.saturating_sub(t.0) <= clock.0);
                 } else if order >= 2 {
                     // A fine-root cohort lost: its lateral, if alive, makes another
                     // once its cell has air.
@@ -689,7 +703,24 @@ impl Plant {
                 }
             }
         }
+        // A stem base flooded since a tip was lost roots again once it has air too.
+        if soil_cell(soil, self.collar_position).is_some_and(|c| soil.hypoxia(c) > 0.0) {
+            self.collar_hypoxic_at = Some(now);
+            self.collar_flooded |= self.drowned;
+        }
         Ok(())
+    }
+
+    /// Carries each root's waterlogging clock from the spans it had, `before`, to the
+    /// spans just rebuilt (R5b's death rule, counted per root, decision 0049): a root
+    /// still in a cell keeps its count there; a root that has reached a new cell starts
+    /// at 0 there, from the cell's count now. Both lists are sorted by organ, then cell.
+    pub(crate) fn carry_exposure(&mut self, before: &[RootSpan], soil: &SoilGrid) {
+        let w = self.params.waterlogging;
+        if w.fine_root_hours == u32::MAX && w.root_hours == u32::MAX {
+            return;
+        }
+        carry_clocks(before, &mut self.root_spans, |c| soil.hypoxic_hours(c));
     }
 
     /// Each growing root organ's expansion clock factor for the coming day (R2b): the
@@ -738,6 +769,39 @@ impl Plant {
         }
         if slowed {
             self.root_clock = clock;
+        }
+    }
+}
+
+/// Brings one root's waterlogging clock in its cell up to date once the cell's own count
+/// has moved from the span's `seen` to `h` (R5c): the gain, or all of `h` if the cell
+/// had air in between and started again. A root is never further on than its cell.
+fn advance_clock(sp: &mut RootSpan, h: f64) {
+    let e = if h < sp.seen.0 {
+        h
+    } else {
+        (sp.exposure.0 + h - sp.seen.0).min(h)
+    };
+    sp.exposure = DeficitHours(e);
+    sp.seen = DeficitHours(h);
+}
+
+/// Copies each root's clock from `before` to `now` where the root is still in the same
+/// cell; a root new to a cell starts at 0 there from the cell's count, `count(cell)`.
+/// Both lists are sorted by organ, then cell.
+fn carry_clocks(before: &[RootSpan], now: &mut [RootSpan], count: impl Fn(usize) -> f64) {
+    let mut j = 0;
+    for sp in now {
+        let key = (sp.organ, sp.cell);
+        while before.get(j).is_some_and(|b| (b.organ, b.cell) < key) {
+            j += 1;
+        }
+        if let Some(b) = before.get(j).filter(|b| (b.organ, b.cell) == key) {
+            sp.exposure = b.exposure;
+            sp.seen = b.seen;
+        } else {
+            sp.exposure = DeficitHours(0.0);
+            sp.seen = DeficitHours(count(sp.cell));
         }
     }
 }
@@ -857,10 +921,56 @@ fn wall(soil: &SoilGrid, base: V3, dir: V3, len: f64) -> Option<V3> {
 
 #[cfg(test)]
 mod tests {
-    use super::{path_proliferation, proliferation, water_gradient};
+    use super::{advance_clock, carry_clocks, path_proliferation, proliferation, water_gradient};
+    use crate::RootSpan;
     use crate::params::RootPlasticity;
     use ps_soil::{Cell, SoilGrid, SoilHour, SoilNitrogen, Strip, Texture};
-    use ps_units::{Celsius, Meters, Millimeters, WPerM2};
+    use ps_units::{Celsius, DeficitHours, Meters, Millimeters, WPerM2};
+
+    fn span(organ: u32, cell: usize) -> RootSpan {
+        RootSpan {
+            organ,
+            cell,
+            length: Meters(0.01),
+            exposure: DeficitHours(0.0),
+            seen: DeficitHours(0.0),
+        }
+    }
+
+    /// R5c (Code review of #153): a root's death clock runs from when it reached its
+    /// cell, not from when the cell went short of air.
+    #[test]
+    fn a_root_counts_its_own_hours_short_of_air() {
+        // Cell 5 has been short of air for 400 full-deficit hours, cell 6 never.
+        let count = |c: usize| if c == 5 { 400.0 } else { 0.0 };
+        let mut old = span(1, 5);
+        old.exposure = DeficitHours(100.0);
+        old.seen = DeficitHours(400.0);
+        let before = [old, span(2, 7)];
+        // Organ 1 is still in cell 5 and has grown into 6; organ 3 has just reached 5.
+        let mut now = [span(1, 5), span(1, 6), span(3, 5)];
+        carry_clocks(&before, &mut now, count);
+        let clock = |s: &RootSpan| (s.exposure.0.to_bits(), s.seen.0.to_bits());
+        let bits = |e: f64, h: f64| (e.to_bits(), h.to_bits());
+        assert_eq!(clock(&now[0]), bits(100.0, 400.0));
+        assert_eq!(clock(&now[1]), bits(0.0, 0.0));
+        assert_eq!(clock(&now[2]), bits(0.0, 400.0));
+        // A day at a deficit of 0.25: every root in cell 5 gains 6 hours, the newcomer
+        // too, and none is charged the cell's 400.
+        advance_clock(&mut now[0], 406.0);
+        advance_clock(&mut now[2], 406.0);
+        assert!((now[0].exposure.0 - 106.0).abs() < 1e-12);
+        assert!((now[2].exposure.0 - 6.0).abs() < 1e-12);
+        // The cell had air and started again: the clock is the cell's new count.
+        advance_clock(&mut now[0], 3.0);
+        assert!((now[0].exposure.0 - 3.0).abs() < 1e-12);
+        // A flood: roots and cell share the clock.
+        let mut flooded = span(4, 9);
+        for h in [0.0, 24.0, 48.0, 72.0] {
+            advance_clock(&mut flooded, h);
+        }
+        assert!((flooded.exposure.0 - 72.0).abs() < 1e-12);
+    }
 
     fn pot() -> SoilGrid {
         let mut soil = SoilGrid::new_pot(

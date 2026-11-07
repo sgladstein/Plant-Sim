@@ -1,8 +1,9 @@
 //! R5c (decision 0049) done-when: compacted soil. A bush bean in a 1 m loam plot,
 //! 60 cm deep, watered 6 mm every other morning.
 //! - With a plough pan from 15 to 20 cm (`m2/plough_pan`, 1.2 times the loam's bulk
-//!   density) it has more root above the pan, far less in and below it, and thicker
-//!   axes in it, than in the same plot without the pan (`m2/plough_pan_control`).
+//!   density) it has more root above the pan and far less in and below it than in the
+//!   same plot without the pan (`m2/plough_pan_control`), and its axes in the pan are
+//!   thicker than in the same pan without the thickening response.
 //! - In a raised bed (`m2/raised_bed`, the top 30 cm loosened to 0.85) it roots deeper
 //!   than in a plot compacted to 1.15 throughout (`m2/compacted_plot`).
 //! - Digging a strip of the compacted plot on day 20 (`m2/dug_strip`) changes the soil
@@ -27,10 +28,16 @@ fn load(name: &str) -> (Scenario, Catalog) {
 
 /// The world after `days` of the scenario (its whole run if `None`).
 fn run(name: &str, days: Option<u32>) -> World {
-    let (mut s, c) = load(name);
+    run_with(name, days, |_| {})
+}
+
+/// [`run`] with the species' constants changed by `change` first.
+fn run_with(name: &str, days: Option<u32>, change: impl Fn(&mut Catalog)) -> World {
+    let (mut s, mut c) = load(name);
     if let Some(d) = days {
         s.duration_days = d;
     }
+    change(&mut c);
     let mut w = World::new(s, c).unwrap();
     w.run_to_end().unwrap();
     w
@@ -91,17 +98,45 @@ fn axis_radius(p: &[Piece], top: f64, bottom: f64) -> f64 {
 
 #[test]
 fn a_plough_pan_holds_roots_above_it_and_thickens_them_in_it() {
-    let pan = pieces(&run("m2/plough_pan", None));
-    let flat = pieces(&run("m2/plough_pan_control", None));
+    // The thickening is read against the same pan with the response off: in the pan
+    // the axes that get there are a selection, so the control's radius would not do.
+    let (pan, flat, plain) = std::thread::scope(|t| {
+        let pan = t.spawn(|| {
+            let w = run("m2/plough_pan", None);
+            // The pan is short of air at field capacity, but every tip that reaches it
+            // keeps its own waterlogging clock: none dies there this season.
+            let a = &w.state().plants[0].plant.arena;
+            let lost = (0..a.len())
+                .filter(|&i| a.kind[i] == OrganKind::Root && a.axis_order[i] == 0 && !a.alive[i])
+                .count();
+            assert_eq!(lost, 0);
+            pieces(&w)
+        });
+        let flat = t.spawn(|| pieces(&run("m2/plough_pan_control", None)));
+        let plain = t.spawn(|| {
+            pieces(&run_with("m2/plough_pan", None, |c| {
+                for sp in c.species.values_mut() {
+                    sp.constants.root_impedance_thickening.value = 0.0;
+                }
+            }))
+        });
+        (
+            pan.join().unwrap(),
+            flat.join().unwrap(),
+            plain.join().unwrap(),
+        )
+    });
     let above = |p: &[Piece]| length(p, |x| x.depth < 0.15);
     let below = |p: &[Piece]| length(p, |x| x.depth >= 0.15);
-    let (r_pan, r_flat) = (
+    let (r_pan, r_plain, r_flat) = (
         axis_radius(&pan, 0.15, 0.20),
+        axis_radius(&plain, 0.15, 0.20),
         axis_radius(&flat, 0.15, 0.20),
     );
     println!(
         "day 70 root length above 15 cm: pan {:.1} m, no pan {:.1} m; at 15 cm and below: \
-         {:.1} m and {:.1} m; axis radius in the pan's layer {r_pan:.3} and {r_flat:.3} mm",
+         {:.1} m and {:.1} m; axis radius in the pan's layer {r_pan:.3} mm, {r_plain:.3} \
+         without thickening, {r_flat:.3} without the pan",
         above(&pan),
         above(&flat),
         below(&pan),
@@ -109,7 +144,7 @@ fn a_plough_pan_holds_roots_above_it_and_thickens_them_in_it() {
     );
     assert!(above(&pan) > above(&flat));
     assert!(below(&pan) < 0.5 * below(&flat));
-    assert!(r_pan > 1.15 * r_flat);
+    assert!(r_pan > 1.15 * r_plain);
 }
 
 #[test]

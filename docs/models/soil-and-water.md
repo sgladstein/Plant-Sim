@@ -171,7 +171,15 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
       `σ_fc = (θ_fc / θ_s0) · 33 kPa` (the texture's own soil at field capacity),
       `Q_fc` = 0.5 MPa, `a` = 0.4, `b` = 2.0 per 1000 kg m⁻³ (all "~"; Whalley's
       coefficients were not reachable). Loam at field capacity reads 0.5 MPa at `ρ0`,
-      1.3 at 1.15 and 1.8 at 1.2; at the wilting point about 1.6 at `ρ0`. Roots read
+      1.3 at 1.15 and 1.8 at 1.2; at the wilting point about 1.6 at `ρ0`. The density
+      slope is steeper than the two fits of Whalley's form we could read (0.93 for
+      Canadian soils, 1.45 for a loamy sand, quoted by Zhang, Gao, Ren and Whalley,
+      read as per Mg m⁻³; their stress exponents, 0.35 and 0.58, bracket `a`), on
+      purpose: at 0.93 a loam pan reads a pan's strength (1.8 MPa at field capacity)
+      only near 1.4 times `ρ0`, where `θ_s` is held at field capacity + 0.02, so the
+      pan would be anoxic at field capacity and nearly closed to water, and its air,
+      not its strength, would stop roots. With 2.0 the 1.2 pan has both: 8% air at
+      field capacity and 1.8 MPa. Roots read
       `Q` against the reference `Q_ref`, the same expression at `ρ0` for the cell's
       water (herb-architecture card): the species' elongation rates were measured in
       ordinary soil.
@@ -213,7 +221,7 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Settling water `R_0` | 10 | mm | WEPP eq. 7.7.9 (Alberts et al. 1995) |
 | Strength at field capacity `Q_fc` | 0.5 | MPa | ~ (Ge et al. 2019: about 0.3 wet, over 1 dry) |
 | Strength stress exponent `a` | 0.4 | - | ~ (about 3-fold from field capacity to wilting) |
-| Strength density slope `b` | 2.0 | per 1000 kg/m3 | ~ (a loam pan at 1.6 Mg m⁻³ near 2 MPa; Bengough et al. 2011) |
+| Strength density slope `b` | 2.0 | per 1000 kg/m3 | ~ (a loam pan at 1.6 Mg m⁻³ near 2 MPa, Bengough et al. 2011; steeper than Whalley-form fits, 0.93 to 1.45, on purpose) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -278,8 +286,9 @@ until the cell itself runs dry (R3b). Water a root gives back to a cell is not c
 at saturation; it needs a root wetter than the cell, so it only reaches a saturated
 cell by gravity, in amounts far below the next hour's drainage.
 Structure (R5c) has no cracks, biopores or worm channels, so a dense layer is uniformly
-hard and a pan at 1.2 times the loam's density stops nearly every root in a season
-that keeps it moist but not wet; real pans are crossed through old root channels.
+hard and roots cross a pan at 1.2 times the loam's density only by crawling through
+it (a quarter of the rate in a season that keeps it at field capacity, where it is
+short of air too); real pans are crossed through old root channels.
 Soil shrinks and swells not at all, frost and drying do not loosen it, and roots and
 earthworms do not open it. The strength coefficients and the conductivity exponent
 are guesses to verify; strength keeps no memory of how the soil was wetted. Dug soil

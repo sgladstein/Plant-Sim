@@ -16,7 +16,7 @@ use ps_graph::{OrganId, OrganKind};
 use ps_physio::hydraulics::{self, Edge, GRAVITY_MPA_PER_M, KG_PER_HOUR_PER_M3_PER_S, NodeTerms};
 use ps_soil::SoilGrid;
 use ps_species::RootOrigin;
-use ps_units::{KgPerHourMPa, KgWater, MPa, Meters};
+use ps_units::{DeficitHours, KgPerHourMPa, KgWater, MPa, Meters};
 use serde::{Deserialize, Serialize};
 
 use crate::Plant;
@@ -30,6 +30,21 @@ pub struct RootSpan {
     pub cell: usize,
     /// Root length in that cell (all the roots a cohort stands for).
     pub length: Meters,
+    /// The cell's oxygen deficit summed over the hours this root has been in it, since
+    /// the cell last had air: the root's own waterlogging clock (R5b's death rule,
+    /// counted from when the root reached the cell, decision 0049).
+    #[serde(default, skip_serializing_if = "unset")]
+    pub exposure: DeficitHours,
+    /// The cell's own count when [`RootSpan::exposure`] was last brought up to date.
+    #[serde(default, skip_serializing_if = "unset")]
+    pub seen: DeficitHours,
+}
+
+/// Whether a span's clock field is 0, so spans in soil that never went short of air
+/// serialize as before.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn unset(v: &DeficitHours) -> bool {
+    v.0.to_bits() == 0
 }
 
 /// What a plant's network asks of each soil cell this hour, for the soil's joint

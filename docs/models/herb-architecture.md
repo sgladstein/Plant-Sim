@@ -120,18 +120,25 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
   - *Tips slow:* a growing root organ's clock factor is `f_w (1 − h)` for its tip's cell.
   - *Laterals wait:* no lateral or fine-root cohort forms where the parent's cell has
     `h ≥ 0.5` (6% air); the stretch branches once it has air again.
-  - *Roots die:* a root organ with more than half its length in cells whose `H` has
-    reached its death time is shed with what it carries: fine-root cohorts (order 2)
-    at `hypoxia_fine_root_death`, lateral cohorts and the tip segment of an axis at
-    `hypoxia_root_death` (beans 48 and 120 h, wheat 72 and 180). An axis's older
+  - *Roots die:* each root keeps its own clock in each cell it reaches, the cell's
+    oxygen deficit summed over the hours the root has been there since the cell last
+    had air: `E ← E + (H − H_seen)` at each daily step, `E ← H` if the cell had air in
+    between (`H < H_seen`), and `E = 0` with `H_seen = H` when the root reaches the
+    cell (R5c review, decision 0049: R5b read the cell's own `H`, so a fresh tip
+    entering a cell short of air for weeks died at once). A root organ with more than
+    half its length where its `E` has reached its death time is shed with what it
+    carries: fine-root cohorts (order 2) at `hypoxia_fine_root_death`, lateral cohorts
+    and the tip segment of an axis at `hypoxia_root_death` (beans 48 and 120 h, wheat
+    72 and 180). In a flood the roots and their cells share the clock. An axis's older
     segments do not die, and an axis whose tip died grows no further; its laterals
     then form up to where the tip was, the apical zone gone with the tip (R5c), and
     its last lateral cohort grows no fine roots.
   - *Recovery:* a lateral whose fine roots died grows new ones once its cell has
     `h < 0.5`; a plant that lost an axis tip grows a new set of its hypocotyl-borne
     roots (wheat: crown roots) once the soil at its collar has `h < 0.5`, if that soil
-    was hypoxic since the last set (R5c: a flooded stem base roots, a tip lost in a
-    wet layer deep down does not), the adventitious roots beans and wheat make after
+    was hypoxic at most one axis death time before the loss or since it (R5c: a
+    flooded stem base roots, a tip lost in a wet layer deep down does not); one flood
+    gives one set. These are the adventitious roots beans and wheat make after
     waterlogging. Dead laterals are not replaced.
 - **Hard soil (R5c, decision 0049).** Where a soil has structure (soil-and-water card
   equation 13) roots read each cell's penetration resistance `Q` and its reference
@@ -282,12 +289,14 @@ shade, and where roots end up.
   211 m). Dead laterals are not replaced, so recovery runs through new
   hypocotyl-borne roots, which find little carbon in pod fill. Roots that die stay
   where they were in the soil's root cells until the day's layout. With the laterals
-  released at the lost tips (R5c) the soaked pot has 14.7 m of root 25 days later
-  (9.6 m at 0.29.0).
+  released at the lost tips and each root's own death clock (R5c) the soaked pot has
+  73.7 m of root 25 days later (9.6 m at 0.29.0): its base stays short of air after
+  the drain, and new roots there no longer die the day they arrive.
 - Hard soil (R5c) slows, thickens and branches roots by the cell they are in; a tip
   does not bend along a pan or find a crack (the soil has none), so a bean tip at a
-  plough pan at 1.2 times the loam's density stops there in a moist season and the
-  roots below it come only from tips that crossed early. Roots do not loosen soil.
+  plough pan at 1.2 times the loam's density crawls through it at about a quarter of
+  its rate (the pan's strength and its air, 8% at field capacity), and in the wettest
+  seasons the pan's own death clock stops it. Roots do not loosen soil.
   The response curves are dicot guesses around cereal and cotton data; no bean
   measurement was found.
 
@@ -324,11 +333,11 @@ shade, and where roots end up.
   `nitrate_patch_proliferation` (m2/nitrate_patch against m2/nitrate_patch_control).
 - `ps-world/tests/compaction.rs` (R5c done-when, decision 0049, world seed 7): a bush
   bean in a 1 m loam plot with a plough pan from 15 to 20 cm at 1.2 times its density
-  has 120.6 m of root above 15 cm on day 70 against 112.3 without the pan, 3.0 m at 15
-  cm and below against 22.0, and axes 0.67 mm in radius in the pan's layer against
-  0.51; in a raised bed (the top 30 cm at 0.85) its deepest root reaches 38.5 cm
-  against 22.6 in the plot compacted to 1.15, with 7.1 m of root below 20 cm against
-  0.03; a strip of the compacted plot dug on day 20 (5 to 25 cm east, 30 cm deep)
+  has 114.6 m of root above 15 cm on day 70 against 112.3 without the pan, 5.6 m at 15
+  cm and below against 22.0, and axes 0.65 mm in radius in the pan's layer against
+  0.48 in the same pan without the thickening response; in a raised bed (the top 30 cm
+  at 0.85) its deepest root reaches 38.5 cm against 22.6 in the plot compacted to
+  1.15, with 7.1 m of root below 20 cm against 0.03; a strip of the compacted plot dug on day 20 (5 to 25 cm east, 30 cm deep)
   changes the soil only in the strip and holds 7.4 m of root on day 45 against 2.9
   undug, the rest of the root system 26.7 against 29.3 m; a session that digs and
   tramples replays and resumes bit for bit.
