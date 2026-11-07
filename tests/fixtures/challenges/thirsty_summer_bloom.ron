@@ -1,12 +1,12 @@
-// 6 L in 9 equal doses, every 4 days from day 40 to day 72: the bloom strategy.
+// 6 L in 8 equal doses, every 3 days from day 40 to day 61: the bloom strategy
+// (water while the flowers open, stop with the last flowers).
 [
-  (tick: 967, kind: Water(soil: 0, mm: 14.736568804805131)),
-  (tick: 1063, kind: Water(soil: 0, mm: 14.736568804805131)),
-  (tick: 1159, kind: Water(soil: 0, mm: 14.736568804805131)),
-  (tick: 1255, kind: Water(soil: 0, mm: 14.736568804805131)),
-  (tick: 1351, kind: Water(soil: 0, mm: 14.736568804805131)),
-  (tick: 1447, kind: Water(soil: 0, mm: 14.736568804805131)),
-  (tick: 1543, kind: Water(soil: 0, mm: 14.736568804805131)),
-  (tick: 1639, kind: Water(soil: 0, mm: 14.736568804805131)),
-  (tick: 1735, kind: Water(soil: 0, mm: 14.736568804805131)),
+  (tick: 967, kind: Water(soil: 0, mm: 16.578639905405765)),
+  (tick: 1039, kind: Water(soil: 0, mm: 16.578639905405765)),
+  (tick: 1111, kind: Water(soil: 0, mm: 16.578639905405765)),
+  (tick: 1183, kind: Water(soil: 0, mm: 16.578639905405765)),
+  (tick: 1255, kind: Water(soil: 0, mm: 16.578639905405765)),
+  (tick: 1327, kind: Water(soil: 0, mm: 16.578639905405765)),
+  (tick: 1399, kind: Water(soil: 0, mm: 16.578639905405765)),
+  (tick: 1471, kind: Water(soil: 0, mm: 16.578639905405765)),
 ]
