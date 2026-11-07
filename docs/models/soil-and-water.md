@@ -57,11 +57,18 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
    linearly (within 1e-3); the curve's powers had been most of the soil's cost.
    Columns are independent: on 256 or more active columns they are solved in parallel
    in fixed chunks of 32 and put back in column order, so any thread count gives the
-   same state. The base:
+   same state. The top: water still ponded after infiltration stands on the column at
+   depth `d_p` and soaks in during the step, `q = K_t ((d_p − h_1) / (Δz/2) + 1)`
+   (`K_t` the mean of the top cell's `K` and `K_s`), at most the pond and never back
+   out (decision 0050). Without it the pond only filled the room the last hour's flow
+   had made, and a nearly saturated column took in a few tenths of a mm an hour: a
+   soaked 24 cm loam pot with holes held a 13 mm pond for 56 hours, and now sheds it in
+   two. The base:
    - a plot drains freely, `q = K_N` (unit gradient), and the water never returns;
    - a pot with holes is a seepage face: `q = K_N (h_N / (Δz/2) + 1)` only while
      `h_N > −Δz/2` (the base saturated), else nothing, so a soaked pot keeps its bottom
-     near saturation;
+     near saturation. A face closed at the start of a step opens if the step's solve
+     leaves `h_N > −Δz/2` (decision 0050; it had waited for the next step);
    - a pot without holes passes nothing;
    - a pot in a saucer drains into it; while the saucer holds water at depth `d` the
      base is `q = K_b ((h_N − d) / (Δz/2) + 1)` either way (`K_b` the mean of `K_N` and
@@ -305,7 +312,10 @@ settles by the water reaching its surface only, not by its own weight or by time
   pot without holes loses nothing; a saucer catches the outflow and feeds a drier pot
   back), `the_column_solver_conserves_water` (1e-12 every hour for every base, from
   saturated over dry), `the_flow_table_follows_the_curve` (head within 1e-7, slope and
-  conductivity within 1e-3, every texture), `water_ponds_then_runs_off`.
+  conductivity within 1e-3, every texture), `water_ponds_then_runs_off`,
+  `a_soaked_pot_with_holes_sheds_its_pond_in_hours` (decision 0050: 60 mm over three
+  hours on a 24 cm loam pot with holes leaves no pond by hour 5 and drains to rest
+  within the day, the top at the curve's content 23 cm above the base).
 - `ps_soil::tests::random_hours_conserve`: property test, random rain, radiation,
   temperature and uptake; closure every hour, water within saturation plus what a
   saturated cell holds under pressure.

@@ -101,6 +101,7 @@ fn water_rises_from_a_water_table() {
         let h = col.hour(
             &mut theta,
             3600.0,
+            0.0,
             flow::Bottom::Head {
                 head: 0.0,
                 limit: 1.0,
@@ -123,6 +124,41 @@ fn water_rises_from_a_water_table() {
     let dry = g.theta(0);
     drain_hours(&mut g, 24);
     assert!(g.theta(0) > dry + 0.01, "{} vs {dry}", g.theta(0));
+}
+
+/// Decision 0050: water standing on a column soaks in during the hour's flow solve. A
+/// 24 cm loam pot with holes soaked with 60 mm over three hours has no pond left two
+/// hours later and has drained to rest within the day; it held its pond for 56 hours
+/// when the pond only filled the room the last hour's flow had made. Every hour closes.
+#[test]
+fn a_soaked_pot_with_holes_sheds_its_pond_in_hours() {
+    let mut g =
+        SoilGrid::new_pot(Meters(0.24), Meters(0.24), Meters(0.02), Texture::Loam, T20).unwrap();
+    g.set_drainage(Drainage::Holes);
+    let mut drained = Vec::new();
+    for h in 0..24 {
+        let l = g.step_hour(&if h < 3 { wet_hour(20.0) } else { dry_hour() });
+        assert!(l.relative_residual() < 1e-9, "{l:?}");
+        drained.push(l.drained.0);
+        if h == 4 {
+            assert!(g.ponded_water().0 < 1e-12, "{:?}", g.ponded_water());
+        }
+    }
+    let early: f64 = drained[..12].iter().sum();
+    let late: f64 = drained[12..].iter().sum();
+    assert!(early > 0.0 && late < 0.01 * early, "{early} {late}");
+    // At rest the base stays saturated and the top holds 24 cm of suction.
+    let (nx, ny, nz) = g.dims();
+    let center = (ny / 2) * nx + nx / 2;
+    let top = g.theta(center);
+    let base = g.theta((nz - 1) * nx * ny + center);
+    let r = Texture::Loam.retention();
+    assert!(
+        base > 0.999 * Texture::Loam.hydraulics().saturation,
+        "{base}"
+    );
+    let expect = r.theta(KPa(-0.23 * flow::KPA_PER_M_WATER));
+    assert!((top - expect).abs() < 5e-3, "{top} against {expect}");
 }
 
 /// R5a done-when: a pot with holes keeps its bottom near saturation for at least a day
@@ -246,7 +282,7 @@ fn the_column_solver_conserves_water() {
             theta[..4].fill(hy.saturation);
             for _ in 0..24 {
                 let before: f64 = theta.iter().sum::<f64>() * 0.02;
-                let h = col.hour(&mut theta, 3600.0, bottom, &mut s);
+                let h = col.hour(&mut theta, 3600.0, 0.0, bottom, &mut s);
                 let after: f64 = theta.iter().sum::<f64>() * 0.02;
                 assert!(
                     (before - after - h.bottom - h.backed_up).abs() < 1e-12 * before,
@@ -633,7 +669,8 @@ fn a_saturated_cell_turns_hypoxic_after_hours_and_recovers_when_it_drains() {
 }
 
 /// R5b: water standing on the soil evaporates first, at the full rate; the soil under
-/// it loses nothing while it lasts, and every hour closes.
+/// it loses nothing while it lasts, and every hour closes. A saturated closed column
+/// takes in only the little its cells store under the pond's pressure (decision 0050).
 #[test]
 fn standing_water_evaporates_before_the_soil() {
     let sat = Texture::Clay.hydraulics().saturation;
@@ -648,11 +685,12 @@ fn standing_water_evaporates_before_the_soil() {
     };
     let l = g.step_hour(&hour);
     assert!(l.relative_residual() < 1e-9);
-    // 0.588 mm of the 2 mm pond goes, the soil keeps its water.
+    // 0.588 mm of the 2 mm pond evaporates, the soil keeps its water.
     let mm = |kg: KgWater| kg.0 / 4e-4;
     assert!((mm(l.evaporated) - 0.5 * 800.0 * 3600.0 / 2.45e6).abs() < 1e-9);
-    assert!((mm(g.ponded_water()) - (2.0 - mm(l.evaporated))).abs() < 1e-9);
-    assert!((g.total_water() - soil).0.abs() < 1e-12);
+    let soaked = mm(g.total_water() - soil);
+    assert!((0.0..0.1).contains(&soaked), "{soaked}");
+    assert!((mm(g.ponded_water()) - (2.0 - mm(l.evaporated) - soaked)).abs() < 1e-9);
 }
 
 /// Cells `z0 ≤ z < z1` of every column.
@@ -839,10 +877,11 @@ fn water_perches_on_a_pan() {
             assert!(l.relative_residual() < 1e-9, "{l:?}");
         }
     }
-    // Three days on, the layer above the pan is still 2% wetter, the pan short of air,
-    // and the soil below drier.
+    // Three days on, the layer above the pan is still 1% wetter, the pan short of air,
+    // and the soil below drier. (2% before the pond soaked in through the solve,
+    // decision 0050: the flat column's pond lingered too and fed its top.)
     assert!(
-        pan.theta(2) > flat.theta(2) + 0.015,
+        pan.theta(2) > flat.theta(2) + 0.01,
         "{} {}",
         pan.theta(2),
         flat.theta(2)

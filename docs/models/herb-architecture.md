@@ -291,7 +291,8 @@ shade, and where roots end up.
   where they were in the soil's root cells until the day's layout. With the laterals
   released at the lost tips and each root's own death clock (R5c) the soaked pot has
   73.7 m of root 25 days later (9.6 m at 0.29.0): its base stays short of air after
-  the drain, and new roots there no longer die the day they arrive.
+  the drain, and new roots there no longer die the day they arrive. Since its pond
+  soaks in and drains the day its holes open (decision 0050), 135.0 m.
 - Hard soil (R5c) slows, thickens and branches roots by the cell they are in; a tip
   does not bend along a pan or find a crack (the soil has none), so a bean tip at a
   plough pan at 1.2 times the loam's density crawls through it at about a quarter of

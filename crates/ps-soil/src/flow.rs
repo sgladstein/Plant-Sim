@@ -70,6 +70,37 @@ pub(crate) enum Bottom {
     },
 }
 
+/// A boundary of one step's system, as the flux across it depends on the head `h` of
+/// the cell next to it.
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum Edge {
+    /// No flow.
+    Closed,
+    /// A fixed downward flux, m s⁻¹.
+    Flux(f64),
+    /// Free water at the face (half a cell from the cell's center) under `head` metres
+    /// of pressure, conductivity `k` (m s⁻¹).
+    Head {
+        /// Conductivity across the face, m s⁻¹.
+        k: f64,
+        /// Pressure head of the water at the face, m.
+        head: f64,
+    },
+}
+
+impl Edge {
+    /// The downward flux across the edge, m s⁻¹, for the cell's head `h` and the
+    /// face's height above the cell's center `rise` (`+Δz/2` at the top, `−Δz/2` at
+    /// the base).
+    fn down(self, h: f64, rise: f64) -> f64 {
+        match self {
+            Edge::Closed => 0.0,
+            Edge::Flux(q) => q,
+            Edge::Head { k, head } => k * ((head - h) / rise + 1.0),
+        }
+    }
+}
+
 /// A texture's head, retention slope and conductivity on even steps of relative
 /// saturation `S` from `S_lo` (half the air-dry content) to 1. Between two steps the head
 /// is the cubic Hermite interpolant on the two heads and their exact slopes `dh/dS =
@@ -205,6 +236,8 @@ pub(crate) struct ColumnHour {
     /// Water pushed back out of the top over the hour, m: what a step left wetter than
     /// the column can hold ([`Column::hour`]); it goes back to the surface's pond.
     pub backed_up: f64,
+    /// Water taken in through the top from the pond over the hour, m.
+    pub from_pond: f64,
     /// Sub-steps the hour took.
     pub substeps: u32,
 }
@@ -236,9 +269,17 @@ impl Scratch {
 
 impl Column<'_> {
     /// Advances `theta` (top first) by one hour of `dt` seconds with `bottom` at the
-    /// base. Water contents change only by the fluxes, so the column's water changes by
-    /// exactly the bottom flow and what backed up out of the top.
-    pub fn hour(&self, theta: &mut [f64], dt: f64, bottom: Bottom, s: &mut Scratch) -> ColumnHour {
+    /// base and `pond` metres of water standing on the surface. Water contents change
+    /// only by the fluxes, so the column's water changes by exactly the water taken from
+    /// the pond, the bottom flow and what backed up out of the top.
+    pub fn hour(
+        &self,
+        theta: &mut [f64],
+        dt: f64,
+        pond: f64,
+        bottom: Bottom,
+        s: &mut Scratch,
+    ) -> ColumnHour {
         let nz = theta.len();
         s.start.clear();
         s.start.extend_from_slice(theta);
@@ -271,6 +312,7 @@ impl Column<'_> {
             s.faces.resize(nz.saturating_sub(1), 0.0);
             let mut out = 0.0;
             let mut backed = 0.0;
+            let mut standing = pond.max(0.0);
             let mut limit = match bottom {
                 Bottom::Head { limit, .. } => limit,
                 _ => 0.0,
@@ -283,8 +325,10 @@ impl Column<'_> {
                     Bottom::Head { .. } => Bottom::Seepage,
                     b => b,
                 };
-                let (change, q_bottom) = self.step(theta, dt / f64::from(k), base, s);
+                let (change, q_bottom, q_top) =
+                    self.step(theta, dt / f64::from(k), standing, base, s);
                 out += q_bottom;
+                standing = (standing - q_top).max(0.0);
                 if q_bottom < 0.0 {
                     limit = (limit + q_bottom).max(0.0);
                 }
@@ -299,6 +343,7 @@ impl Column<'_> {
                 return ColumnHour {
                     bottom: out,
                     backed_up: backed,
+                    from_pond: pond.max(0.0) - standing,
                     substeps: k,
                 };
             }
@@ -314,10 +359,25 @@ impl Column<'_> {
         }
     }
 
-    /// One backward-Euler step of `dt` seconds. Adds each face's downward water (m) to
-    /// the scratch faces and returns the largest change of a cell's water content and
-    /// the water out of the base (m, negative in).
-    fn step(&self, theta: &mut [f64], dt: f64, bottom: Bottom, s: &mut Scratch) -> (f64, f64) {
+    /// One backward-Euler step of `dt` seconds with `pond` metres of water standing on
+    /// the surface. Adds each face's downward water (m) to the scratch faces and returns
+    /// the largest change of a cell's water content, the water out of the base (m,
+    /// negative in) and the water taken from the pond (m).
+    ///
+    /// The pond is a head at the surface, half a cell above the top cell's center, so
+    /// water standing on a column soaks in during the step at the rate the column
+    /// passes it, never more than the pond holds and never back out (decision 0050).
+    /// Without it a ponded, nearly saturated column took in only the room the last
+    /// step had made, and a soaked pot held its pond for two days. A seepage face
+    /// closed at the start of a step opens if the solve leaves the base under pressure.
+    fn step(
+        &self,
+        theta: &mut [f64],
+        dt: f64,
+        pond: f64,
+        bottom: Bottom,
+        s: &mut Scratch,
+    ) -> (f64, f64, f64) {
         let cells = s.h.iter_mut().zip(s.c.iter_mut().zip(s.k.iter_mut()));
         match self.tables {
             Tables::Uniform(table) => {
@@ -334,46 +394,87 @@ impl Column<'_> {
         self.face_conductivities(s);
         let n = theta.len() - 1;
         let half = 0.5 * self.dz;
-        let seeping = s.h[n] > -half;
-        self.assemble(dt, s);
-        match bottom {
-            Bottom::Free => s.rhs[n] -= s.k[n],
-            Bottom::Seepage if seeping => {
-                s.diag[n] += s.k[n] / half;
-                s.rhs[n] -= s.k[n];
+        let seep = Edge::Head {
+            k: s.k[n],
+            head: 0.0,
+        };
+        let mut top = if pond > 0.0 {
+            Edge::Head {
+                k: 0.5 * (s.k[0] + self.tables.at(0).ks),
+                head: pond,
             }
-            Bottom::Seepage | Bottom::Closed => {}
-            Bottom::Head { head, .. } => {
-                let kb = 0.5 * (s.k[n] + self.tables.at(n).ks);
-                s.diag[n] += kb / half;
-                s.rhs[n] += kb * head / half - kb;
-            }
+        } else {
+            Edge::Closed
+        };
+        let mut base = match bottom {
+            Bottom::Free => Edge::Flux(s.k[n]),
+            Bottom::Seepage if s.h[n] > -half => seep,
+            Bottom::Seepage | Bottom::Closed => Edge::Closed,
+            Bottom::Head { head, .. } => Edge::Head {
+                k: 0.5 * (s.k[n] + self.tables.at(n).ks),
+                head,
+            },
+        };
+        self.solve(dt, s, top, base);
+        if bottom == Bottom::Seepage && base == Edge::Closed && s.rhs[n] > -half {
+            base = seep;
+            self.solve(dt, s, top, base);
         }
-        thomas(&s.sub, &mut s.diag, &s.sup, &mut s.rhs);
-        let h_n = s.rhs[n];
+        // The pond gives no more than it holds and takes nothing back.
+        let q_in = top.down(s.rhs[0], half);
+        if q_in <= 0.0 && top != Edge::Closed {
+            top = Edge::Closed;
+            self.solve(dt, s, top, base);
+        } else if q_in * dt > pond {
+            top = Edge::Flux(pond / dt);
+            self.solve(dt, s, top, base);
+        }
+        let q_top = top.down(s.rhs[0], half);
         let q_bottom = match bottom {
-            Bottom::Free => s.k[n],
             // A face can only let water out: if the solve ends below the face's
             // threshold, none leaves (the water stays in the column's cells).
-            Bottom::Seepage if seeping => (s.k[n] * (h_n / half + 1.0)).max(0.0),
-            Bottom::Seepage | Bottom::Closed => 0.0,
-            Bottom::Head { head, limit } => {
-                let kb = 0.5 * (s.k[n] + self.tables.at(n).ks);
-                let q = kb * ((h_n - head) / half + 1.0);
+            Bottom::Seepage => base.down(s.rhs[n], -half).max(0.0),
+            Bottom::Head { limit, .. } => {
+                let q = base.down(s.rhs[n], -half);
                 if -q * dt > limit {
                     // A saucer gives no more than it holds: the base takes in exactly
                     // what is left, a fixed flux, and the column is solved again.
-                    let q = -limit / dt;
-                    self.assemble(dt, s);
-                    s.rhs[n] -= q;
-                    thomas(&s.sub, &mut s.diag, &s.sup, &mut s.rhs);
-                    q
+                    base = Edge::Flux(-limit / dt);
+                    self.solve(dt, s, top, base);
+                    -limit / dt
                 } else {
                     q
                 }
             }
+            Bottom::Free | Bottom::Closed => base.down(s.rhs[n], -half),
         };
-        self.apply(theta, dt, q_bottom, s)
+        let (change, out) = self.apply(theta, dt, q_top, q_bottom, s);
+        (change, out, q_top * dt)
+    }
+
+    /// Assembles the step's system with `top` at the surface and `base` at the bottom
+    /// and solves it; the new heads are left in the scratch's `rhs`.
+    fn solve(&self, dt: f64, s: &mut Scratch, top: Edge, base: Edge) {
+        let n = s.h.len() - 1;
+        let half = 0.5 * self.dz;
+        self.assemble(dt, s);
+        match top {
+            Edge::Closed => {}
+            Edge::Flux(q) => s.rhs[0] += q,
+            Edge::Head { k, head } => {
+                s.diag[0] += k / half;
+                s.rhs[0] += k * head / half + k;
+            }
+        }
+        match base {
+            Edge::Closed => {}
+            Edge::Flux(q) => s.rhs[n] -= q,
+            Edge::Head { k, head } => {
+                s.diag[n] += k / half;
+                s.rhs[n] += k * head / half - k;
+            }
+        }
+        thomas(&s.sub, &mut s.diag, &s.sup, &mut s.rhs);
     }
 
     /// Each interior face's conductivity from its two cells': their mean in one class;
@@ -425,15 +526,23 @@ impl Column<'_> {
         }
     }
 
-    /// Moves the water by the fluxes of the solved heads (in the scratch's `rhs`) and
-    /// `q_bottom` (m s⁻¹ out of the base) over `dt`; returns the largest change of a
-    /// cell's water content and the water out of the base, m.
-    fn apply(&self, theta: &mut [f64], dt: f64, q_bottom: f64, s: &mut Scratch) -> (f64, f64) {
+    /// Moves the water by the fluxes of the solved heads (in the scratch's `rhs`),
+    /// `q_top` (m s⁻¹ into the top) and `q_bottom` (m s⁻¹ out of the base) over `dt`;
+    /// returns the largest change of a cell's water content and the water out of the
+    /// base, m.
+    fn apply(
+        &self,
+        theta: &mut [f64],
+        dt: f64,
+        q_top: f64,
+        q_bottom: f64,
+        s: &mut Scratch,
+    ) -> (f64, f64) {
         let n = theta.len() - 1;
         let dz = self.dz;
         let (kfs, h, faces) = (&s.kf[..n], &s.rhs[..=n], &mut s.faces[..n]);
         let mut change = 0.0_f64;
-        let mut above = 0.0;
+        let mut above = q_top;
         for (i, t) in theta.iter_mut().enumerate() {
             let below = if i < n {
                 let kf = kfs[i];

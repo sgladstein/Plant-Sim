@@ -5,7 +5,7 @@
 // be fewer and thicker in and below the pan and more above it.
 Scenario(
   schema: 1,
-  model_version: "0.30.0",
+  model_version: "0.31.0",
   world_seed: 7,
   latitude_deg: 45.0,
   start: (year: 2026, month: 5, day: 15, hour: 0),
