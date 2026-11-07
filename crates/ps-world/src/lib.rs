@@ -32,7 +32,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.27.0";
+pub const MODEL_VERSION: &str = "0.28.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -210,6 +210,22 @@ pub struct DayEnv {
     /// Mineral (nitrate plus ammonium) nitrogen in the plant's soil, g N (WP24).
     #[serde(default)]
     pub soil_mineral_n_g: f64,
+    /// Water drained out of the plant's soil since the start (and spilled from a full
+    /// saucer), kg (R5a review).
+    #[serde(default)]
+    pub drained_total_kg: f64,
+    /// Water that ran off the plant's soil since the start, kg.
+    #[serde(default)]
+    pub runoff_total_kg: f64,
+    /// Water evaporated from the plant's soil surface since the start, kg.
+    #[serde(default)]
+    pub evaporated_total_kg: f64,
+    /// Nitrate drained out of the plant's soil since the start, g N.
+    #[serde(default)]
+    pub leached_n_total_g: f64,
+    /// Humus nitrogen mineralized in the plant's soil since the start, g N.
+    #[serde(default)]
+    pub mineralized_n_total_g: f64,
 }
 
 /// Seeds picked by one harvest action (WP25): the seed library is a list of these.
@@ -1777,6 +1793,11 @@ impl World {
                 ftsw,
                 soil_water_kg: soil.total_water().0,
                 soil_mineral_n_g: soil.mineral_nitrogen().0,
+                drained_total_kg: entry.ledger.drained.0,
+                runoff_total_kg: entry.ledger.runoff.0,
+                evaporated_total_kg: entry.ledger.evaporated.0,
+                leached_n_total_g: soil.nitrogen_ledger().leached.0,
+                mineralized_n_total_g: soil.nitrogen_ledger().mineralized.0,
             };
             let plant = self.state.plants[p].id;
             self.state.history.push(DayRow {
