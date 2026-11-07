@@ -169,8 +169,9 @@ fn scatter_is_bounded() {
 
 /// R3c (decision 0045): around a young bean root in loam at a pot's root density the
 /// soil conducts far more than the root at field capacity, about as much near
-/// −0.3 megapascals and a fiftieth at the wilting point; R3b: the plant's stomatal factor is
-/// the Tuzet factor in steps.
+/// −0.53 megapascals and a fourteenth at the wilting point (with R5a's air entry; −0.3
+/// and a fiftieth before it); R3b: the plant's stomatal factor is the Tuzet factor in
+/// steps.
 #[test]
 fn rhizosphere_and_stomatal_steps() {
     let h = ps_soil::Texture::Loam.hydraulics();
@@ -186,10 +187,12 @@ fn rhizosphere_and_stomatal_steps() {
     let fc = soil_over_root(h.field_capacity);
     let wp = soil_over_root(h.wilting_point);
     assert!(fc > 100.0, "field capacity {fc}");
-    assert!(wp > 0.005 && wp < 0.05, "wilting point {wp}");
+    assert!(wp > 0.05 && wp < 0.1, "wilting point {wp}");
     let theta_03 = r.theta(ps_units::KPa(-300.0));
     let mid = soil_over_root(theta_03);
-    assert!(mid > 0.5 && mid < 2.0, "-0.3 MPa {mid}");
+    assert!(mid > 3.0 && mid < 6.0, "-0.3 MPa {mid}");
+    let even = soil_over_root(r.theta(ps_units::KPa(-530.0)));
+    assert!(even > 0.8 && even < 1.25, "-0.53 MPa {even}");
     assert!(crate::rhizosphere_conductance(0.0, radius, density).abs() < 1e-300);
     // Roots packed closer than their own width read a half spacing of 2r.
     let packed = crate::rhizosphere_conductance(1.0, radius, 1e12);

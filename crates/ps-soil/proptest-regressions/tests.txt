@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3ca5d6d4d5cab738ff9e341450e93e523e8ce4a15188b771aea5fac2a3f1ef5c # shrinks to hours = [(15.503936025779977, 0.0, 0.0, 0.0), (27.035109827134114, 0.0, 0.0, 0.0)], texture = Loam
+cc 6cd89ddaa1146ed6370d010968124ab95c6b58738005a9ca7cb7e37b096e2b87 # shrinks to hours = [(8.572121346407377, 0.0, 0.0, 0.0), (9.801567350642415, 0.0, 0.0, 0.0), (8.491956178763765, 0.0, 0.0, 0.0)], texture = Sand

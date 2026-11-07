@@ -40,6 +40,37 @@ pub enum WeatherSource {
     DailyFile(String),
 }
 
+/// How a pot drains (R5a, decision 0046).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum PotDrainage {
+    /// Holes in the bottom: water leaves only while the soil at the base is saturated,
+    /// so a soaked pot keeps a wet layer at its bottom.
+    #[default]
+    Holes,
+    /// No holes: no water leaves.
+    NoHoles,
+    /// Holes, and the pot stands in a saucer that catches what drains and feeds it
+    /// back while it holds water.
+    Saucer {
+        /// The saucer's depth, mm (0 to 100).
+        depth_mm: f64,
+    },
+}
+
+impl PotDrainage {
+    /// The soil grid's drainage.
+    #[must_use]
+    pub fn grid(self) -> ps_soil::Drainage {
+        match self {
+            Self::Holes => ps_soil::Drainage::Holes,
+            Self::NoHoles => ps_soil::Drainage::NoHoles,
+            Self::Saucer { depth_mm } => ps_soil::Drainage::Saucer {
+                depth: ps_units::Millimeters(depth_mm),
+            },
+        }
+    }
+}
+
 /// A soil container.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SoilSpec {
@@ -55,6 +86,9 @@ pub enum SoilSpec {
         texture: Texture,
         /// Pot center in the garden, m (east, north); used from M1.
         position_m: (f64, f64),
+        /// How the pot drains (R5a, decision 0046): holes by default.
+        #[serde(default)]
+        drainage: PotDrainage,
     },
     /// A rectangular plot bed (M2, WP21): 5 cm cells, bottom draining to a deep layer
     /// that never returns water, and one light grid for all its plants (decision 0019).
@@ -492,6 +526,15 @@ impl Scenario {
             }
         }
         for spec in &self.soils {
+            if let SoilSpec::Pot {
+                id,
+                drainage: PotDrainage::Saucer { depth_mm },
+                ..
+            } = spec
+                && !(depth_mm.is_finite() && (0.0..=100.0).contains(depth_mm))
+            {
+                return bad(format!("pot {id} saucer depth {depth_mm} mm; 0 to 100"));
+            }
             if let SoilSpec::Plot {
                 id,
                 width_cm,

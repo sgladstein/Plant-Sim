@@ -74,6 +74,7 @@ fn extra_plant_does_not_change_the_first() {
         depth_cm: 20.0,
         texture: ps_soil::Texture::Loam,
         position_m: (0.6, 0.0),
+        drainage: ps_world::PotDrainage::default(),
     });
     s2.irrigation
         .insert(1, Irrigation::ToFieldCapacity { every_days: 1 });

@@ -91,6 +91,7 @@ fn rain_leaches_nitrate_and_the_ledger_closes() {
 fn nitrate_moves_with_the_water_and_diffuses_slowly() {
     // Equal water: diffusion alone, 5.1e-3 of the difference an hour between 2 cm cells.
     let mut g = SoilGrid::new_box(3, 1, 1, Meters(0.02), Texture::Loam, Celsius(0.0)).unwrap();
+    g.set_drainage(crate::Drainage::NoHoles);
     g.set_nitrogen(&SoilNitrogen::NONE);
     g.no3[0] = GramsN(1e-3);
     g.n_ledger.start = g.total_nitrogen();
@@ -204,4 +205,56 @@ fn nitrogen_uptake_is_limited_and_fair() {
     }
     assert!((s.no3_ppm(0) - NO3_FLOOR_PPM).abs() < 1e-9);
     assert!(s.nitrogen_ledger().relative_residual(s.total_nitrogen()) < 1e-12);
+}
+
+/// Water soaking in carries nitrate down as it passes a cell (a mixing cell), so the
+/// days' evaporation, which draws water and nitrate up, and the nights' watering back to
+/// field capacity do not pump the nitrate into the top layer (R5a).
+#[test]
+fn soaking_in_carries_nitrate_down() {
+    let fc = Texture::Loam.hydraulics().field_capacity;
+    let mut g = SoilGrid::new_box(1, 1, 10, Meters(0.02), Texture::Loam, Celsius(20.0)).unwrap();
+    g.set_drainage(crate::Drainage::NoHoles);
+    g.set_nitrogen(&SoilNitrogen::NONE);
+    g.fill_to(fc);
+    g.no3[0] = GramsN(1e-3);
+    g.water[0] = g.capacity(fc - 0.05);
+    g.n_ledger.start = g.total_nitrogen();
+    // 6 mm on a top cell 1 mm short of field capacity: what passes on (the rest of
+    // the column is at field capacity, so the cell also fills toward saturation)
+    // takes its share of the water the cell held plus the 6 mm that came in.
+    let held_mm = g.water(0).0 / 4e-4;
+    let mut l = WaterLedger::default();
+    g.infiltrate(Millimeters(6.0), None, &mut l);
+    let passed_mm = 6.0 - (g.water(0).0 / 4e-4 - held_mm);
+    assert!(passed_mm > 1.0 && passed_mm < 5.0, "{passed_mm}");
+    let sent = 1.0 - g.no3(0).0 / 1e-3;
+    assert!((sent - passed_mm / (held_mm + 6.0)).abs() < 1e-9, "{sent}");
+    // The rest soaks into the second cell, which keeps what it carried; none deeper.
+    assert!(g.no3(1).0 > 0.0, "{:?}", g.no3);
+    assert!(g.no3(2).0.abs() < f64::MIN_POSITIVE, "{:?}", g.no3);
+    assert!((g.total_nitrogen().0 - 1e-3).abs() < 1e-15);
+    // Forty days of sun on the bare surface and a refill each night: the top layer
+    // gains some (140%), as salts gather where water evaporates, not all of it.
+    let mut g = SoilGrid::new_box(1, 1, 10, Meters(0.02), Texture::Loam, Celsius(20.0)).unwrap();
+    g.set_drainage(crate::Drainage::NoHoles);
+    g.set_nitrogen(&SoilNitrogen::NONE);
+    g.fill_to(fc);
+    for i in 0..10 {
+        g.no3[i] = GramsN(1e-4);
+    }
+    g.n_ledger.start = g.total_nitrogen();
+    for h in 0..40 * 24 {
+        let deficit: f64 = (0..10)
+            .map(|i| (g.capacity(fc) - g.water(i)).0.max(0.0))
+            .sum();
+        let sun = (6..18).contains(&(h % 24));
+        g.step_hour(&SoilHour {
+            water_in: Millimeters(if h % 24 == 0 { deficit / 4e-4 } else { 0.0 }),
+            surface_radiation: WPerM2(if sun { 500.0 } else { 0.0 }),
+            ..hour(0.0, 20.0)
+        });
+    }
+    assert!(g.no3(0).0 < 2e-4, "top {:?}", g.no3);
+    assert!((g.total_nitrogen().0 - 1e-3).abs() < 1e-15);
 }

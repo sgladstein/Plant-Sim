@@ -16,58 +16,252 @@ fn column(texture: Texture, nz: usize) -> SoilGrid {
     SoilGrid::new_box(1, 1, nz, Meters(0.02), texture, T20).unwrap()
 }
 
-/// WP5 done-when: a wet column drains to field capacity with closure under 1e-9, and
-/// matches the analytic case of §8.1. With all excess moving one cell per hour, a
-/// saturated column of n cells loses (θs − θfc)·V each hour for exactly n hours.
-#[test]
-fn wet_column_drains_to_field_capacity() {
-    for texture in [Texture::Loam, Texture::Sand, Texture::Clay] {
-        let n = 10;
-        let mut g = column(texture, n);
-        let hy = texture.hydraulics();
-        g.fill_to(hy.saturation);
-        let start = g.total_water();
-        let excess_per_cell = (hy.saturation - hy.field_capacity) * g.cell_volume() * WATER_DENSITY;
-        let mut total = WaterLedger {
-            storage_before: start,
-            ..WaterLedger::default()
-        };
-        let mut drained_by_hour = Vec::new();
-        for _ in 0..2 * n {
+fn closed(texture: Texture, nz: usize) -> SoilGrid {
+    let mut g = column(texture, nz);
+    g.set_drainage(Drainage::NoHoles);
+    g
+}
+
+/// Runs `hours` dry hours, asserting closure every hour; returns each hour's drainage.
+fn drain_hours(g: &mut SoilGrid, hours: usize) -> Vec<f64> {
+    (0..hours)
+        .map(|_| {
             let l = g.step_hour(&dry_hour());
-            assert!(l.relative_residual() < 1e-9, "{texture:?}: {l:?}");
-            total.accumulate(&l);
-            drained_by_hour.push(l.drained.0);
+            assert!(l.relative_residual() < 1e-9, "{l:?}");
+            l.drained.0
+        })
+        .collect()
+}
+
+/// R5a done-when: a soaked loam plot drains over days, not hours. From saturation, a
+/// 40 cm column of 5 cm cells sheds tens of mm on the first day, under 5 mm a day by
+/// the third and still a little after a week; the bucket rules had it at field
+/// capacity within eight hours. Every hour closes.
+#[test]
+fn soaked_loam_drains_over_days() {
+    let mut g = SoilGrid::new_box(1, 1, 8, Meters(0.05), Texture::Loam, T20).unwrap();
+    let hy = Texture::Loam.hydraulics();
+    g.fill_to(hy.saturation);
+    let start = g.stored_water();
+    let hours = drain_hours(&mut g, 24 * 8);
+    // kg over 25 cm² is mm × 0.0025.
+    let mm = |d: usize| hours[24 * d..24 * (d + 1)].iter().sum::<f64>() / 0.0025;
+    assert!(mm(0) > 15.0, "day 1 {}", mm(0));
+    assert!(
+        mm(2) < 5.0 && mm(1) > mm(2),
+        "days 2, 3: {} {}",
+        mm(1),
+        mm(2)
+    );
+    assert!(mm(7) > 0.1 && mm(7) < mm(2), "day 8 {}", mm(7));
+    // Still wetter than field capacity: the slow tail of drainage.
+    let mean = (0..8).map(|i| g.theta(i)).sum::<f64>() / 8.0;
+    assert!(mean > hy.field_capacity && mean < hy.saturation, "{mean}");
+    let out: f64 = hours.iter().sum();
+    assert!(((start - g.stored_water()).0 - out).abs() < 1e-12);
+}
+
+/// A closed column resting at the hydrostatic profile (the potential rising by the
+/// height) stays put.
+#[test]
+fn a_column_at_equilibrium_stays_put() {
+    for texture in [Texture::Loam, Texture::Sand, Texture::Clay] {
+        let mut g = closed(texture, 10);
+        let r = texture.retention();
+        for z in 0..10 {
+            // −50 kPa at the top, wetter by 0.2 kPa for each 2 cm cell down.
+            #[allow(clippy::cast_precision_loss)]
+            let psi = KPa(-50.0 + 0.02 * flow::KPA_PER_M_WATER * z as f64);
+            g.water[z] = g.capacity(r.theta(psi));
         }
-        assert!(total.relative_residual() < 1e-9);
-        // Every cell at field capacity.
-        for i in 0..g.len() {
+        let before: Vec<f64> = (0..10).map(|i| g.theta(i)).collect();
+        drain_hours(&mut g, 48);
+        for (i, b) in before.iter().enumerate() {
+            assert!((g.theta(i) - b).abs() < 1e-9, "{texture:?} cell {i}");
+        }
+    }
+}
+
+/// R5a done-when: water rises from a water table against gravity. A sand column over
+/// free water at its base comes to the hydrostatic profile, each cell at the content
+/// the retention curve gives its height above the water; and a dried top layer over a
+/// wet column is fed from below.
+#[test]
+fn water_rises_from_a_water_table() {
+    let texture = Texture::Sand;
+    let r = texture.retention();
+    let col = flow::Column {
+        dz: 0.02,
+        table: flow::FlowTable::for_texture(texture),
+    };
+    let mut theta = vec![texture.hydraulics().wilting_point; 15];
+    let mut s = flow::Scratch::default();
+    let mut taken = 0.0;
+    for _ in 0..24 * 20 {
+        let h = col.hour(
+            &mut theta,
+            3600.0,
+            flow::Bottom::Head {
+                head: 0.0,
+                limit: 1.0,
+            },
+            &mut s,
+        );
+        taken -= h.bottom;
+    }
+    assert!(taken > 0.0);
+    for (z, t) in theta.iter().enumerate() {
+        // Height of the cell's center above the base.
+        #[allow(clippy::cast_precision_loss)]
+        let height = 0.02 * (14.5 - z as f64);
+        let expect = r.theta(KPa(-height * flow::KPA_PER_M_WATER));
+        assert!((t - expect).abs() < 2e-3, "cell {z}: {t} vs {expect}");
+    }
+    // A dried top layer over a wet closed column gets water back from below.
+    let mut g = closed(Texture::Loam, 10);
+    g.water[0] = g.capacity(Texture::Loam.hydraulics().wilting_point);
+    let dry = g.theta(0);
+    drain_hours(&mut g, 24);
+    assert!(g.theta(0) > dry + 0.01, "{} vs {dry}", g.theta(0));
+}
+
+/// R5a done-when: a pot with holes keeps its bottom near saturation for at least a day
+/// after a soaking (a perched water table); a pot without holes loses nothing; a pot in
+/// a saucer catches what drains and feeds it back.
+#[test]
+fn pots_keep_a_wet_bottom() {
+    let soak = SoilHour {
+        water_in: Millimeters(60.0),
+        ..dry_hour()
+    };
+    let pot = |d: Drainage| {
+        let mut g = SoilGrid::new_pot(Meters(0.12), Meters(0.24), Meters(0.02), Texture::Loam, T20)
+            .unwrap();
+        g.set_drainage(d);
+        g
+    };
+    let hy = Texture::Loam.hydraulics();
+    let bottom = |g: &SoilGrid| {
+        let (nx, ny, nz) = g.dims();
+        let i = (nz - 1) * nx * ny + (ny / 2) * nx + nx / 2;
+        g.theta(i)
+    };
+    let mut holes = pot(Drainage::Holes);
+    let mut out = 0.0;
+    for h in 0..72 {
+        let l = holes.step_hour(&(if h < 3 { soak } else { dry_hour() }));
+        assert!(l.relative_residual() < 1e-9, "{l:?}");
+        out += l.drained.0;
+        if h == 27 || h == 71 {
             assert!(
-                (g.theta(i) - hy.field_capacity).abs() < 1e-12,
-                "{texture:?} cell {i}"
+                bottom(&holes) > 0.98 * hy.saturation,
+                "hour {h}: {}",
+                bottom(&holes)
             );
         }
-        // Analytic outflow: excess per cell, each hour, for n hours, then nothing.
-        for (h, d) in drained_by_hour.iter().enumerate() {
-            let expect = if h < n { excess_per_cell } else { 0.0 };
-            assert!(
-                (d - expect).abs() < 1e-12,
-                "{texture:?} hour {h}: {d} vs {expect}"
-            );
+    }
+    assert!(out > 0.0);
+    let mut sealed = pot(Drainage::NoHoles);
+    let before = sealed.stored_water();
+    let mut applied = 0.0;
+    for h in 0..24 {
+        let l = sealed.step_hour(&(if h < 3 { soak } else { dry_hour() }));
+        assert_eq!(l.drained, KgWater::ZERO);
+        applied += l.applied.0 - l.runoff.0;
+    }
+    assert!(((sealed.stored_water() - before).0 - applied).abs() < 1e-12);
+    let mut saucer = pot(Drainage::Saucer {
+        depth: Millimeters(20.0),
+    });
+    for h in 0..6 {
+        let l = saucer.step_hour(&(if h < 3 { soak } else { dry_hour() }));
+        assert!(l.relative_residual() < 1e-9, "{l:?}");
+    }
+    assert!(saucer.saucer_water().0 > 0.0);
+    // Dry the pot down to field capacity and fill the saucer 10 mm deep: it feeds the
+    // base back.
+    saucer.saucer = KgWater(10.0 * saucer.surface_area());
+    let held = saucer.saucer_water();
+    for i in 0..saucer.len() {
+        if saucer.is_active(i) {
+            saucer.water[i] = saucer.capacity(hy.field_capacity);
         }
-        // Drainage time (99.9% of excess out) within 5% of n hours.
-        let target = 0.999 * excess_per_cell * f64::from(u32::try_from(n).unwrap());
-        let mut cum = 0.0;
-        let hours = drained_by_hour
-            .iter()
-            .position(|d| {
-                cum += d;
-                cum >= target
-            })
-            .unwrap()
-            + 1;
-        assert!((f64::from(u32::try_from(hours).unwrap()) / 10.0 - 1.0).abs() <= 0.05);
-        assert!(((start - g.total_water()).0 - total.drained.0).abs() < 1e-12);
+    }
+    drain_hours(&mut saucer, 24);
+    assert!(saucer.saucer_water() < held);
+    assert!(
+        bottom(&saucer) > hy.field_capacity + 0.05,
+        "{}",
+        bottom(&saucer)
+    );
+}
+
+/// The column solver's table follows the retention curve from air-dry to saturation:
+/// the head to 1e-7, the slope and conductivity to 1e-3.
+#[test]
+fn the_flow_table_follows_the_curve() {
+    let rel = |a: f64, b: f64| ((a - b) / b).abs();
+    for texture in [Texture::Loam, Texture::Sand, Texture::Clay] {
+        let hy = texture.hydraulics();
+        let r = texture.retention();
+        let table = flow::FlowTable::for_texture(texture);
+        let mut worst = [0.0_f64; 3];
+        for i in 0..1000 {
+            let theta = hy.air_dry + (hy.saturation - hy.air_dry) * f64::from(i) / 1000.0;
+            let (psi, slope, kr) = r.flow_terms(theta);
+            let (h, c, k) = table.terms(theta);
+            worst[0] = worst[0].max(rel(h, psi.0 / flow::KPA_PER_M_WATER));
+            worst[1] = worst[1].max(rel(c, slope * flow::KPA_PER_M_WATER));
+            worst[2] = worst[2].max(rel(k, kr * hy.saturated_conductivity));
+        }
+        println!("{texture:?}: head, slope, conductivity within {worst:?}");
+        assert!(
+            worst[0] < 1e-7 && worst[1] < 1e-3 && worst[2] < 1e-3,
+            "{texture:?} {worst:?}"
+        );
+    }
+}
+
+/// The column solver conserves water to 1e-12 every hour, whatever it does inside.
+#[test]
+fn the_column_solver_conserves_water() {
+    for texture in [Texture::Loam, Texture::Sand, Texture::Clay] {
+        let hy = texture.hydraulics();
+        let col = flow::Column {
+            dz: 0.02,
+            table: flow::FlowTable::for_texture(texture),
+        };
+        let mut s = flow::Scratch::default();
+        for bottom in [
+            flow::Bottom::Free,
+            flow::Bottom::Seepage,
+            flow::Bottom::Closed,
+            flow::Bottom::Head {
+                head: 0.01,
+                limit: 0.002,
+            },
+        ] {
+            // Saturated over dry: the hardest start.
+            let mut theta = vec![hy.wilting_point; 12];
+            theta[..4].fill(hy.saturation);
+            for _ in 0..24 {
+                let before: f64 = theta.iter().sum::<f64>() * 0.02;
+                let h = col.hour(&mut theta, 3600.0, bottom, &mut s);
+                let after: f64 = theta.iter().sum::<f64>() * 0.02;
+                assert!(
+                    (before - after - h.bottom - h.backed_up).abs() < 1e-12 * before,
+                    "{texture:?} {bottom:?}"
+                );
+                assert!(h.substeps <= flow::MAX_SUBSTEPS);
+                assert!(
+                    theta.iter().all(|t| *t > 0.0),
+                    "{texture:?} {bottom:?} {theta:?}"
+                );
+                if let flow::Bottom::Head { limit, .. } = bottom {
+                    assert!(-h.bottom <= limit * (1.0 + 1e-12));
+                }
+            }
+        }
     }
 }
 
@@ -76,26 +270,48 @@ fn infiltration_fills_from_the_top() {
     let mut g = column(Texture::Loam, 10);
     g.fill_to(Texture::Loam.hydraulics().wilting_point);
     // 2 mm on a 2 cm cell: 0.0008 kg, less than one cell's room to field capacity.
-    let l = g.step_hour(&SoilHour {
-        water_in: Millimeters(2.0),
-        ..dry_hour()
-    });
+    let mut l = WaterLedger::default();
+    g.infiltrate(Millimeters(2.0), None, &mut l);
     assert!((l.applied.0 - 0.0008).abs() < 1e-15);
     assert!(g.theta(0) > Texture::Loam.hydraulics().wilting_point);
     assert!((g.theta(1) - Texture::Loam.hydraulics().wilting_point).abs() < 1e-15);
     assert_eq!(l.runoff, KgWater::ZERO);
+    assert_eq!(g.ponded_water(), KgWater::ZERO);
 }
 
+/// R5a: at most the saturated conductivity's depth soaks in an hour; the rest ponds up
+/// to the surface's store and the excess runs off. Ponded water soaks in later.
 #[test]
-fn excess_runs_off_when_saturated() {
+fn water_ponds_then_runs_off() {
+    // Clay takes 4.8 cm a day, 2 mm an hour; a plot ponds 5 mm.
+    let mut g = column(Texture::Clay, 10);
+    g.fill_to(Texture::Clay.hydraulics().wilting_point);
+    let mut l = WaterLedger::default();
+    g.infiltrate(Millimeters(20.0), None, &mut l);
+    let mm = |kg: KgWater| kg.0 / 4e-4;
+    assert!((mm(g.ponded_water()) - PLOT_POND_MM).abs() < 1e-12);
+    assert!(
+        (mm(l.runoff) - (20.0 - 2.0 - PLOT_POND_MM)).abs() < 1e-9,
+        "{l:?}"
+    );
+    let pond = g.ponded_water();
+    let l = g.step_hour(&dry_hour());
+    assert!(l.relative_residual() < 1e-9);
+    assert!(g.ponded_water() < pond);
+    // A saturated column takes nothing: all of it ponds or runs off.
     let mut g = column(Texture::Clay, 3);
     g.fill_to(Texture::Clay.hydraulics().saturation);
-    let l = g.step_hour(&SoilHour {
-        water_in: Millimeters(5.0),
-        ..dry_hour()
-    });
-    assert!((l.runoff.0 - l.applied.0).abs() < 1e-15);
-    assert!(l.relative_residual() < 1e-9);
+    let mut l = WaterLedger::default();
+    g.infiltrate(Millimeters(12.0), None, &mut l);
+    assert!((mm(l.runoff) - (12.0 - PLOT_POND_MM)).abs() < 1e-9, "{l:?}");
+    // A pot holds more below its rim.
+    let mut p =
+        SoilGrid::new_pot(Meters(0.1), Meters(0.06), Meters(0.02), Texture::Clay, T20).unwrap();
+    p.fill_to(Texture::Clay.hydraulics().saturation);
+    let mut l = WaterLedger::default();
+    p.infiltrate(Millimeters(20.0), None, &mut l);
+    assert_eq!(l.runoff, KgWater::ZERO);
+    assert_eq!(p.pond_capacity(), Millimeters(POT_POND_MM));
 }
 
 #[test]
@@ -117,6 +333,7 @@ fn lateral_redistribution_smooths_and_conserves() {
 fn a_strip_waters_its_columns_only() {
     let mut g = SoilGrid::new_box(4, 1, 2, Meters(0.02), Texture::Loam, T20).unwrap();
     g.set_divider();
+    g.set_drainage(Drainage::NoHoles);
     let dry = Texture::Loam.hydraulics().wilting_point;
     g.fill_to(dry);
     let l = g.step_hour(&SoilHour {
@@ -130,29 +347,36 @@ fn a_strip_waters_its_columns_only() {
     // 5 mm over two 2 cm columns is 2 × 2e-3 kg.
     assert!((l.applied.0 - 4e-3).abs() < 1e-15);
     assert!(g.theta(0) > dry + 1e-3 && g.theta(1) > dry + 1e-3);
-    assert!((g.theta(2) - dry).abs() < 1e-12 && (g.theta(3) - dry).abs() < 1e-12);
+    // The unwatered half's water only moved within its own columns.
+    let east = |g: &SoilGrid| g.theta(2) + g.theta(3) + g.theta(6) + g.theta(7);
+    assert!((east(&g) - 4.0 * dry).abs() < 1e-12);
     assert!(l.relative_residual() < 1e-12);
 }
 
 #[test]
 fn evaporation_takes_from_top_only_and_stops_dry() {
-    let mut g = column(Texture::Sand, 4);
+    let mut g = closed(Texture::Sand, 4);
+    g.fill_to(0.35);
     let hour = SoilHour {
         surface_radiation: WPerM2(800.0),
         ..dry_hour()
     };
+    let start = g.stored_water();
     let l = g.step_hour(&hour);
     // Wet soil: 0.5 × 800 × 3600 / 2.45e6 = 0.588 kg m-2 h-1 (0.59 mm).
     assert!((l.evaporated.0 / 4e-4 - 0.5 * 800.0 * 3600.0 / 2.45e6).abs() < 1e-9);
-    let below = g.theta(1);
-    for _ in 0..500 {
-        g.step_hour(&hour);
+    let mut evaporated = l.evaporated.0;
+    for _ in 0..2000 {
+        evaporated += g.step_hour(&hour).evaporated.0;
     }
-    assert!((g.theta(0) - Texture::Sand.hydraulics().air_dry).abs() < 1e-3);
+    // The top dries out, the layers below feed it by capillary flow, and the column
+    // loses exactly what evaporated.
     assert!(
-        (g.theta(1) - below).abs() < 1e-15,
-        "lower layer must not evaporate"
+        (g.theta(0) - Texture::Sand.hydraulics().air_dry).abs() < 1e-3,
+        "{}",
+        g.theta(0)
     );
+    assert!(((start - g.stored_water()).0 - evaporated).abs() < 1e-12);
     let night = g.step_hour(&dry_hour());
     assert_eq!(night.evaporated, KgWater::ZERO);
 }
@@ -298,7 +522,7 @@ fn pot_mask_area_is_close_to_circle() {
 }
 
 /// R3a: a pot at field capacity reads −33 kPa in every active cell and layer, nothing
-/// outside the pot, and a dried top layer reads drier than the rest.
+/// outside the pot, and a pot dried from the top reads drier the higher the layer.
 #[test]
 fn pot_water_potential_follows_the_water() {
     let mut g =
@@ -324,11 +548,15 @@ fn pot_water_potential_follows_the_water() {
     }
     let layers = g.layer_water_potentials();
     assert!(layers[0].0 < -100.0, "{layers:?}");
-    assert!((layers[9].0 + 33.0).abs() < 1e-6, "{layers:?}");
+    // The pot dries from the top: capillary flow feeds the surface from below, so every
+    // layer dries, the top most.
+    assert!(layers.windows(2).all(|w| w[0].0 < w[1].0), "{layers:?}");
+    assert!(layers[9].0 < -33.0 && layers[9].0 > -60.0, "{layers:?}");
 }
 
 proptest! {
-    /// Random weather in a pot: every hour closes to 1e-9, water stays within [0, saturation].
+    /// Random weather in a pot: every hour closes to 1e-9, water stays within [0,
+    /// saturation], give or take the little a saturated cell holds under pressure.
     #[test]
     fn random_hours_conserve(
         hours in proptest::collection::vec((0.0f64..30.0, 0.0f64..900.0, -5.0f64..40.0, 0.0f64..0.002), 1..80),
@@ -348,7 +576,8 @@ proptest! {
             prop_assert!(u.ledger.relative_residual() < 1e-9);
             for i in 0..g.len() {
                 let th = g.theta(i);
-                prop_assert!(th >= -1e-15 && th <= sat + 1e-12, "cell {i} theta {th}");
+                // A saturated cell holds a little more under pressure (specific storage).
+                prop_assert!(th >= -1e-15 && th <= sat + 0.002, "cell {i} theta {th}");
             }
         }
     }

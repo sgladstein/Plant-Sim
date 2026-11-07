@@ -46,8 +46,13 @@ replayed exactly.
   rule break.
 - Soil surface radiation: `global × fraction × exp(−0.5 × LAI)`, with LAI the soil's
   plants' leaf area over the soil surface area.
-- Watering to field capacity: `mm = Σ_cells max(0, θ_fc V − W) / A_surface` (kg over m²
-  is mm).
+- Watering to field capacity: `mm = max(0, Σ_cells max(0, θ_fc V − W) − P) / A_surface`
+  (kg over m² is mm), `P` the water still ponded on the surface (R5a); a strip counts
+  its own columns' cells and pond.
+- Pot drainage (R5a, decision 0046; soil-and-water card equation 2): a scenario pot's
+  `drainage` is `Holes` (the default: water leaves only through saturated soil at the
+  base), `NoHoles`, or `Saucer(depth_mm: d)` (0 to 100 mm: holes over a saucer that
+  feeds the pot back). Plots always drain freely.
 - Hash: for each serialized word `w_k` (k = 0, 1, …):
   `h ← s(h ⊕ s(w_k + k))`, final `s(h ⊕ n)`, with `s` the splitmix64 finalizer.
   Daily hash `H_d = hash(H_{d−1}, tick, soils, plants, actions and rows new since d−1)`,

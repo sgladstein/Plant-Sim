@@ -184,6 +184,7 @@ pub fn scenario_for(s: &ExperimentSetup, data: &Path, stakes: bool) -> Result<Sc
             depth_cm: size,
             texture,
             position_m: (SPACING_M * i as f64, 0.0),
+            drainage: ps_world::PotDrainage::default(),
         });
         sc.radiation_fraction
             .insert(id, value(s, Variable::Light, i) / 100.0);

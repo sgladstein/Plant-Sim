@@ -12,6 +12,15 @@ use ps_species::Species;
 use ps_units::{Celsius, Degrees, Hours, KPa, Meters, MetersPerSecond, Millimeters, Ppm, WPerM2};
 use ps_weather::{DateHour, HourWeather, Preset, WeatherSeries};
 
+/// Water to bring the pot back to volumetric water `theta`, mm over its surface.
+fn deficit(soil: &SoilGrid, theta: f64) -> Millimeters {
+    let kg: f64 = (0..soil.len())
+        .filter(|&i| soil.is_active(i))
+        .map(|i| (theta - soil.theta(i)).max(0.0) * soil.cell_volume() * 1000.0)
+        .sum();
+    Millimeters(kg / soil.surface_area().max(1e-12))
+}
+
 /// What each hour checks.
 struct Hourly {
     /// Hours with leaves.
@@ -77,8 +86,15 @@ fn run(
         let demand = plant.water_demand(&ctx, &soil).unwrap();
         assert!(demand.0 >= 0.0, "hour {tick}: demand {}", demand.0);
         let lai = plant.report().leaf_area / soil.surface_area().max(1e-9);
+        // Watered through the surface, so the water soaking in carries back down the
+        // nitrate the day's evaporation drew up (R5a).
+        let water_in = if tick > 0 && tick % 24 == 0 {
+            deficit(&soil, theta)
+        } else {
+            Millimeters(0.0)
+        };
         soil.step_hour(&SoilHour {
-            water_in: Millimeters(0.0),
+            water_in,
             surface_radiation: WPerM2(h.global.0 * libm::exp(-0.5 * lai)),
             t_air: h.t_air,
             strip: None,
@@ -130,7 +146,6 @@ fn run(
                 taken_today,
             );
             taken_today = 0.0;
-            soil.fill_to(theta);
             after_day(u32::try_from(tick / 24).unwrap(), &plant);
         }
     }

@@ -1,22 +1,66 @@
 # Soil and water
 
 ## Purpose
-Rain and watering soak in from the top. Water beyond what soil can hold (its field
-capacity) drains down and out of the pot's bottom. Water spreads sideways a little, the
-sun dries the surface, and roots draw water from where they are: each root takes what
-its own pull and the soil's wetness allow, so wet soil gives more (plant-hydraulics
+Rain and watering soak in from the top, as fast as the soil lets them; the rest ponds
+on the surface for a while and then runs off. Water moves up and down from wet soil to
+dry and under gravity (R5a): a soaked bed drains over days, not hours, a dried surface
+draws water up from below, and a pot with holes keeps a wet layer at its bottom, since
+water leaves only through saturated soil at its holes. Water spreads sideways a little,
+the sun dries the surface, and roots draw water from where they are: each root takes
+what its own pull and the soil's wetness allow, so wet soil gives more (plant-hydraulics
 card). How much water a soil holds also sets how tightly it holds it, its water
-potential.
+potential, and how easily water moves through it, its conductivity.
 
 ## Equations
 Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 `W_x = θ_x V ρ_w` for saturation `s`, field capacity `fc`, wilting point `wp`, air-dry `ad`.
 
-1. **Infiltration**: water in (mm) × `Δx²` per active column; fill cells top-down to `W_fc`,
-   then to `W_s`; leftover is runoff. A strip of columns `x0 ≤ x < x1` (a split pot's
-   watered half) can get water of its own on top (R2b, decision 0043).
-2. **Drainage**: `e_i = max(0, W_i − W_fc)` from the start-of-step state; `W_i −= e_i`,
-   added to the cell below, or drained if there is none.
+1. **Infiltration** (R5a, decision 0046): water in (mm) × `Δx²` per active column, plus
+   what ponded there last hour; at most `K_s · 1 h` of it enters (loam 10.4 mm, sand
+   297 mm, clay 2 mm an hour), filling cells top-down to `W_fc`, then to `W_s`. What
+   does not enter or does not fit ponds on the column up to the pond store (5 mm on a
+   plot, 25 mm in a pot, the space below its rim); the rest is runoff. A strip of
+   columns `x0 ≤ x < x1` (a split pot's watered half) can get water of its own on top
+   (R2b, decision 0043). Scheduled watering to field capacity counts the ponded water
+   as given. Water that passes a cell on its way down carries nitrate as a mixing cell
+   (Godwin and Jones 1991): the cell sends the share `p / (W + w_in)` of its nitrate
+   plus what came in from above, `p` the water passing on and `w_in` the water coming
+   in; the deepest cell the water reaches keeps the rest.
+2. **Vertical flow** (R5a, decision 0046; `ps_soil::flow`): in each column, with heads
+   `h` in metres of water (`ψ / ρg`, negative is suction), the downward flux across the
+   face between cells `i` and `i + 1` is `q = K_f ((h_i − h_{i+1}) / Δz + 1)`, `K_f`
+   the arithmetic mean of the two cells' `K(θ)` (equation 11). One backward-Euler step
+   an hour with `K` and the retention slope `C = dθ/dh` taken at the start (one Picard
+   step): `C_i Δz (h'_i − h_i) / Δt = q_in − q_out`, a tridiagonal system solved by
+   the Thomas algorithm. The water then moves by the solved fluxes themselves, so each
+   column conserves water exactly. A saturated cell's head is `−h_e + (θ − θ_s) / S_s`
+   with a numerical specific storage `S_s` = 0.01 m⁻¹, so a perched water table has a
+   pressure; a step that leaves a cell above `θ_s + S_s (n_z + 1) Δz` (more pressure
+   than the column's own height of water) pushes the excess up, and out of the top to
+   the pond. An hour whose single step would change any cell by more than 0.1 m³ m⁻³
+   is split into 2, 4, … up to 64 equal steps. The solver reads the curve's head,
+   slope and conductivity (equations 10 and 11) from a table on 4,096 even steps of
+   relative saturation, from half the air-dry content to saturation: the head by cubic
+   Hermite interpolation on its exact slope (within 1e-7 of the curve, so a
+   hydrostatic profile set from the curve stays put), the slope and conductivity
+   linearly (within 1e-3); the curve's powers had been most of the soil's cost.
+   Columns are independent: on 256 or more active columns they are solved in parallel
+   in fixed chunks of 32 and put back in column order, so any thread count gives the
+   same state. The base:
+   - a plot drains freely, `q = K_N` (unit gradient), and the water never returns;
+   - a pot with holes is a seepage face: `q = K_N (h_N / (Δz/2) + 1)` only while
+     `h_N > −Δz/2` (the base saturated), else nothing, so a soaked pot keeps its bottom
+     near saturation;
+   - a pot without holes passes nothing;
+   - a pot in a saucer drains into it; while the saucer holds water at depth `d` the
+     base is `q = K_b ((h_N − d) / (Δz/2) + 1)` either way (`K_b` the mean of `K_N` and
+     `K_s`), each column taking at most what is left, in column order; past its depth
+     the saucer spills (drained). A saucer does not evaporate.
+
+   Nitrate moves with each face's net water over the hour at the upwind cell's
+   start-of-hour concentration, each cell sending at most its store over all the water
+   it sends; what leaves the base leaches (into a saucer too: its water returns
+   without nitrate).
 3. **Lateral**: for each horizontal neighbor pair, `f = a (W_i − W_j)`; `W_i −= f`, `W_j += f`,
    with `a = min(0.25, 0.1 (0.02 m / Δx)²)`, a diffusivity of 4e-5 m² h⁻¹ (decision 0019):
    0.1 in 2 cm pot cells, 0.016 in 5 cm plot cells. A watertight divider (a split
@@ -41,13 +85,18 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 9. *(Removed in R3b: the per-root potential `min(k L/V (W − W_wp)⁺, u_max L, ...)` and
    its hourly ceiling `u_max` (decisions 0012, 0037). A root now draws past the wilting
    point down to air-dry, as its rhizosphere factor and the plant's potential allow.)*
-10. **Water potential** (R3a; `ps_soil::Retention`, derived, read by nothing in the
-    step yet). van Genuchten (1980) with the residual content set to 0:
-    `θ(ψ) = θ_s / [1 + (|ψ| / ψ_s)^n]^(1 − 1/n)`, inverted in closed form,
-    `ψ = −ψ_s (S^(−n/(n−1)) − 1)^(1/n)` with `S = θ/θ_s` (0 at saturation). Per
+10. **Water potential** (R3a; air entry R5a, decision 0046; `ps_soil::Retention`, read
+    by the vertical flow and the plants' root networks). van Genuchten (1980) with the
+    residual content set to 0 and the air entry of Ippisch, Vogel and Bastian (2006):
+    `θ = θ_s` while `|ψ| ≤ h_e` (2 cm of water, 0.196 kPa), and
+    `θ(ψ) = θ_s [1 + (|ψ| / ψ_s)^n]^(−m) / S_c` beyond, `m = 1 − 1/n`,
+    `S_c = [1 + (h_e / ψ_s)^n]^(−m)`; inverted in closed form,
+    `ψ = −ψ_s ((S S_c)^(−1/m) − 1)^(1/n)` with `S = θ/θ_s` (`−h_e` at saturation). Per
     texture, `n` and the suction scale `ψ_s = 1/α` are solved so that
-    `θ(−33 kPa) = fc` and `θ(−1500 kPa) = wp`: a bisection on `n` for the two anchors'
-    ratio, halving until the midpoint stops moving, then `ψ_s` from the −33 kPa anchor.
+    `θ(−33 kPa) = fc` and `θ(−1500 kPa) = wp`: an outer bisection on `n` for the
+    wilting-point anchor around an inner bisection on `ln ψ_s` for the field-capacity
+    anchor, each halving until its midpoint stops moving. The flow step's slope is
+    `dθ/dψ = θ_s m n S (1 − y) / |ψ|` with `y = (S S_c)^(1/m)`.
     Published tables (Carsel and Parrish 1988) don't put their −33 kPa points at these
     field capacities, and keeping a published `n` while solving `θ_r` gave clay a
     negative `θ_r`, sand one equal to its wilting point and loam one above air-dry
@@ -56,14 +105,16 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
     mean water content (`SoilGrid::layer_water_potentials`). The anchor solve runs
     once per texture per process (`Texture::retention` caches it). The plant's root
     network reads each root cell's potential (R3b).
-11. **Hydraulic conductivity** (R3c, decision 0045; `Retention::psi_and_conductivity`,
-    read by the root network's soil term). Mualem (1976) on the same curve,
-    `K(θ) = K_s · S^½ [1 − (1 − S^(1/m))^m]²` with `m = 1 − 1/n`; the potential and the
-    conductivity share `S^(1/m)`. With the anchored curves `K / K_s` is about 8e-5 at
-    field capacity and 5e-9 at the wilting point in loam (sand 5e-6 and 1.5e-10, clay
-    9e-4 and 1.2e-7): steep, since the fitted `n` (about 1.2) is far below Carsel and
-    Parrish's own. Soil water redistribution between cells does not use it yet (the
-    cells exchange water by the earlier bucket rules).
+11. **Hydraulic conductivity** (R3c, decision 0045; air entry R5a, decision 0046;
+    `Retention::flow_terms`, read by the vertical flow and the root network's soil
+    term). Mualem (1976) on the same curve with Ippisch et al.'s scaling,
+    `K(θ) = K_s · S^½ [(1 − (1 − y)^m) / (1 − (1 − S_c^(1/m))^m)]²`, 1 at saturation;
+    the potential, its slope and the conductivity share `y`, three powers in all. With
+    the anchored curves `K / K_s` is about 3.6e-4 at field capacity and 2.4e-8 at the
+    wilting point in loam (sand 2.5e-5 and 7.8e-10, clay 4.0e-3 and 5.2e-7), four to
+    five times the values without the air entry: Mualem's integral no longer counts
+    pores larger than the air entry allows, which with `n` near 1.2 had cut `K` to a
+    sixth of `K_s` within 3 cm of saturation.
 
 ## Parameters
 | Name | Value | Unit | Source |
@@ -78,10 +129,17 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Damping depth | 0.10 | m | ~ (typical moist loam) |
 | Cell size, pots | 0.02 | m | design plan §3.6 |
 | Cell size, plots | 0.05 | m | design plan §3.6 (decision 0019) |
-| Retention `n`, `α` (loam) | 1.2151, 0.0305 | -, 1/cm | solved from fc, wp and saturation (R3a); `ψ_s` 3.22 kPa |
-| Retention `n`, `α` (sand) | 1.2886, 0.0881 | -, 1/cm | solved (R3a); `ψ_s` 1.11 kPa |
-| Retention `n`, `α` (clay) | 1.1651, 0.0094 | -, 1/cm | solved (R3a); `ψ_s` 10.43 kPa |
+| Retention `n`, `α` (loam) | 1.2150, 0.0314 | -, 1/cm | solved from fc, wp and saturation with the air entry (R3a, R5a); `ψ_s` 3.12 kPa |
+| Retention `n`, `α` (sand) | 1.2885, 0.0964 | -, 1/cm | solved (R3a, R5a); `ψ_s` 1.02 kPa |
+| Retention `n`, `α` (clay) | 1.1650, 0.0095 | -, 1/cm | solved (R3a, R5a); `ψ_s` 10.31 kPa |
+| Air-entry suction `h_e` | 2 | cm of water | ~ (Ippisch et al. 2006; R5a spec §3.2) |
+| Mualem pore connectivity `l` | 0.5 | - | Mualem 1976 |
 | Saturated conductivity `K_s` (loam, sand, clay) | 24.96, 712.8, 4.8 | cm/d | Carsel and Parrish 1988 class means (R3c) |
+| Specific storage `S_s` | 0.01 | 1/m | ~ (numerical; real soils ~1e-5) |
+| Largest change in one flow step | 0.1 | m3/m3 | ~ (sub-steps, at most 64 an hour) |
+| Flow table steps | 4,096 | - | numerical (from half the air-dry content to saturation) |
+| Pond store, plot | 5 | mm | ~ (R5a spec §3.2) |
+| Pond store, pot | 25 | mm | ~ (the space below a pot's rim) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -94,19 +152,33 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | out | uptake per cell, shortfall | kg | plant, ledger |
 | out | layer temperature | C | germination, roots |
 | out | water potential per cell, per layer | kPa | the root network (R3b); lens (R3a) |
-| out | water ledger | kg | world ledger |
+| out | water ledger (its storage counts ponded and saucer water) | kg | world ledger |
+| out | ponded water, saucer water | mm | lens (R5a) |
+| in | pot drainage: holes, none, saucer depth | - | scenario (R5a) |
 
 ## Encoded or emergent
 Encoded: all of the above. Emergent at plant level: drought stress timing, which
 depends on how fast roots explore the pot and how much leaf area transpires.
 
 ## Known limits
-Water moves by bucket rules, not by gradients of water potential: the potential
-(R3a) is derived from the water content for display and for R3's plant hydraulics, and
-no flux reads it yet. No hysteresis, no capillary rise (§3.6). Air-dry soil reads far
+Water moves up and down by Darcy's law but sideways by the earlier diffusion rule
+(decision 0019), so a wet patch spreads sideways no faster in sand than in clay. One
+linearized step an hour: within the hour after a soaking a column can be 0.1 to 0.2
+m³ m⁻³ off a finely stepped solution (worst in sand, whose wetting front crosses a
+pot in minutes), within 0.02 after six hours. Infiltration fills top-down as before,
+capped at `K_s` an hour: it ignores how much faster dry soil drinks at first, so heavy
+rain runs off clay sooner than it would. Water above field capacity drains slowly: a
+soaked loam column is still near 0.36 after two days and about 0.33 after a week, far
+above the −33 kPa field capacity of 0.27, which the curve reaches only after weeks; the
+done-when that asked for field capacity in 1 to 3 days is read as the end of rapid
+drainage instead (decision 0046). A soaked loam pot with holes rests near saturation
+(about 0.43): its 24 cm of height can hold only 24 cm of suction. Water rising to an
+evaporating surface carries nitrate with it and leaves it there, and the next watering
+carries most of it back down: a bare loam column refilled each night for 40 days ends
+with 40% more nitrate in its top 2 cm. No hysteresis. Air-dry soil reads far
 below any plant's reach (loam about −88 MPa, sand −36, clay −178), since the curve has
-no residual content to level off at; that only matters for the dry surface layer. Drainage is a bucket
-cascade, faster than real soils. Evaporation ignores humidity and wind. In a plot the
+no residual content to level off at; that only matters for the dry surface layer.
+Evaporation ignores humidity and wind; ponded and saucer water do not evaporate. In a plot the
 surface radiation is one value for the whole plot, so the gaps between rows dry no
 faster than the soil under the canopy (decision 0019). A root's radial conductance is
 linear in its length in a cell, with no resistance in the soil between roots beyond the
@@ -116,10 +188,23 @@ at saturation; it needs a root wetter than the cell, so it only reaches a satura
 cell by gravity, in amounts far below the next hour's drainage.
 
 ## Validation
-- `ps_soil::tests::wet_column_drains_to_field_capacity`: loam, sand, clay; closure < 1e-9 every hour;
-  analytic outflow exact; drainage time within 5% (WP5 done-when).
-- `ps_soil::tests::random_hours_conserve`: property test, random rain, radiation, temperature and uptake.
-- `infiltration_fills_from_the_top`, `excess_runs_off_when_saturated`,
+- Water flow (R5a done-whens): `ps_soil::tests::soaked_loam_drains_over_days` (a soaked
+  40 cm loam column sheds more than 15 mm on day 1, under 5 mm a day by day 3, still
+  some on day 8; closure every hour), `a_column_at_equilibrium_stays_put` (the
+  hydrostatic profile holds to 1e-9 for 48 h), `water_rises_from_a_water_table` (a sand
+  column over free water comes to the curve's content at each cell's height within
+  0.002; a dried top over wet loam is fed from below), `pots_keep_a_wet_bottom` (a
+  soaked pot with holes keeps its bottom above 0.98 of saturation at hours 27 and 71; a
+  pot without holes loses nothing; a saucer catches the outflow and feeds a drier pot
+  back), `the_column_solver_conserves_water` (1e-12 every hour for every base, from
+  saturated over dry), `the_flow_table_follows_the_curve` (head within 1e-7, slope and
+  conductivity within 1e-3, every texture), `water_ponds_then_runs_off`.
+- `ps_soil::tests::random_hours_conserve`: property test, random rain, radiation,
+  temperature and uptake; closure every hour, water within saturation plus what a
+  saturated cell holds under pressure.
+- `infiltration_fills_from_the_top`, `ps_soil::nitrogen::tests::soaking_in_carries_nitrate_down`
+  (the mixing-cell share, no deeper than the water goes; 40 days of sun and nightly
+  refills leave the top layer under twice its nitrate),
   `lateral_redistribution_smooths_and_conserves`, `lateral_fraction_scales_as_a_diffusivity`, `evaporation_takes_from_top_only_and_stops_dry`,
   `a_strip_waters_its_columns_only` (R2b),
   `ftsw_and_stress`, `flows_are_granted_down_to_air_dry` and `joint_flows_share_cells_fairly`
@@ -129,12 +214,20 @@ cell by gravity, in amounts far below the next hour's drainage.
 - Water potential (R3a): `ps_soil::retention::tests::anchors_hold_for_every_texture`
   (−33 kPa at field capacity and −1500 kPa at the wilting point to 1e-9, both ways),
   `parameters_match_the_realism_plan`, `potential_falls_as_the_soil_dries` (monotone,
-  0 at saturation), `inverse_is_exact`, `finite_down_to_air_dry`; and
-  `ps_soil::tests::pot_water_potential_follows_the_water`. The goldens did not change.
+  `−h_e` at saturation), `inverse_is_exact`, `finite_down_to_air_dry`,
+  `air_entry_and_slope` (flat to `h_e`, continuous there, the slope a finite
+  difference's to 1e-5); and `ps_soil::tests::pot_water_potential_follows_the_water`
+  (a pot dried from the top reads drier the higher the layer).
 
 ## References
 - Sinclair, T. R., Ludlow, M. M. (1986). Influence of soil water supply on the plant water balance of four tropical grain legumes. Aust. J. Plant Physiol. 13, 329–341 (FTSW).
 - Ritchie, J. T. (1998). Soil water balance and plant water stress. In Understanding Options for Agricultural Production (bucket models).
 - van Genuchten, M. Th. (1980). A closed-form equation for predicting the hydraulic conductivity of unsaturated soils. Soil Sci. Soc. Am. J. 44, 892–898 (retention curve).
-- Carsel, R. F., Parrish, R. S. (1988). Developing joint probability distributions of soil water retention characteristics. Water Resour. Res. 24, 755–769 (published texture parameters, not used).
+- Carsel, R. F., Parrish, R. S. (1988). Developing joint probability distributions of soil water retention characteristics. Water Resour. Res. 24, 755–769 (saturated conductivities; their retention parameters are not used).
+- Mualem, Y. (1976). A new model for predicting the hydraulic conductivity of unsaturated porous media. Water Resour. Res. 12, 513–522.
+- Ippisch, O., Vogel, H.-J., Bastian, P. (2006). Validity limits for the van Genuchten–Mualem model and implications for parameter estimation and numerical simulation. Adv. Water Resour. 29, 1780–1789 (air entry).
+- Richards, L. A. (1931). Capillary conduction of liquids through porous mediums. Physics 1, 318–333.
+- Celia, M. A., Bouloutas, E. T., Zarba, R. L. (1990). A general mass-conservative numerical solution for the unsaturated flow equation. Water Resour. Res. 26, 1483–1496 (mass-conservative stepping).
+- Godwin, D. C., Jones, C. A. (1991). Nitrogen dynamics in soil-plant systems. In Hanks, J., Ritchie, J. T. (eds.), Modeling Plant and Soil Systems, Agronomy Monograph 31, 287–321 (nitrate carried by water as a mixing cell).
+- Veihmeyer, F. J., Hendrickson, A. H. (1931). The moisture equivalent as a measure of the field capacity of soils. Soil Sci. 32, 181–193 (field capacity after 2 to 3 days of drainage).
 - Allen, R. G., et al. (1998). FAO-56 (latent heat; Priestley–Taylor scale for the evaporation coefficient).

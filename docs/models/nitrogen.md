@@ -20,8 +20,11 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 3. `f_T = min(1.2, (T/30 °C)²)` (T in °C, 0 below 0); `f_W` rises linearly from 0 at
    the wilting point to 1 halfway to field capacity, stays 1 up to field capacity, and
    falls linearly to 0.5 at saturation (APSIM SoilN shape).
-4. Drainage moves `NO₃ · drained / W` with the drained water (complete mixing); what
-   leaves the bottom is leached. Laterally (R2b, decision 0043) nitrate moves with the
+4. Vertical flow (R5a, decision 0046; soil-and-water card equation 2) moves nitrate
+   with each face's net water at the upwind cell's concentration, `NO₃ · q / W`, up as
+   well as down; water soaking in carries it down as a mixing cell,
+   `(NO₃ + NO₃_in) · p / (W + w_in)` (soil-and-water card equation 1); what leaves the
+   bottom is leached. Laterally (R2b, decision 0043) nitrate moves with the
    water's flux `f` at the concentration of the cell the water leaves,
    `f · NO₃_from / W_from`, plus diffusion `d (NO₃_i − NO₃_j)` with
    `d = D_l θ^{7/3} / θ_s² · 3600 s / Δx²`, 5.1e-3 `(0.02 m / Δx)²` per hour (a cell's
@@ -180,7 +183,7 @@ Emergent:
 - `ps_soil::nitrogen::tests::*`: rates to 1e-9 relative, factor shapes, leaching closes
   the ledger, nitrate moving with the water and diffusing slowly
   (`nitrate_moves_with_the_water_and_diffuses_slowly`, `a_divider_stops_water_and_nitrate`,
-  R2b), fertilizer in the top layer, uptake limited by root length, soil N and demand
+  R2b; `soaking_in_carries_nitrate_down`, R5a), fertilizer in the top layer, uptake limited by root length, soil N and demand
   and fair between plants.
 - Debug builds assert the soil N ledger every hour and each plant's N ledger every day
   at 1e-9 relative.
