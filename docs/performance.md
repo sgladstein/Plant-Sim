@@ -228,6 +228,26 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+### R5b cost (model 0.29.0, 2026-11-07)
+
+R5b (#150, decision 0048: waterlogged soil runs short of oxygen) and the R5a review
+follow-ups (#149, model 0.28.0), against 5736c68 (0.27.0 with #148). Wall time in this
+container was too noisy that day to separate a few percent (the same binary ranged
+8.2 to 10.7 ms per sim-day on the pot), so this entry reads callgrind instructions
+(one thread):
+
+| Scenario | 0.27.0 + #148 | 0.29.0 (af07707) |
+| --- | --- | --- |
+| single_pot | 6.84 G | 7.04 G (+2.9%) |
+| single_pot_simplified | 5.62 G | 5.79 G (+3.1%) |
+| plot_30_beans, first 30 days | 6.78 G | 6.98 G (+3.1%) |
+
+The extra cost is spread thin: the hourly aeration update (a division and a clamp per
+cell), each root cell's hypoxia lookup, and the pond's evaporation, none above 1% of
+the total. No result-identical cut of size is left in it. Estimated on the owner's
+PC, chained from the R5a figures: detailed pot about 8.0 ms, simplified about 6.6,
+plot about 45 ms per sim-day (the plot's 90-day figure assumes the 30-day share).
+
 ### R5a cost (model 0.27.0, 2026-11-07)
 
 R5a (#146, decision 0046) moves soil water by Darcy's law: each column solves a
