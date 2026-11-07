@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use ps_arch::HydraulicsLevel;
 use ps_soil::{NitrogenForm, SoilNitrogen, Texture};
 use ps_weather::presets::HeatWave;
 use serde::{Deserialize, Serialize};
@@ -381,6 +382,50 @@ pub struct Scenario {
     /// (decision 0027).
     #[serde(default)]
     pub variation: FieldVariation,
+    /// Which form of the water network the plants run (R3c, decision 0045);
+    /// [`Fidelity::Auto`] if absent.
+    #[serde(default, skip_serializing_if = "Fidelity::is_auto")]
+    pub fidelity: Fidelity,
+}
+
+/// Most plants a scenario at [`Fidelity::Auto`] runs at the detailed level (the
+/// fidelity plan's `max_detailed`, a guess for Performance to time).
+pub const MAX_DETAILED: usize = 8;
+
+/// The level of the plants' water network a scenario asks for (R3c, decision 0045).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Fidelity {
+    /// Detailed when the scenario sows at most [`MAX_DETAILED`] seeds at the start,
+    /// simplified above.
+    #[default]
+    Auto,
+    /// Every plant detailed.
+    Detailed,
+    /// Every plant simplified.
+    Simplified,
+    /// Every plant at this level, and `SetFidelity` actions are refused (a challenge's
+    /// lock).
+    Locked(HydraulicsLevel),
+}
+
+impl Fidelity {
+    /// Whether this is [`Fidelity::Auto`] (the default, left out of files).
+    #[must_use]
+    pub fn is_auto(&self) -> bool {
+        *self == Fidelity::Auto
+    }
+
+    /// The level a plant is sown at, for a scenario that sows `sowings` seeds at the
+    /// start.
+    #[must_use]
+    pub fn level(self, sowings: usize) -> HydraulicsLevel {
+        match self {
+            Fidelity::Auto if sowings > MAX_DETAILED => HydraulicsLevel::Simplified,
+            Fidelity::Auto | Fidelity::Detailed => HydraulicsLevel::Detailed,
+            Fidelity::Simplified => HydraulicsLevel::Simplified,
+            Fidelity::Locked(level) => level,
+        }
+    }
 }
 
 impl Scenario {
@@ -627,5 +672,14 @@ pub enum ActionKind {
         /// Pollen parent: a plant with an open flower whose genome crosses with the
         /// seed parent's.
         pollen: u32,
+    },
+    /// Run these plants' water network at a level from the next hour (R3c, decision
+    /// 0045): the viewer's zoom and speed rule writes it, so a replay is exact. An
+    /// empty list sets every plant. Refused under [`Fidelity::Locked`].
+    SetFidelity {
+        /// Plant ids; empty for all.
+        plants: Vec<u32>,
+        /// The level.
+        level: HydraulicsLevel,
     },
 }

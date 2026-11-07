@@ -13,6 +13,10 @@ path = "src/main.rs"
 
 [dependencies]
 ps-world.workspace = true
+ps-arch.workspace = true
+ps-graph.workspace = true
+ps-physio.workspace = true
+libm.workspace = true
 ps-export.workspace = true
 ps-validate.workspace = true
 ps-breed.workspace = true

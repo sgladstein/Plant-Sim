@@ -14,6 +14,8 @@ cargo run --release -p ps-cli -- run data/scenarios/response/*.ron --out out
 | `bench SCENARIO... [--days N] [--repeat N]` | Reports wall time per sim-day, the best of N runs. |
 | `replay SCENARIO LOG [--until-tick T] [--out DIR]` | Replays a `log.ron` from the start and prints the hash. |
 | `replay --snapshot FILE [--out DIR]` | Resumes a snapshot to the end of its scenario. |
+| `validate [--out DIR] [--fidelity LEVEL]` | The validation report (WP11), four seeds per scenario. `--fidelity detailed` or `simplified` runs every scenario's plants at that water-network level (R3c). |
+| `fidelity [--out DIR]` | Runs six scenarios and a switch run on four seeds at both water-network levels and writes `DIR/report.md` (default `out/fidelity`); fails when an outcome's gap is above the larger of 5% and half the detailed seed range, or the seed-yield bias over the scenarios is beyond ±2% and beyond twice its standard error (R3c, decision 0045). |
 | `challenge ID [LOG] [--out DIR]` | Replays a log (none: an empty log) on challenge `data/challenges/ID.ron`, prints the score (the mean over the challenge's seasons, with each season's score), medal, broken rules and the first season's weekly debrief. `--out` writes the CSVs and `debrief.ron` to `DIR/ID/`. See docs/game/challenges.md. |
 
 `--data DIR` points at the data directory (default `data`). `--days N` shortens a run.

@@ -34,6 +34,16 @@ replayed exactly.
 - Plots (decision 0019): plants of one soil step in parallel and are collected in plant
   order. Each day a plot's leaves go into one shared light grid (`ps_light::rebuild_plot`)
   between `Plant::day_before_light` and `Plant::day_after_light`.
+- Water-network level (R3c, decision 0045; plant-hydraulics card): each plant runs
+  its water network detailed or simplified, a per-plant state in the snapshot and the
+  hash. The scenario's `fidelity` sets the level at sowing: `Auto` (the default) is
+  detailed when the scenario sows at most `MAX_DETAILED` (8) seeds at the start and
+  simplified above, `Detailed` or `Simplified` forces one, and `Locked(level)` forces
+  one and refuses every `SetFidelity` action (a challenge's `fidelity:
+  Locked(level)` sets it). The `SetFidelity { plants, level }` action (an empty list
+  for every plant) changes the level from the next hour; the viewer writes it as the
+  camera and speed change, so a replay of the log is exact. It is never a challenge
+  rule break.
 - Soil surface radiation: `global × fraction × exp(−0.5 × LAI)`, with LAI the soil's
   plants' leaf area over the soil surface area.
 - Watering to field capacity: `mm = Σ_cells max(0, θ_fc V − W) / A_surface` (kg over m²
@@ -55,6 +65,7 @@ replayed exactly.
 | Support height, diameter, most | 500, 100 | cm | input limits (decision 0021) |
 | Initial soil temperature | 15 | °C | "~" until the air history fills |
 | Soil-surface extinction | 0.5 | - | "~" Beer's law with G = 0.5 |
+| `MAX_DETAILED` | 8 | plants | "~" fidelity plan, for Performance to time (decision 0045) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -85,7 +96,10 @@ also records, beside the state and never in it:
   its nitrogen per structural dry mass after the hour; and its water potential (the
   pressure part, without gravity) and relative turgor from the hour's network solve
   (R3b, plant-hydraulics card); per plant also the leaves' area-weighted mean turgor
-  (how wilted the plant looks) and the root zone's soil potential. Organs added at the
+  (how wilted the plant looks) and the root zone's soil potential; and the plant's
+  water-network level and each soil layer's share of its uptake in evenly wet soil
+  (R3c; at the simplified level the organ potentials are the day summary's
+  estimates). Organs added at the
   day's end have no potential until the next hour's solve, so these lists can be
   shorter than the organ arena;
 - per soil: each layer's temperature, and each layer's water potential at its mean

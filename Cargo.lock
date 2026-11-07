@@ -5033,10 +5033,14 @@ name = "ps-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "libm",
  "mimalloc",
+ "ps-arch",
  "ps-breed",
  "ps-export",
  "ps-game",
+ "ps-graph",
+ "ps-physio",
  "ps-species",
  "ps-validate",
  "ps-world",

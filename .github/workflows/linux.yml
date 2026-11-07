@@ -33,7 +33,7 @@ jobs:
       - name: doc tests
         run: cargo test --workspace --exclude ps-view --exclude ps-ui --exclude ps-app --doc --locked
       - name: golden hashes
-        run: cargo run --locked -p ps-cli -- hash data/scenarios/single_pot.ron data/scenarios/two_pot_sun_shade.ron --check-golden tests/golden
+        run: cargo run --locked -p ps-cli -- hash data/scenarios/single_pot.ron data/scenarios/two_pot_sun_shade.ron data/scenarios/single_pot_simplified.ron data/scenarios/fidelity_switch.ron --check-golden tests/golden
       - name: golden hashes, 30-plant plot (30 days)
         run: cargo run --locked -p ps-cli -- hash data/scenarios/plot_30_beans.ron --days 30 --check-golden tests/golden
       - name: dependency rules
@@ -103,6 +103,36 @@ jobs:
             out/validation/*.csv
             out/validation/curves/
             out/validation/runs/*/daily.csv
+
+  # R3c (decision 0045): the detailed and simplified water network agree on six
+  # scenarios and a switch run (fidelity-levels.md §5.1), and every validation gate
+  # passes with every plant simplified.
+  fidelity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: fidelity report
+        run: cargo run --release --locked -p ps-cli -- fidelity
+      - name: validate at the simplified level
+        run: cargo run --release --locked -p ps-cli -- validate --fidelity simplified --out out/validation-simplified
+      - name: summary
+        if: always()
+        run: |
+          cat out/fidelity/report.md >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          head -3 out/validation-simplified/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fidelity-report
+          path: |
+            out/fidelity/report.md
+            out/validation-simplified/report.md
+            out/validation-simplified/results.csv
 
   deny:
     runs-on: ubuntu-latest

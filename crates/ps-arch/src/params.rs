@@ -497,6 +497,7 @@ impl HerbParams {
                 tuzet_reference: MPa(c.tuzet_reference.value),
                 turgor_loss: MPa(c.turgor_loss_point.value),
                 turgor_full: MPa(c.turgor_full.value),
+                compensation: c.hydraulic_compensation.value,
             },
         }
     }

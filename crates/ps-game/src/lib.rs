@@ -10,7 +10,10 @@ pub mod debrief;
 use std::path::Path;
 
 use ps_units::{GramsN, KgWater, M2};
-use ps_world::{Action, ActionKind, Catalog, DayRow, Scenario, SoilSpec, World, WorldState};
+use ps_world::{
+    Action, ActionKind, Catalog, DayRow, Fidelity, HydraulicsLevel, Scenario, SoilSpec, World,
+    WorldState,
+};
 use serde::{Deserialize, Serialize};
 
 pub use debrief::{Debrief, DebriefRefs, Factor, PlantDebrief, WeekDebrief, debrief, week_event};
@@ -79,10 +82,21 @@ pub struct Challenge {
     /// plan; the mean rewards the plan.
     #[serde(default = "one_season")]
     pub seasons: u32,
+    /// A water-network level the challenge runs at whatever the viewer asks
+    /// (`Locked(level)`; R3c, decision 0045); the scenario's own if absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fidelity: Option<ChallengeFidelity>,
 }
 
 fn one_season() -> u32 {
     1
+}
+
+/// A challenge's hold on the water network's level.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChallengeFidelity {
+    /// Every plant at this level; `SetFidelity` actions are refused.
+    Locked(HydraulicsLevel),
 }
 
 /// The score: a metric and its direction.
@@ -151,6 +165,9 @@ pub enum ActionType {
     Fertilize,
     /// Hand-pollinate.
     Pollinate,
+    /// The viewer's choice of water-network level (R3c): not the player's, so never a
+    /// rule break.
+    Fidelity,
 }
 
 impl ActionType {
@@ -168,6 +185,7 @@ impl ActionType {
             ActionKind::AddSupport(_) => Self::Support,
             ActionKind::Fertilize { .. } => Self::Fertilize,
             ActionKind::Pollinate { .. } => Self::Pollinate,
+            ActionKind::SetFidelity { .. } => Self::Fidelity,
         }
     }
 }
@@ -345,7 +363,7 @@ impl Challenge {
         let mut sowings = 0_u32;
         for a in log {
             let t = ActionType::of(&a.kind);
-            if !r.allowed.contains(&t) {
+            if t != ActionType::Fidelity && !r.allowed.contains(&t) {
                 breaks.push(RuleBreak::NotAllowed {
                     tick: a.tick,
                     action: t,
@@ -432,7 +450,7 @@ pub fn load_challenge(data_dir: &Path, id: &str) -> Result<Challenge, GameError>
     Challenge::from_ron(&read(&path)?)
 }
 
-/// Reads the challenge's scenario.
+/// Reads the challenge's scenario, with the challenge's water-network lock applied.
 ///
 /// # Errors
 /// [`GameError`] on a missing or bad file.
@@ -440,7 +458,11 @@ pub fn load_scenario(data_dir: &Path, c: &Challenge) -> Result<Scenario, GameErr
     let path = data_dir
         .join("scenarios")
         .join(format!("{}.ron", c.scenario));
-    Ok(Scenario::from_ron(&read(&path)?)?)
+    let mut scenario = Scenario::from_ron(&read(&path)?)?;
+    if let Some(ChallengeFidelity::Locked(level)) = c.fidelity {
+        scenario.fidelity = Fidelity::Locked(level);
+    }
+    Ok(scenario)
 }
 
 fn read(path: &Path) -> Result<String, GameError> {
@@ -718,7 +740,41 @@ mod tests {
             rules: Rules::default(),
             medals,
             seasons: 1,
+            fidelity: None,
         }
+    }
+
+    /// R3c (decision 0045): the viewer's level switches are never the player's rule
+    /// breaks, and a challenge's lock reaches its scenario.
+    #[test]
+    fn fidelity_is_not_a_rule_and_a_lock_reaches_the_scenario() {
+        let mut c = challenge(
+            true,
+            Medals {
+                bronze: 1.0,
+                silver: 2.0,
+                gold: 3.0,
+            },
+        );
+        c.scenario = "single_pot".into();
+        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let scenario = load_scenario(&data, &c).expect("scenario");
+        assert_eq!(scenario.fidelity, Fidelity::Auto);
+        let log = [Action {
+            tick: 30,
+            kind: ActionKind::SetFidelity {
+                plants: Vec::new(),
+                level: HydraulicsLevel::Simplified,
+            },
+        }];
+        let (breaks, _) = c.check_log(&scenario, &log);
+        assert!(breaks.is_empty(), "{breaks:?}");
+        c.fidelity = Some(ChallengeFidelity::Locked(HydraulicsLevel::Detailed));
+        let locked = load_scenario(&data, &c).expect("scenario");
+        assert_eq!(locked.fidelity, Fidelity::Locked(HydraulicsLevel::Detailed));
+        let text = "Locked(Detailed)";
+        let parsed: ChallengeFidelity = ron::from_str(text).expect("ron");
+        assert_eq!(parsed, ChallengeFidelity::Locked(HydraulicsLevel::Detailed));
     }
 
     #[test]

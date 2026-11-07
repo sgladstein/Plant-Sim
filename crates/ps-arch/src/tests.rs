@@ -167,16 +167,33 @@ fn scatter_is_bounded() {
     assert!((crate::scatter(-10.0, 0.5) - 0.25).abs() < 1e-12);
 }
 
-/// R3b (decision 0044): the rhizosphere factor is 1 from the wilting point up and
-/// falls to 0 at air-dry; the plant's stomatal factor is the Tuzet factor in steps.
+/// R3c (decision 0045): around a young bean root in loam at a pot's root density the
+/// soil conducts far more than the root at field capacity, about as much near
+/// −0.3 megapascals and a fiftieth at the wilting point; R3b: the plant's stomatal factor is
+/// the Tuzet factor in steps.
 #[test]
 fn rhizosphere_and_stomatal_steps() {
     let h = ps_soil::Texture::Loam.hydraulics();
-    assert!((crate::rhizosphere_factor(h.field_capacity, &h) - 1.0).abs() < 1e-15);
-    assert!((crate::rhizosphere_factor(h.wilting_point, &h) - 1.0).abs() < 1e-15);
-    assert!(crate::rhizosphere_factor(h.air_dry, &h).abs() < 1e-15);
-    let mid = 0.5 * (h.wilting_point + h.air_dry);
-    assert!((crate::rhizosphere_factor(mid, &h) - 0.5).abs() < 1e-12);
+    let r = ps_soil::Texture::Loam.retention();
+    let hp = params().hydraulics;
+    let (radius, density) = (1.25e-4, 1.0 / (core::f64::consts::PI * 6e-3 * 6e-3));
+    let root = hp.root_radial_young * 2.0 * core::f64::consts::PI * radius;
+    let soil_over_root = |theta: f64| {
+        let k = h.saturated_conductivity * r.psi_and_conductivity(theta).1
+            / ps_physio::hydraulics::GRAVITY_MPA_PER_M;
+        crate::rhizosphere_conductance(k, radius, density) / root
+    };
+    let fc = soil_over_root(h.field_capacity);
+    let wp = soil_over_root(h.wilting_point);
+    assert!(fc > 100.0, "field capacity {fc}");
+    assert!(wp > 0.005 && wp < 0.05, "wilting point {wp}");
+    let theta_03 = r.theta(ps_units::KPa(-300.0));
+    let mid = soil_over_root(theta_03);
+    assert!(mid > 0.5 && mid < 2.0, "-0.3 MPa {mid}");
+    assert!(crate::rhizosphere_conductance(0.0, radius, density).abs() < 1e-300);
+    // Roots packed closer than their own width read a half spacing of 2r.
+    let packed = crate::rhizosphere_conductance(1.0, radius, 1e12);
+    assert!((packed - 2.0 * core::f64::consts::PI / core::f64::consts::LN_2).abs() < 1e-9);
     let hp = params().hydraulics;
     for psi in [0.0, -0.3, -0.8, -1.2, -2.0] {
         let f = crate::stomatal_step(ps_units::MPa(psi), &hp);

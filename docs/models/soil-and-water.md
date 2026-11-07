@@ -56,6 +56,14 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
     mean water content (`SoilGrid::layer_water_potentials`). The anchor solve runs
     once per texture per process (`Texture::retention` caches it). The plant's root
     network reads each root cell's potential (R3b).
+11. **Hydraulic conductivity** (R3c, decision 0045; `Retention::psi_and_conductivity`,
+    read by the root network's soil term). Mualem (1976) on the same curve,
+    `K(θ) = K_s · S^½ [1 − (1 − S^(1/m))^m]²` with `m = 1 − 1/n`; the potential and the
+    conductivity share `S^(1/m)`. With the anchored curves `K / K_s` is about 8e-5 at
+    field capacity and 5e-9 at the wilting point in loam (sand 5e-6 and 1.5e-10, clay
+    9e-4 and 1.2e-7): steep, since the fitted `n` (about 1.2) is far below Carsel and
+    Parrish's own. Soil water redistribution between cells does not use it yet (the
+    cells exchange water by the earlier bucket rules).
 
 ## Parameters
 | Name | Value | Unit | Source |
@@ -73,6 +81,7 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Retention `n`, `α` (loam) | 1.2151, 0.0305 | -, 1/cm | solved from fc, wp and saturation (R3a); `ψ_s` 3.22 kPa |
 | Retention `n`, `α` (sand) | 1.2886, 0.0881 | -, 1/cm | solved (R3a); `ψ_s` 1.11 kPa |
 | Retention `n`, `α` (clay) | 1.1651, 0.0094 | -, 1/cm | solved (R3a); `ψ_s` 10.43 kPa |
+| Saturated conductivity `K_s` (loam, sand, clay) | 24.96, 712.8, 4.8 | cm/d | Carsel and Parrish 1988 class means (R3c) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |

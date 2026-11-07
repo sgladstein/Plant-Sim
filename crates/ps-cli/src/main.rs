@@ -6,7 +6,8 @@
 //! ps-cli bench  SCENARIO... [--data DIR] [--days N] [--repeat N]
 //! ps-cli replay SCENARIO LOG [--data DIR] [--until-tick T] [--out DIR]
 //! ps-cli replay --snapshot FILE [--out DIR]
-//! ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]
+//! ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR] [--fidelity LEVEL]
+//! ps-cli fidelity [--data DIR] [--out DIR]
 //! ps-cli founders LIBRARY SPECIES [--count N] [--world-seed S] [--line] [--data DIR]
 //! ps-cli breed  LIBRARY PLAN [--data DIR] [--out DIR]
 //! ps-cli challenge ID [LOG] [--data DIR] [--out DIR]
@@ -20,6 +21,12 @@
 //! line with `--line`, else `--count` lines drawn from the species population. `breed`
 //! grows one bench generation from a plan file (WP30), adds the picked seeds to the
 //! library and writes `OUT/<plan file stem>/bench.csv`.
+//!
+//! `fidelity` runs the detailed and the simplified water network on six scenarios and
+//! four seeds, and a switch run, writes `OUT/report.md` (default `out/fidelity`) and
+//! fails on an outcome outside the rule or a seed-yield bias above 2% (R3c, decision
+//! 0045). `validate --fidelity simplified` (or `detailed`) runs every validation
+//! scenario at that level.
 //!
 //! `run` writes `daily.csv`, `organs.csv`, `hashes.csv` and `log.ron` for each scenario
 //! into `OUT/<scenario file stem>/` (default `out/`), running the scenarios in parallel.
@@ -35,7 +42,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant; // determinism: allow (bench timing only; never reaches the sim)
 
 use anyhow::{Context, Result, bail};
-use ps_world::{Action, Catalog, Scenario, World};
+use ps_world::{Action, Catalog, HydraulicsLevel, Scenario, World};
+
+mod fidelity;
 
 const USAGE: &str = "usage:
   ps-cli run    SCENARIO... [--data DIR] [--out DIR] [--days N] [--snapshot-day D]
@@ -43,7 +52,8 @@ const USAGE: &str = "usage:
   ps-cli bench  SCENARIO... [--data DIR] [--days N] [--repeat N]
   ps-cli replay SCENARIO LOG [--data DIR] [--until-tick T] [--out DIR]
   ps-cli replay --snapshot FILE [--out DIR]
-  ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR]
+  ps-cli validate [--data DIR] [--validation DIR] [--known FILE] [--out DIR] [--fidelity LEVEL]
+  ps-cli fidelity [--data DIR] [--out DIR]
   ps-cli founders LIBRARY SPECIES [--count N] [--world-seed S] [--line] [--data DIR]
   ps-cli breed  LIBRARY PLAN [--data DIR] [--out DIR]
   ps-cli challenge ID [LOG] [--data DIR] [--out DIR]";
@@ -481,8 +491,19 @@ fn validation_runs(
     Ok(runs)
 }
 
+/// A `--fidelity` option: `detailed` or `simplified`.
+fn level_option(a: &Args) -> Result<Option<HydraulicsLevel>> {
+    match a.get("fidelity") {
+        None => Ok(None),
+        Some("detailed") => Ok(Some(HydraulicsLevel::Detailed)),
+        Some("simplified") => Ok(Some(HydraulicsLevel::Simplified)),
+        Some(other) => bail!("--fidelity {other:?}: use detailed or simplified"),
+    }
+}
+
 fn cmd_validate(a: &Args) -> Result<()> {
-    a.check_keys(&["data", "validation", "known", "out"])?;
+    a.check_keys(&["data", "validation", "known", "out", "fidelity"])?;
+    let level = level_option(a)?;
     let data = a.data_dir();
     let vdir = a
         .get("validation")
@@ -500,6 +521,9 @@ fn cmd_validate(a: &Args) -> Result<()> {
         .map(|n| {
             let mut l = load(&scenario_path(&data, n)?, &data, None)?;
             l.stem.clone_from(n);
+            if let Some(level) = level {
+                l.scenario.fidelity = fidelity::forced(level);
+            }
             Ok(l)
         })
         .collect::<Result<_>>()?;
@@ -545,6 +569,84 @@ fn cmd_validate(a: &Args) -> Result<()> {
     }
     if !stale.is_empty() {
         bail!("{} stale entries in {}", stale.len(), known_path.display());
+    }
+    Ok(())
+}
+
+fn cmd_fidelity(a: &Args) -> Result<()> {
+    a.check_keys(&["data", "out"])?;
+    let data = a.data_dir();
+    let out = PathBuf::from(a.get("out").unwrap_or("out/fidelity"));
+    let levels = [HydraulicsLevel::Detailed, HydraulicsLevel::Simplified];
+    let mut jobs: Vec<(Loaded, bool)> = Vec::new();
+    let mut add = |name: &str, level: Option<HydraulicsLevel>| -> Result<()> {
+        let base = load(&scenario_path(&data, name)?, &data, None)?;
+        for &off in &fidelity::SEED_OFFSETS {
+            let mut scenario = base.scenario.clone();
+            scenario.world_seed = scenario.world_seed.wrapping_add(off);
+            if let Some(level) = level {
+                scenario.fidelity = fidelity::forced(level);
+            }
+            jobs.push((
+                Loaded {
+                    stem: name.to_string(),
+                    scenario,
+                    catalog: base.catalog.clone(),
+                },
+                false,
+            ));
+        }
+        Ok(())
+    };
+    for name in fidelity::SCENARIOS {
+        for level in levels {
+            add(name, Some(level))?;
+        }
+    }
+    add(fidelity::SWITCH_SCENARIO, None)?;
+    let results = run_parallel_pairs(&jobs, |l, _| {
+        let mut w = World::new(l.scenario.clone(), l.catalog.clone())?;
+        w.run_to_end()?;
+        Ok(fidelity::outcomes(w.state()))
+    });
+    let mut outcomes = Vec::with_capacity(results.len());
+    for ((l, _), r) in jobs.iter().zip(results) {
+        let seed = l.scenario.world_seed;
+        outcomes.push(r.with_context(|| format!("{} (world seed {seed})", l.stem))?);
+    }
+    let seeds = fidelity::SEED_OFFSETS.len();
+    let mut groups = outcomes.chunks(seeds);
+    let mut rows = Vec::new();
+    let mut detailed_pot = None;
+    for name in fidelity::SCENARIOS {
+        let (Some(d), Some(s)) = (groups.next(), groups.next()) else {
+            bail!("missing runs for {name}");
+        };
+        if name == "single_pot" {
+            detailed_pot = Some(d);
+        }
+        rows.extend(fidelity::compare(name, d, s));
+    }
+    if let (Some(d), Some(sw)) = (detailed_pot, groups.next()) {
+        rows.extend(fidelity::compare("single_pot (switch)", d, sw));
+    }
+    let (report, failed) = fidelity::report(&rows);
+    std::fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
+    std::fs::write(out.join("report.md"), &report)?;
+    println!("{}", report.lines().nth(2).unwrap_or_default());
+    for r in rows.iter().filter(|r| !r.passes()) {
+        eprintln!(
+            "FAIL {} {}: detailed {}, simplified {}, allowed gap {}",
+            r.scenario,
+            r.outcome,
+            ps_validate::fmt_num(r.detailed),
+            ps_validate::fmt_num(r.other),
+            ps_validate::fmt_num(r.allowed)
+        );
+    }
+    println!("report: {}", out.join("report.md").display());
+    if failed > 0 {
+        bail!("{failed} fidelity checks failed");
     }
     Ok(())
 }
@@ -774,6 +876,7 @@ fn main() -> Result<()> {
         "bench" => cmd_bench(&a),
         "replay" => cmd_replay(&a),
         "validate" => cmd_validate(&a),
+        "fidelity" => cmd_fidelity(&a),
         "founders" => cmd_founders(&a),
         "breed" => cmd_breed(&a),
         "challenge" => cmd_challenge(&a),
