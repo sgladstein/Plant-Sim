@@ -9,7 +9,10 @@ water leaves only through saturated soil at its holes. Water spreads sideways a 
 the sun dries the surface, and roots draw water from where they are: each root takes
 what its own pull and the soil's wetness allow, so wet soil gives more (plant-hydraulics
 card). How much water a soil holds also sets how tightly it holds it, its water
-potential, and how easily water moves through it, its conductivity.
+potential, and how easily water moves through it, its conductivity. Soil can be
+compacted or loosened (R5c): a plough pan, a raised bed, a trampled path or a dug strip
+changes how much air the soil holds, how fast water passes, and how hard it is for a
+root to push through; dug soil settles back with the water that falls on it.
 
 ## Equations
 Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
@@ -25,11 +28,19 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
    as given. Water that passes a cell on its way down carries nitrate as a mixing cell
    (Godwin and Jones 1991): the cell sends the share `p / (W + w_in)` of its nitrate
    plus what came in from above, `p` the water passing on and `w_in` the water coming
-   in; the deepest cell the water reaches keeps the rest.
+   in; the deepest cell the water reaches keeps the rest. In a grid with structure
+   (equation 13) each cell's own `K_s` and saturation apply: the top cell takes at most
+   its `K_s · 1 h`, and water filling a deeper cell passes every cell above it, no
+   more than `K_s · 1 h` of the cell's class entering any cell below the top in the
+   hour, so water perches on a dense layer and the rest ponds (R5c, decision 0049).
 2. **Vertical flow** (R5a, decision 0046; `ps_soil::flow`): in each column, with heads
    `h` in metres of water (`ψ / ρg`, negative is suction), the downward flux across the
    face between cells `i` and `i + 1` is `q = K_f ((h_i − h_{i+1}) / Δz + 1)`, `K_f`
-   the arithmetic mean of the two cells' `K(θ)` (equation 11). One backward-Euler step
+   the arithmetic mean of the two cells' `K(θ)` (equation 11). Between cells of
+   different density classes (equation 13) it is
+   `K_f = K_s,h · (K_i/K_s,i + K_{i+1}/K_s,{i+1}) / 2`, `K_s,h` the harmonic mean of
+   their saturated conductivities, so a dense layer limits the flow through it as
+   layers in series do (R5c). One backward-Euler step
    an hour with `K` and the retention slope `C = dθ/dh` taken at the start (one Picard
    step): `C_i Δz (h'_i − h_i) / Δt = q_in − q_out`, a tridiagonal system solved by
    the Thomas algorithm. The water then moves by the solved fluxes themselves, so each
@@ -129,6 +140,42 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
     `H` (herb-architecture and plant-hydraulics cards); nitrogen reads `h` (nitrogen
     card).
 
+13. **Structure** (R5c, decision 0049; `ps_soil::structure`). A grid without structure
+    is uniform at its texture's bulk density `ρ0` (loam 1300, sand 1550, clay 1250
+    kg m⁻³) and runs as before. Once a scenario's density zone, a dig or a trampled path
+    sets a density, every cell carries its bulk density `ρ`, the density it settles to
+    `ρ_set`, the density it was loosened to `ρ_l`, and the water `R` that has reached
+    its column's surface since then (rain and watering, mm).
+    - *Hydraulic class*: the cell's density rounded to 1% steps of `ρ0` (factors 0.6 to
+      1.4). Saturation `θ_s = θ_s0 − (ρ − ρ0) / ρ_p`, `ρ_p` = 2650 kg m⁻³, at least
+      `θ_fc + 0.02`; field capacity and wilting point stay, and the retention curve is
+      anchored through them again (equation 10). Saturated conductivity
+      `K_s = K_s0 (φ_e / φ_e0)^4` with the effective porosity `φ_e = θ_s − θ_fc` (Ahuja
+      et al. 1984). Loam at 1.2 `ρ0` (a plough pan, 1560 kg m⁻³): `θ_s` 0.352, 8% air
+      at field capacity, `K_s` 0.45 mm h⁻¹ (a 23rd of 10.4); at 1.15 (a trampled path):
+      0.376, 1.27 mm h⁻¹; at 0.85 (a raised bed): 0.524, 41 mm h⁻¹; freshly dug at
+      0.667: 0.613, 137 mm h⁻¹. Each class and its flow table are built once per process
+      and shared; the potential, conductivity, aeration (equation 12), nitrogen's water
+      factor and the root network read each cell's class.
+    - *Settling* (WEPP's rainfall consolidation, Alberts et al. 1995, eq. 7.7.9):
+      `ρ = ρ_l + (ρ_set − ρ_l) R / (R + R_0)`, `R_0` = 10 mm, so dug soil closes half
+      its gap after 10 mm of water and nine tenths after 90.
+    - *Dig* (a region, to a depth): `ρ = min(ρ, 0.667 ρ0)` (WEPP's fully disturbed soil,
+      eq. 7.7.1), `ρ_set = min(ρ_set, ρ0)`: dug soil settles back to the texture's
+      density, so a pan dug through is gone. *Compact* (a trampled path):
+      `ρ ≥ 1.15 ρ0`, and it stays. A scenario's density zone sets `ρ`, `ρ_set` and
+      `ρ_l` to its factor times `ρ0`.
+    - *Strength*, the penetration resistance, in the effective-stress form of Whalley
+      et al. (2007): `Q = Q_fc (S |ψ| / σ_fc)^a · 10^(b (ρ − ρ0) / 1000)`, `S` the
+      relative saturation `θ / θ_s` and `ψ` the matric potential of the cell's class,
+      `σ_fc = (θ_fc / θ_s0) · 33 kPa` (the texture's own soil at field capacity),
+      `Q_fc` = 0.5 MPa, `a` = 0.4, `b` = 2.0 per 1000 kg m⁻³ (all "~"; Whalley's
+      coefficients were not reachable). Loam at field capacity reads 0.5 MPa at `ρ0`,
+      1.3 at 1.15 and 1.8 at 1.2; at the wilting point about 1.6 at `ρ0`. Roots read
+      `Q` against the reference `Q_ref`, the same expression at `ρ0` for the cell's
+      water (herb-architecture card): the species' elongation rates were measured in
+      ordinary soil.
+
 ## Parameters
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
@@ -156,6 +203,17 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Aeration limit `a_c` | 0.10 | m3/m3 | Grable and Siemer 1968 ("~", R5b spec §4) |
 | Anoxic air-filled porosity `a_0` | 0.02 | m3/m3 | CROPGRO `PORMIN`, dry bean and soybean species files (R5b) |
 | Hypoxia onset | 6 | full-deficit hours | ~ (R5b) |
+| Bulk density `ρ0` loam, sand, clay | 1300, 1550, 1250 | kg/m3 | design plan §3.6 (nitrogen card) |
+| Particle density `ρ_p` | 2650 | kg/m3 | the usual mineral value (R5c) |
+| Density class step | 0.01 | of `ρ0` | ~ (numerical; 1% of a loam's density moves `θ_s` by 0.005) |
+| Least structural air `θ_s − θ_fc` | 0.02 | m3/m3 | ~ (R5c) |
+| `K_s` exponent on `φ_e` | 4 | - | Ahuja et al. 1984 [K, to verify] |
+| Dug density | 0.667 | of `ρ0` | WEPP eq. 7.7.1 (Alberts et al. 1995) |
+| Trampled density | 1.15 | of `ρ0` | ~ (R5c spec §5) |
+| Settling water `R_0` | 10 | mm | WEPP eq. 7.7.9 (Alberts et al. 1995) |
+| Strength at field capacity `Q_fc` | 0.5 | MPa | ~ (Ge et al. 2019: about 0.3 wet, over 1 dry) |
+| Strength stress exponent `a` | 0.4 | - | ~ (about 3-fold from field capacity to wilting) |
+| Strength density slope `b` | 2.0 | per 1000 kg/m3 | ~ (a loam pan at 1.6 Mg m⁻³ near 2 MPa; Bengough et al. 2011) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -173,6 +231,8 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | in | pot drainage: holes, none, saucer depth | - | scenario (R5a) |
 | out | hypoxia and hypoxic hours per cell | -, h | roots, nitrogen (R5b) |
 | in | a pot's drainage changed by `SetDrainage` | - | actions (R5b) |
+| in | density zones; `Dig` and `Compact` regions | - | scenario, actions (R5c) |
+| out | bulk density, penetration resistance and its reference per cell | kg/m3, MPa | roots (R5c) |
 
 ## Encoded or emergent
 Encoded: all of the above. Emergent at plant level: drought stress timing, which
@@ -180,7 +240,8 @@ depends on how fast roots explore the pot and how much leaf area transpires.
 
 ## Known limits
 Water moves up and down by Darcy's law but sideways by the earlier diffusion rule
-(decision 0019), so a wet patch spreads sideways no faster in sand than in clay. One
+(decision 0019), so a wet patch spreads sideways no faster in sand than in clay, nor
+slower through a dense zone than a loose one (R5c). One
 linearized step an hour: within the hour after a soaking a column can be 0.1 to 0.2
 m³ m⁻³ off a finely stepped solution (worst in sand, whose wetting front crosses a
 pot in minutes), within 0.02 after six hours. Infiltration fills top-down as before,
@@ -216,6 +277,13 @@ rhizosphere drying factor, so crowded roots in one cell don't compete for its wa
 until the cell itself runs dry (R3b). Water a root gives back to a cell is not capped
 at saturation; it needs a root wetter than the cell, so it only reaches a saturated
 cell by gravity, in amounts far below the next hour's drainage.
+Structure (R5c) has no cracks, biopores or worm channels, so a dense layer is uniformly
+hard and a pan at 1.2 times the loam's density stops nearly every root in a season
+that keeps it moist but not wet; real pans are crossed through old root channels.
+Soil shrinks and swells not at all, frost and drying do not loosen it, and roots and
+earthworms do not open it. The strength coefficients and the conductivity exponent
+are guesses to verify; strength keeps no memory of how the soil was wetted. Dug soil
+settles by the water reaching its surface only, not by its own weight or by time.
 
 ## Validation
 - Water flow (R5a done-whens): `ps_soil::tests::soaked_loam_drains_over_days` (a soaked
@@ -248,6 +316,17 @@ cell by gravity, in amounts far below the next hour's drainage.
   `air_entry_and_slope` (flat to `h_e`, continuous there, the slope a finite
   difference's to 1e-5); and `ps_soil::tests::pot_water_potential_follows_the_water`
   (a pot dried from the top reads drier the higher the layer).
+- Structure (R5c): `a_structured_grid_at_the_textures_density_runs_as_before` (bit for
+  bit over 96 h, strength at its reference),
+  `density_moves_saturation_and_conductivity_and_keeps_the_anchors` (every class from
+  0.67 to 1.3 keeps its field capacity and wilting point; a pan at 1.2 holds 7.5 to 9%
+  air at field capacity and conducts 20 to 40 times less),
+  `strength_rises_with_density_and_dryness` (monotone in both from field capacity to
+  wilting; a pan at 1.2 reads 1.6 to 2 MPa at field capacity),
+  `dug_soil_settles_and_trampled_soil_stays` (half the gap after 10 mm; the state
+  round-trips), `water_perches_on_a_pan` (rain on a pan at 1.25 wets the layer above
+  it, leaves the pan short of air for more than a day and the soil below drier). The
+  plot experiments are in `ps-world/tests/compaction.rs` (herb-architecture card).
 
 ## References
 - Sinclair, T. R., Ludlow, M. M. (1986). Influence of soil water supply on the plant water balance of four tropical grain legumes. Aust. J. Plant Physiol. 13, 329–341 (FTSW).
@@ -262,4 +341,9 @@ cell by gravity, in amounts far below the next hour's drainage.
 - Veihmeyer, F. J., Hendrickson, A. H. (1931). The moisture equivalent as a measure of the field capacity of soils. Soil Sci. 32, 181–193 (field capacity after 2 to 3 days of drainage).
 - Allen, R. G., et al. (1998). FAO-56 (latent heat; Priestley–Taylor scale for the evaporation coefficient).
 - Grable, A. R., Siemer, E. G. (1968). Effects of bulk density, aggregate size, and soil water suction on oxygen diffusion, redox potentials, and elongation of corn roots. Soil Sci. Soc. Am. J. 32, 180–186 (about 10% air-filled porosity for root function; R5b).
+- Ahuja, L. R., Naney, J. W., Green, R. E., Nielsen, D. R. (1984). Macroporosity to characterize spatial variability of hydraulic conductivity and effects of land management. Soil Sci. Soc. Am. J. 48, 699–702 (`K_s` from effective porosity; R5c).
+- Alberts, E. E., et al. (1995). Soil component. In USDA Water Erosion Prediction Project (WEPP) model documentation, chapter 7 (bulk density after tillage, eq. 7.7.1, and its rainfall consolidation, eq. 7.7.9; R5c).
+- Whalley, W. R., To, J., Kay, B. D., Whitmore, A. P. (2007). Prediction of the penetrometer resistance of soils with models with few parameters. Geoderma 137, 370–377 (the effective-stress form; R5c).
+- Bengough, A. G., McKenzie, B. M., Hallett, P. D., Valentine, T. A. (2011). Root elongation, water stress, and mechanical impedance: a review of limiting stresses and beneficial root tip traits. J. Exp. Bot. 62, 59–68 (R5c).
+- Ge, Hawkesford, Rosolem, Mooney, Ashton, Evans, Whalley (2019). Multiple abiotic stress, nitrate availability and the growth of wheat. Soil Tillage Res. 191, 171–184 (field soil drying from about 0.3 to over 1 MPa; impeded wheat roots wider; R5c).
 - Boote, K. J., Jones, J. W., Hoogenboom, G. CROPGRO species files `BNGRO048.SPE` and `SBGRO048.SPE` (DSSAT CSM, `PORMIN` 0.02, the minimum pore space for roots; R5b).

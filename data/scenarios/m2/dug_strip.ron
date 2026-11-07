@@ -1,0 +1,21 @@
+// R5c dug strip (decision 0049): m2/compacted_plot dug on day 20 (tick 480) in a strip from
+// 5 to 25 cm east of the plant, 30 cm deep, the whole plot long. The loosened soil settles
+// back with rain and watering. Root growth should change in the strip, not outside it.
+Scenario(
+  schema: 1,
+  model_version: "0.30.0",
+  world_seed: 7,
+  latitude_deg: 45.0,
+  start: (year: 2026, month: 5, day: 15, hour: 0),
+  weather: Preset("temperate_summer"),
+  soils: [ Plot(id: 0, width_cm: 100.0, length_cm: 100.0, depth_cm: 60.0, texture: Loam, position_m: (0.0, 0.0)) ],
+  irrigation: { 0: Schedule(every_days: 2, mm: 6.0) },
+  density_zones: [ (zone: (soil: 0, depth_cm: (0.0, 60.0)), factor: 1.15) ],
+  co2_ppm: 420.0,
+  sowings: [ (soil: 0, species: "bush_bean", seed: Default, depth_cm: 3.0, offset_cm: Some((0.0, 0.0))) ],
+  variation: (sowing_position_sd_cm: 0.0),
+  duration_days: 70,
+  events: [
+    (tick: 480, kind: Dig((soil: 0, east_cm: Some((5.0, 25.0)), depth_cm: (0.0, 30.0)))),
+  ],
+)

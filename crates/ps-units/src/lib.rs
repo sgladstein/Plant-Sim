@@ -375,9 +375,15 @@ quantity!(
     "kg/m/h"
 );
 quantity!(
-    /// Water potential in megapascals (negative under suction; R3b).
+    /// Pressure in megapascals: a water potential (negative under suction; R3b) or a
+    /// soil's penetration resistance (R5c).
     MPa,
     "MPa"
+);
+quantity!(
+    /// Dry bulk density of soil, kg per m³ (R5c).
+    KgPerM3,
+    "kg/m3"
 );
 quantity!(
     /// Hydraulic conductance, kg of water per hour per megapascal of water potential

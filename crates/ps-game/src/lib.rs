@@ -153,6 +153,10 @@ pub enum ActionType {
     Irrigation,
     /// Change how a pot drains (R5b).
     Drainage,
+    /// Dig a patch of soil (R5c).
+    Dig,
+    /// Trample or press a patch of soil (R5c).
+    Compact,
     /// Change the shade cloth.
     Shade,
     /// Prune.
@@ -181,6 +185,8 @@ impl ActionType {
             ActionKind::Water { .. } => Self::Water,
             ActionKind::SetIrrigation { .. } => Self::Irrigation,
             ActionKind::SetDrainage { .. } => Self::Drainage,
+            ActionKind::Dig(_) => Self::Dig,
+            ActionKind::Compact(_) => Self::Compact,
             ActionKind::SetRadiationFraction { .. } => Self::Shade,
             ActionKind::Prune { .. } => Self::Prune,
             ActionKind::Harvest { .. } => Self::Harvest,

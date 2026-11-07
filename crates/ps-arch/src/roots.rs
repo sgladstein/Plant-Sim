@@ -31,17 +31,21 @@ impl Plant {
     /// time since germination passes the type's emergence time. A plant that lost an
     /// axis tip to waterlogged soil grows a new set of hypocotyl-borne roots once the soil
     /// at its collar is no longer half hypoxic (R5b, decision 0048: adventitious roots,
-    /// the bean's and wheat's answer to waterlogging).
+    /// the bean's and wheat's answer to waterlogging), if that soil was hypoxic in the
+    /// meantime: a flooded stem base roots, a tip lost in a wet layer deep down does not
+    /// (R5c, decision 0049).
     pub(crate) fn root_initiation(&mut self, now: Hours, soil: &SoilGrid) -> Result<(), ArchError> {
         if self.phenology.stage < ps_physio::Stage::Germinated {
             return Ok(());
         }
         let since = self.phenology.since_germination.0;
+        let collar = soil_cell(soil, self.collar_position);
         let regrow = self.drowned
-            && soil_cell(soil, self.collar_position)
-                .is_none_or(|c| soil.hypoxia(c) < LATERAL_HYPOXIA);
+            && self.collar_flooded
+            && collar.is_none_or(|c| soil.hypoxia(c) < LATERAL_HYPOXIA);
         if regrow {
             self.drowned = false;
+            self.collar_flooded = false;
         }
         let mut whorl = 0u32;
         for t in 0..self.params.roots.len() {
@@ -153,7 +157,11 @@ impl Plant {
             return Ok(());
         };
         let mult = self.root_axes[a].multiplicity;
-        let potential = GramsDM(len * mult / rp.specific_length.0);
+        // A segment formed in hard soil is wider (R5c): its length costs the square of
+        // the widening more.
+        let wide = self.impeded_width(soil, base);
+        let specific = rp.specific_length.0 / (wide * wide);
+        let potential = GramsDM(len * mult / specific);
         let duration = DegreeDays(len / rp.elongation_per_cd.max(1e-12));
         let mut s = Spawn::new(
             OrganKind::Root,
@@ -162,7 +170,7 @@ impl Plant {
             curve(duration, potential)?,
         );
         s.order = rp.order;
-        s.specific = SpecificSize::Length(rp.specific_length);
+        s.specific = SpecificSize::Length(ps_units::MPerG(specific));
         s.direction = dir;
         s.attach = attach;
         s.multiplicity = mult;
@@ -265,20 +273,21 @@ impl Plant {
             let Some(&(tip, _)) = self.root_axes[a].segments.last() else {
                 continue;
             };
-            if !self.arena.alive[tip.index()] {
+            let lost = !self.arena.alive[tip.index()];
+            if lost {
                 self.root_axes[a].done = true;
-                continue;
             }
             let rp = self.params.roots[self.root_axes[a].kind].clone();
             if rp.order > 0 {
                 // A lateral cohort: its fine roots once it has finished.
-                if let Some(ft) = fine_type.filter(|_| rp.order == 1) {
+                if let Some(ft) = fine_type.filter(|_| rp.order == 1 && !lost) {
                     self.fine_roots(a, ft, now, soil, means)?;
                 }
                 continue;
             }
             self.settle_axis(a);
-            // Laterals behind the apical zone, one cohort per parent segment.
+            // Laterals behind the apical zone, one cohort per parent segment; up to the
+            // tip once the tip is lost (R5c).
             if let Some(lt) = lateral_type.filter(|_| rp.branch_spacing.0 > 0.0) {
                 self.laterals(a, lt, now, soil, means)?;
             }
@@ -331,11 +340,17 @@ impl Plant {
     ) -> Result<(), ArchError> {
         let seg = self.params.root_segment.0;
         let parent_type = self.params.roots[self.root_axes[a].kind].clone();
+        // Laterals form more densely behind a tip that hard soil slows (R5c).
+        let denser = self.impeded_branching(soil, self.root_axes[a].end);
+        // The unbranched zone behind a tip is what it grows while its laterals emerge,
+        // so it shortens with the tip's speed in hard soil, and is gone with the tip
+        // (R5c, decision 0049).
+        let zone = parent_type.apical_zone.0 * self.apical_factor(a, soil);
         loop {
             let ax = &self.root_axes[a];
             let k = ax.laterals;
             // Completed length behind the apical zone.
-            let reach = ax.length - parent_type.apical_zone.0;
+            let reach = ax.length - zone;
             let start = f64::from(k) * seg;
             if start + seg > reach + 1e-9 {
                 return Ok(());
@@ -353,7 +368,7 @@ impl Plant {
             let host_len =
                 (self.arena.size[h].length.0 / self.meta[h].multiplicity.max(1.0)).max(1e-9);
             let attach = ((mid - host_start) / host_len).clamp(0.0, 1.0);
-            let mult = seg / parent_type.branch_spacing.0;
+            let mult = seg / parent_type.branch_spacing.0 * denser;
             if !self.cohort(host, attach, lt, k, mult, now, soil, means)? {
                 // Hypoxic soil: this stretch branches once it has air again (R5b).
                 self.root_axes[a].laterals -= 1;
@@ -501,7 +516,9 @@ impl Plant {
         // Proliferation: the cohort is one straight organ, so it stands for more roots by
         // the mean factor of the cells along its path (R2b, decision 0043).
         let mult = mult * path_proliferation(plastic, soil, base, dir, reach, means);
-        let potential = GramsDM(lp.max_length.0 * mult / lp.specific_length.0);
+        let wide = self.impeded_width(soil, base);
+        let specific = lp.specific_length.0 / (wide * wide);
+        let potential = GramsDM(lp.max_length.0 * mult / specific);
         let duration = DegreeDays(lp.max_length.0 / lp.elongation_per_cd.max(1e-12));
         let mut s = Spawn::new(
             OrganKind::Root,
@@ -510,7 +527,7 @@ impl Plant {
             curve(duration, potential)?,
         );
         s.order = lp.order;
-        s.specific = SpecificSize::Length(lp.specific_length);
+        s.specific = SpecificSize::Length(ps_units::MPerG(specific));
         s.direction = dir;
         s.attach = attach;
         s.multiplicity = mult;
@@ -531,6 +548,53 @@ impl Plant {
 }
 
 impl Plant {
+    /// The diameter factor of a root organ formed at `p` (R5c, decision 0049): 1 in a
+    /// grid without structure.
+    fn impeded_width(&self, soil: &SoilGrid, p: V3) -> f64 {
+        let rp = &self.params.root_plasticity;
+        if rp.impedance_half <= 0.0 || !soil.has_structure() {
+            return 1.0;
+        }
+        soil_cell(soil, p)
+            .and_then(|c| soil.strength(c))
+            .map_or(1.0, |q| rp.thickening(q))
+    }
+
+    /// The factor on axis `a`'s unbranched apical zone (R5c): 0 once its tip is lost;
+    /// the tip's impedance factor where densities differ; else 1.
+    fn apical_factor(&self, a: usize, soil: &SoilGrid) -> f64 {
+        let ax = &self.root_axes[a];
+        if ax
+            .segments
+            .last()
+            .is_some_and(|&(id, _)| !self.arena.alive[id.index()])
+        {
+            return 0.0;
+        }
+        let rp = &self.params.root_plasticity;
+        if rp.impedance_half <= 0.0 || !soil.has_structure() {
+            return 1.0;
+        }
+        soil_cell(soil, ax.end)
+            .and_then(|c| soil.strength(c))
+            .map_or(1.0, |q| rp.impedance(q))
+    }
+
+    /// The factor on the laterals an axis forms while its tip at `tip` is slowed by
+    /// hard soil (R5c): `1 + k (1 − f)` with `f` the tip's impedance factor, when it is
+    /// below 1.
+    fn impeded_branching(&self, soil: &SoilGrid, tip: V3) -> f64 {
+        let rp = &self.params.root_plasticity;
+        if rp.impedance_half <= 0.0 || rp.impeded_branching <= 0.0 || !soil.has_structure() {
+            return 1.0;
+        }
+        soil_cell(soil, tip)
+            .and_then(|c| soil.strength(c))
+            .map_or(1.0, |q| {
+                1.0 + rp.impeded_branching * (1.0 - rp.impedance(q)).max(0.0)
+            })
+    }
+
     /// The levels a cell's richness is judged against (R2b, decision 0043): relative
     /// available water and nitrate (mg N per kg soil), each the larger of the soil's
     /// mean over its active cells and the mean the roots sit in (weighted by root
@@ -573,6 +637,9 @@ impl Plant {
         let w = self.params.waterlogging;
         if w.fine_root_hours == u32::MAX && w.root_hours == u32::MAX {
             return Ok(());
+        }
+        if soil_cell(soil, self.collar_position).is_some_and(|c| soil.hypoxia(c) > 0.0) {
+            self.collar_flooded = true;
         }
         let n = self.arena.len();
         // Of an axis only the tip segment dies: the older, thicker parts live on.
@@ -628,14 +695,17 @@ impl Plant {
     /// Each growing root organ's expansion clock factor for the coming day (R2b): the
     /// relative available water `θ` of its tip's cell over `dry_full`, at most 1 and at
     /// least `dry_floor`, times `1 − h` with `h` that cell's hypoxia for a species that
-    /// answers waterlogging (R5b). Cleared when nothing is slowed.
+    /// answers waterlogging (R5b), times the impedance factor of the cell's strength
+    /// where densities differ ([`crate::params::RootPlasticity::impedance`], R5c).
+    /// Cleared when no factor differs from 1.
     pub(crate) fn set_root_clock(&mut self, soil: &SoilGrid) {
         let rp = &self.params.root_plasticity;
         let (full, floor) = (rp.dry_full, rp.dry_floor);
         let dry = floor < 1.0 && full > 0.0;
         let wet = self.params.waterlogging.fine_root_hours < u32::MAX;
+        let hard = rp.impedance_half > 0.0 && soil.has_structure();
         self.root_clock.clear();
-        if !dry && !wet {
+        if !dry && !wet && !hard {
             return;
         }
         let mut clock = vec![1.0; self.arena.len()];
@@ -658,8 +728,13 @@ impl Plant {
             } else {
                 f_dry
             };
+            // Hard soil slows a tip, loose soil lets it run a little faster (R5c).
+            let f = match soil.strength(c).filter(|_| hard) {
+                Some(q) => f * rp.impedance(q),
+                None => f,
+            };
             clock[i] = f;
-            slowed |= f < 1.0;
+            slowed |= (f - 1.0).abs() > 0.0;
         }
         if slowed {
             self.root_clock = clock;

@@ -92,7 +92,7 @@ fn water_rises_from_a_water_table() {
     let r = texture.retention();
     let col = flow::Column {
         dz: 0.02,
-        table: flow::FlowTable::for_texture(texture),
+        tables: flow::Tables::Uniform(flow::FlowTable::for_texture(texture)),
     };
     let mut theta = vec![texture.hydraulics().wilting_point; 15];
     let mut s = flow::Scratch::default();
@@ -229,7 +229,7 @@ fn the_column_solver_conserves_water() {
         let hy = texture.hydraulics();
         let col = flow::Column {
             dz: 0.02,
-            table: flow::FlowTable::for_texture(texture),
+            tables: flow::Tables::Uniform(flow::FlowTable::for_texture(texture)),
         };
         let mut s = flow::Scratch::default();
         for bottom in [
@@ -653,4 +653,206 @@ fn standing_water_evaporates_before_the_soil() {
     assert!((mm(l.evaporated) - 0.5 * 800.0 * 3600.0 / 2.45e6).abs() < 1e-9);
     assert!((mm(g.ponded_water()) - (2.0 - mm(l.evaporated))).abs() < 1e-9);
     assert!((g.total_water() - soil).0.abs() < 1e-12);
+}
+
+/// Cells `z0 ≤ z < z1` of every column.
+fn layers(g: &SoilGrid, z0: usize, z1: usize) -> Vec<usize> {
+    let (nx, ny, _) = g.dims();
+    (z0 * nx * ny..z1 * nx * ny).collect()
+}
+
+fn wet_hour(mm: f64) -> SoilHour {
+    SoilHour {
+        water_in: Millimeters(mm),
+        ..dry_hour()
+    }
+}
+
+/// R5c: the texture's own density is the texture's class exactly, so a grid whose cells
+/// were all set to it runs bit for bit as one without structure.
+#[test]
+fn a_structured_grid_at_the_textures_density_runs_as_before() {
+    for texture in [Texture::Loam, Texture::Sand, Texture::Clay] {
+        let c = structure::soil_class(texture, 0);
+        assert_eq!(c.hydraulics, texture.hydraulics());
+        assert_eq!(c.retention, texture.retention());
+        let mut plain =
+            SoilGrid::new_pot(Meters(0.12), Meters(0.2), Meters(0.02), texture, T20).unwrap();
+        let mut set = plain.clone();
+        set.set_density(&layers(&set, 0, 10), 1.0);
+        assert!(set.has_structure() && !plain.has_structure());
+        for h in 0..96 {
+            let hour = if h % 24 == 6 {
+                wet_hour(30.0)
+            } else {
+                dry_hour()
+            };
+            let (a, b) = (plain.step_hour(&hour), set.step_hour(&hour));
+            assert_eq!(a, b, "{texture:?} hour {h}");
+        }
+        for i in 0..plain.len() {
+            assert_eq!(
+                plain.water(i).to_bits(),
+                set.water(i).to_bits(),
+                "{texture:?} {i}"
+            );
+            assert_eq!(
+                plain.hypoxic_hours(i).to_bits(),
+                set.hypoxic_hours(i).to_bits()
+            );
+        }
+        let middle = set.index(Cell { x: 3, y: 3, z: 2 });
+        let s = set.strength(middle).unwrap();
+        assert_eq!(s.resistance, s.reference);
+    }
+}
+
+/// R5c: denser soil holds less air and drains slower, and keeps its field capacity and
+/// wilting point; looser soil the reverse.
+#[test]
+fn density_moves_saturation_and_conductivity_and_keeps_the_anchors() {
+    let base = Texture::Loam.hydraulics();
+    let mut last_ks = f64::INFINITY;
+    for level in [-33, -15, 0, 15, 20, 30] {
+        let c = structure::soil_class(Texture::Loam, level);
+        let h = c.hydraulics;
+        let d = base.bulk_density * (1.0 + 0.01 * f64::from(level));
+        assert!((h.bulk_density - d).abs() < 1e-9, "{level}");
+        let sat = (base.saturation - (d - base.bulk_density) / 2650.0)
+            .max(base.field_capacity + structure::MIN_STRUCTURAL_AIR);
+        assert!(
+            (h.saturation - sat).abs() < 1e-12,
+            "{level}: {}",
+            h.saturation
+        );
+        assert!(h.saturated_conductivity < last_ks, "{level}");
+        last_ks = h.saturated_conductivity;
+        let r = c.retention;
+        assert!(
+            (r.psi(base.field_capacity).0 + 33.0).abs() < 1e-6,
+            "{level}"
+        );
+        assert!(
+            (r.psi(base.wilting_point).0 + 1500.0).abs() < 1e-4,
+            "{level}"
+        );
+    }
+    // A pan at 1.2 times a loam's density keeps 8% air at field capacity, short of the
+    // 10% roots need (R5b), and conducts about 30 times less.
+    let pan = structure::soil_class(Texture::Loam, 20).hydraulics;
+    let air = pan.saturation - pan.field_capacity;
+    assert!((0.075..0.09).contains(&air), "{air}");
+    let ratio = base.saturated_conductivity / pan.saturated_conductivity;
+    assert!((20.0..40.0).contains(&ratio), "{ratio}");
+}
+
+/// R5c spec §8: strength rises with density at the same water, and with dryness at the
+/// same density; the reference is the same water at the texture's density.
+#[test]
+fn strength_rises_with_density_and_dryness() {
+    let mut g = SoilGrid::new_box(1, 1, 6, Meters(0.05), Texture::Loam, T20).unwrap();
+    for (z, f) in [0.7, 0.85, 1.0, 1.1, 1.2, 1.3].into_iter().enumerate() {
+        g.set_density(&[z], f);
+    }
+    let hy = Texture::Loam.hydraulics();
+    let mut last_dry = [0.0; 6];
+    // At field capacity and drier: every class is short of saturation there (wetter, a
+    // dense cell can be saturated and soft where a loose one is not).
+    for theta in [hy.field_capacity, 0.2, 0.15, hy.wilting_point] {
+        g.fill_to(theta);
+        let q: Vec<Strength> = (0..6).map(|i| g.strength(i).unwrap()).collect();
+        for z in 1..6 {
+            assert!(q[z].resistance.0 > q[z - 1].resistance.0, "{theta} {z}");
+            assert!(q[z].resistance.0 > last_dry[z], "{theta} {z}");
+            last_dry[z] = q[z].resistance.0;
+        }
+        if (theta - hy.field_capacity).abs() < 1e-12 {
+            // The texture's own soil at field capacity reads the anchor; a 1.2 pan
+            // (1.56 Mg m⁻³) about 1.8 MPa.
+            assert!((q[2].resistance.0 - 0.5).abs() < 1e-9, "{:?}", q[2]);
+            assert!((1.6..2.0).contains(&q[4].resistance.0), "{:?}", q[4]);
+        }
+    }
+    assert!(
+        SoilGrid::new_box(1, 1, 1, Meters(0.05), Texture::Loam, T20)
+            .unwrap()
+            .strength(0)
+            .is_none()
+    );
+}
+
+/// R5c: dug soil settles back with the water that reaches it, half the gap in the first
+/// 10 mm (WEPP); a trampled path stays; digging through a pan breaks it up.
+#[test]
+fn dug_soil_settles_and_trampled_soil_stays() {
+    let mut g = SoilGrid::new_box(2, 1, 4, Meters(0.05), Texture::Loam, T20).unwrap();
+    let base = Texture::Loam.hydraulics().bulk_density;
+    g.set_density(&[4, 5], 1.25); // a pan in layer 2
+    g.dig(&[0, 2, 4]); // column 0, through the pan
+    g.compact(&[1, 3]); // column 1's top two layers
+    let dug = base * structure::DUG_FACTOR;
+    assert!((g.bulk_density(0).0 - dug).abs() < 1e-9);
+    assert!((g.bulk_density(4).0 - dug).abs() < 1e-9);
+    assert!((g.settled_density(4).0 - base).abs() < 1e-9, "pan broken");
+    assert!(
+        (g.settled_density(5).0 - 1.25 * base).abs() < 1e-9,
+        "pan left"
+    );
+    assert!((g.bulk_density(1).0 - 1.15 * base).abs() < 1e-9);
+    g.step_hour(&wet_hour(10.0));
+    let half = dug + 0.5 * (base - dug);
+    assert!(
+        (g.bulk_density(0).0 - half).abs() < 1e-9,
+        "{:?}",
+        g.bulk_density(0)
+    );
+    for _ in 0..9 {
+        g.step_hour(&wet_hour(10.0));
+    }
+    let r = 100.0 / 110.0;
+    assert!((g.bulk_density(2).0 - (dug + r * (base - dug))).abs() < 1e-9);
+    assert!(
+        (g.bulk_density(1).0 - 1.15 * base).abs() < 1e-9,
+        "trampled stays"
+    );
+    assert!((g.bulk_density(6).0 - base).abs() < 1e-12, "untouched");
+    // Saved and loaded, the classes come back from the densities.
+    let saved = ron::to_string(&g).unwrap();
+    let back: SoilGrid = ron::from_str(&saved).unwrap();
+    assert_eq!(back, g);
+    for i in 0..g.len() {
+        assert_eq!(back.hydraulics_at(i), g.hydraulics_at(i), "{i}");
+    }
+}
+
+/// R5c: water perches on a pan after rain and the pan stays short of air, while every
+/// hour's water closes.
+#[test]
+fn water_perches_on_a_pan() {
+    let mut pan = SoilGrid::new_box(1, 1, 10, Meters(0.05), Texture::Loam, T20).unwrap();
+    let mut flat = pan.clone();
+    pan.set_density(&[3], 1.25);
+    for g in [&mut pan, &mut flat] {
+        for h in 0..72 {
+            let hour = if h < 4 { wet_hour(15.0) } else { dry_hour() };
+            let l = g.step_hour(&hour);
+            assert!(l.relative_residual() < 1e-9, "{l:?}");
+        }
+    }
+    // Three days on, the layer above the pan is still 2% wetter, the pan short of air,
+    // and the soil below drier.
+    assert!(
+        pan.theta(2) > flat.theta(2) + 0.015,
+        "{} {}",
+        pan.theta(2),
+        flat.theta(2)
+    );
+    assert!(pan.air_porosity(3) < 0.02, "{}", pan.air_porosity(3));
+    assert!(pan.hypoxic_hours(3) > 24.0, "{}", pan.hypoxic_hours(3));
+    assert!(
+        pan.theta(5) < flat.theta(5) - 0.01,
+        "{} {}",
+        pan.theta(5),
+        flat.theta(5)
+    );
 }

@@ -130,11 +130,21 @@ pub fn rhizosphere_conductance(conductivity: f64, root_radius: f64, root_density
 /// center) in megapascals, and its soil conductivity `K(θ) / ρ g` (m² s⁻¹ MPa⁻¹; R3c),
 /// in the order given.
 fn cell_terms(soil: &SoilGrid, cells: impl Iterator<Item = usize>) -> Vec<(f64, f64, f64)> {
-    let retention = soil.retention();
-    let k_sat = soil.texture().hydraulics().saturated_conductivity / GRAVITY_MPA_PER_M;
+    let uniform = (!soil.has_structure()).then(|| {
+        let k_sat = soil.texture().hydraulics().saturated_conductivity / GRAVITY_MPA_PER_M;
+        (soil.retention(), k_sat)
+    });
     let edge = soil.cell_size().0;
     cells
         .map(|c| {
+            // Each cell's own curve and conductivity where densities differ (R5c).
+            let (retention, k_sat) = uniform.unwrap_or_else(|| {
+                let class = soil.class(c);
+                (
+                    class.retention,
+                    class.hydraulics.saturated_conductivity / GRAVITY_MPA_PER_M,
+                )
+            });
             let (psi, k_rel) = retention.psi_and_conductivity(soil.theta(c));
             let psi = psi.to_mpa().0;
             #[allow(clippy::cast_precision_loss)] // a layer index
@@ -147,10 +157,11 @@ fn cell_terms(soil: &SoilGrid, cells: impl Iterator<Item = usize>) -> Vec<(f64, 
 /// [`cell_terms`] without the conductivity, for the simplified level's hour (two
 /// powers a cell instead of three; the same potentials).
 fn cell_potentials(soil: &SoilGrid, cells: impl Iterator<Item = usize>) -> Vec<(f64, f64)> {
-    let retention = soil.retention();
+    let uniform = (!soil.has_structure()).then(|| soil.retention());
     let edge = soil.cell_size().0;
     cells
         .map(|c| {
+            let retention = uniform.unwrap_or_else(|| soil.retention_at(c));
             let psi = retention.psi(soil.theta(c)).to_mpa().0;
             #[allow(clippy::cast_precision_loss)] // a layer index
             let z = -(soil.cell_of(c).z as f64 + 0.5) * edge;

@@ -322,7 +322,10 @@ pub fn plant_value(state: &WorldState, plant: u32, variable: &str, at: &At) -> R
         }
         return derived::mean_internode_cm(state, plant);
     }
-    if variable == "root_length_west_east_ratio" || variable == "root_length_patch_m" {
+    if variable == "root_length_west_east_ratio"
+        || variable == "root_length_patch_m"
+        || derived::root_depth_split(variable).is_some()
+    {
         if !matches!(at, At::Final) {
             return Err(format!("{variable} is only available at Final"));
         }

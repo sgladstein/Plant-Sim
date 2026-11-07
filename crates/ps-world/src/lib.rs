@@ -25,14 +25,14 @@ pub use hash::hash_of;
 pub use lens::{LensData, PlantLens, SoilLens};
 pub use ps_arch::HydraulicsLevel;
 pub use scenario::{
-    Action, ActionKind, Fidelity, FieldVariation, Irrigation, MAX_DETAILED, NitratePatch,
-    ObstacleSpec, PotDrainage, SCENARIO_SCHEMA, Scenario, SeedChoice, SoilSpec, Sowing, Start,
-    SupportSpec, WeatherSource,
+    Action, ActionKind, DensityZone, Fidelity, FieldVariation, Irrigation, MAX_DETAILED,
+    NitratePatch, ObstacleSpec, PotDrainage, SCENARIO_SCHEMA, Scenario, SeedChoice, SoilSpec,
+    SoilZone, Sowing, Start, SupportSpec, WeatherSource,
 };
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.29.0";
+pub const MODEL_VERSION: &str = "0.30.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -738,6 +738,33 @@ pub fn patch_cells(grid: &ps_soil::SoilGrid, p: &NitratePatch) -> Vec<usize> {
         .collect()
 }
 
+/// The active cells of a soil zone (R5c): those whose centers lie inside it.
+#[must_use]
+pub fn zone_cells(grid: &ps_soil::SoilGrid, zone: &SoilZone) -> Vec<usize> {
+    let (nx, ny, _) = grid.dims();
+    let c = grid.cell_size().0;
+    #[allow(clippy::cast_precision_loss)] // grid sizes are small
+    let (cx, cy) = (0.5 * nx as f64 * c, 0.5 * ny as f64 * c);
+    let within = |v: f64, edges: Option<(f64, f64)>| {
+        edges.is_none_or(|(lo, hi)| v >= 0.01 * lo && v < 0.01 * hi)
+    };
+    (0..grid.len())
+        .filter(|&i| {
+            let cell = grid.cell_of(i);
+            #[allow(clippy::cast_precision_loss)]
+            let (x, y, z) = (
+                (cell.x as f64 + 0.5) * c - cx,
+                (cell.y as f64 + 0.5) * c - cy,
+                (cell.z as f64 + 0.5) * c,
+            );
+            grid.is_active(i)
+                && within(x, zone.east_cm)
+                && within(y, zone.north_cm)
+                && within(z, Some(zone.depth_cm))
+        })
+        .collect()
+}
+
 /// Each soil's layer temperatures and water potentials, for the temperature (WP26) and
 /// water-potential (R3a) lenses.
 fn soil_lens(soils: &[SoilEntry]) -> Vec<SoilLens> {
@@ -787,6 +814,9 @@ impl World {
             for p in scenario.nitrate_patches.iter().filter(|p| p.soil == id) {
                 let cells = patch_cells(&grid, p);
                 grid.scale_nitrate_cells(&cells, p.no3_factor);
+            }
+            for d in scenario.density_zones.iter().filter(|d| d.zone.soil == id) {
+                grid.set_density(&zone_cells(&grid, &d.zone), d.factor);
             }
             soils.push(SoilEntry {
                 id,
@@ -1017,6 +1047,14 @@ impl World {
             }
             ActionKind::SetDrainage { soil, drainage } => {
                 if let Err(why) = self.check_drainage(*soil, *drainage) {
+                    return err(why);
+                }
+            }
+            ActionKind::Dig(zone) | ActionKind::Compact(zone) => {
+                if !soil_known(zone.soil) {
+                    return err(format!("unknown soil {}", zone.soil));
+                }
+                if let Err(why) = zone.check() {
                     return err(why);
                 }
             }
@@ -1470,6 +1508,23 @@ impl World {
         Ok(())
     }
 
+    /// Digs (`dig`) or tramples a soil zone (R5c).
+    fn work_soil(&mut self, tick: u64, zone: &SoilZone, dig: bool) -> Result<(), WorldError> {
+        let err = |why: String| WorldError::Action { tick, why };
+        let i = self
+            .soil_index(zone.soil)
+            .ok_or_else(|| err(format!("unknown soil {}", zone.soil)))?;
+        zone.check().map_err(err)?;
+        let grid = &mut self.state.soils[i].grid;
+        let cells = zone_cells(grid, zone);
+        if dig {
+            grid.dig(&cells);
+        } else {
+            grid.compact(&cells);
+        }
+        Ok(())
+    }
+
     fn apply_kind(&mut self, tick: u64, kind: ActionKind) -> Result<(), WorldError> {
         let err = |why: String| WorldError::Action { tick, why };
         match kind {
@@ -1504,6 +1559,8 @@ impl World {
                     .ok_or_else(|| err(format!("unknown soil {soil}")))?;
                 self.state.soils[i].grid.set_drainage(drainage.grid());
             }
+            ActionKind::Dig(zone) => self.work_soil(tick, &zone, true)?,
+            ActionKind::Compact(zone) => self.work_soil(tick, &zone, false)?,
             ActionKind::Fertilize {
                 soil,
                 form,

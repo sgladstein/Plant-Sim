@@ -713,6 +713,10 @@ pub struct Plant {
     /// yet (R5b).
     #[serde(default)]
     pub drowned: bool,
+    /// The soil at the collar has been hypoxic since the hypocotyl last rooted: the
+    /// stem base was flooded, which is what makes it root again (R5c, decision 0049).
+    #[serde(default)]
+    pub collar_flooded: bool,
     /// Root length per soil cell, rebuilt daily.
     pub roots: RootCells,
     /// Each root organ's length per soil cell, rebuilt daily with [`Plant::roots`]: the
@@ -1035,6 +1039,7 @@ impl Plant {
             root_axes: Vec::new(),
             root_types_started: vec![false; n_roots],
             drowned: false,
+            collar_flooded: false,
             roots: RootCells::default(),
             root_spans: Vec::new(),
             water_potential: Vec::new(),

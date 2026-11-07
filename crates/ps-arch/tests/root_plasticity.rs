@@ -196,3 +196,49 @@ fn laterals_proliferate_in_a_nitrate_patch() {
     println!("lateral length in the patch: {a:.2} m against {b:.2} m");
     assert!(a > 1.2 * b, "{a} vs {b}");
 }
+
+/// R5c (decision 0049): a tip keeps its rate at the reference strength, slows as the
+/// soil hardens, grows at most 1.25 times its rate there (a bean's, in soil with no
+/// strength), and thickens by a third per `MPa` above the reference, up to twice.
+#[test]
+fn hard_soil_slows_and_thickens_tips() {
+    use ps_soil::Strength;
+    use ps_units::MPa;
+    let plasticity = |file: &str| {
+        let species = Species::from_ron(file).unwrap();
+        let traits = species
+            .phenotype(&species.default_genotype())
+            .traits()
+            .unwrap();
+        ps_arch::HerbParams::new(&species, &traits).root_plasticity
+    };
+    let bean = plasticity(include_str!("../../../data/species/bush_bean.ron"));
+    let wheat = plasticity(include_str!("../../../data/species/spring_wheat.ron"));
+    let at = |q: f64, reference: f64| Strength {
+        resistance: MPa(q),
+        reference: MPa(reference),
+    };
+    for rp in [&bean, &wheat] {
+        // The reference keeps the rate, wet or dry; harder soil slows it.
+        for r in [0.3, 0.5, 1.5] {
+            assert!((rp.impedance(at(r, r)) - 1.0).abs() < 1e-12);
+            assert!((rp.thickening(at(r, r)) - 1.0).abs() < 1e-12);
+        }
+        let mut last = f64::INFINITY;
+        for q in [0.0, 0.2, 0.5, 1.0, 2.0, 4.0, 8.0] {
+            let f = rp.impedance(at(q, 0.5));
+            assert!(f <= last && f > 0.0, "{q} MPa: {f}");
+            last = f;
+        }
+        assert!(rp.impedance(at(8.0, 0.5)) < 0.1);
+        let cap = 1.0 + (0.5 / rp.impedance_half) * (0.5 / rp.impedance_half);
+        assert!((rp.impedance(at(0.0, 2.0)) - cap).abs() < 1e-12);
+        assert!(rp.thickening(at(0.2, 0.5)) >= 1.0 - 1e-12);
+        assert!((rp.thickening(at(1.5, 0.5)) - 1.33).abs() < 1e-12);
+        assert!((rp.thickening(at(20.0, 0.5)) - 2.0).abs() < 1e-12);
+    }
+    // A bean tip at 1 MPa grows at half its rate in soil with no strength, so 1.25 / 2
+    // of its rate at a reference of 0.5 MPa; wheat's tips push on harder.
+    assert!((bean.impedance(at(1.0, 0.5)) - 1.25 / 2.0).abs() < 1e-12);
+    assert!(wheat.impedance(at(2.0, 0.5)) > 1.5 * bean.impedance(at(2.0, 0.5)));
+}
