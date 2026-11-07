@@ -228,6 +228,41 @@ full rebuild of every axis mesh 60 µs. Even 30 plants rebuilding every axis eve
 is about 2 ms of a 16.7 ms frame; GPU time on the GTX 1070 has to be measured on the
 owner's machine.
 
+### R5a cost (model 0.27.0, 2026-11-07)
+
+R5a (#146, decision 0046) moves soil water by Darcy's law: each column solves a
+tridiagonal system every hour, reading head, slope and conductivity from a per-texture
+table. Wall time, 4 cores, interleaved best of 3, one container, against 5afdff4
+(0.26.0):
+
+| Scenario | 0.26.0 | 0.27.0 (ab46085) | with this pass |
+| --- | --- | --- | --- |
+| single_pot (detailed) | 7.07 to 7.31 ms per sim-day | 9.01 to 9.12 (+25%) | 8.75 to 8.93 |
+| single_pot_simplified | 5.67 to 5.81 | 7.12 to 7.31 (+26%) | 6.92 to 7.31 |
+| plot_30_beans, first 30 days | 14.9 to 15.2 | 18.2 to 19.5 (+24%) | 18.7 to 19.4 |
+| plot_30_beans, 90 days | 46.8 to 48.5 | 50.4 to 53.4 (+8%) | 51.5 to 51.8 |
+
+The plot's 90-day cost grows far less than its first 30 days: the soil solve costs
+the same every hour, while the plants' share grows with them. Callgrind (one thread):
+single_pot 5.62 G to 7.02 G instructions; the column solve is about 15% of them, and
+the plant side's exact retention curve (three `pow` per root cell per hour, in
+`cell_terms`) about 10%. Estimated on the owner's PC, chained from its 0.20.0
+timings: detailed pot about 7.8 ms, simplified pot about 6.4, plot about 44 ms per
+sim-day, all over the 4 ms and 30 ms budgets.
+
+This pass, with every state hash unchanged (16 scenarios at full length and the
+goldens): each face's water in kg is computed once per column instead of up to four
+times in the nitrate step, and the column assembly, flux and Thomas loops run on
+slices of one length so they carry no bounds checks. That is 2.6% of single_pot's
+instructions (3.7% of the 30-day plot's) and about 2% of the pot's wall time; on the
+plot it is inside the noise.
+
+Measured and not worth doing: reusing a column's solve when another column has the
+same water profile in the same hour. In the plot that happens only in the first week
+(before the roots spread), about 7% of a 90-day run's column solves. The one large
+lever left is the plant side reading the soil's table instead of the exact curve,
+which changes results (listed as open in decision 0046).
+
 ### R3c cost (model 0.26.0, 2026-11-07)
 
 R3c (#144, decision 0045) adds the simplified water network (plots over 8 plants use it

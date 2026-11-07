@@ -424,6 +424,8 @@ struct ColumnWork {
     theta: Vec<f64>,
     start: Vec<f64>,
     moves: Vec<GramsN>,
+    /// Each face's net downward water over the hour, kg, the base's last.
+    face_kg: Vec<f64>,
 }
 
 impl ColumnWork {
@@ -433,6 +435,7 @@ impl ColumnWork {
             theta: vec![0.0; nz],
             start: vec![0.0; nz],
             moves: vec![GramsN(0.0); nz + 1],
+            face_kg: Vec::with_capacity(nz),
         }
     }
 }
@@ -945,6 +948,7 @@ impl SoilGrid {
             theta,
             start,
             moves,
+            face_kg,
         } = work;
         for z in 0..nz {
             start[z] = self.water[col + z * layer].0;
@@ -955,26 +959,21 @@ impl SoilGrid {
         for (w, t) in water.iter_mut().zip(theta.iter()) {
             *w = KgWater(t * mass);
         }
-        let faces = scratch.faces();
         let bottom_kg = hour.bottom * area * WATER_DENSITY;
-        let face_kg = |f: usize| {
-            if f < nz - 1 {
-                faces[f] * area * WATER_DENSITY
-            } else {
-                bottom_kg
-            }
-        };
+        face_kg.clear();
+        face_kg.extend(scratch.faces().iter().map(|f| f * area * WATER_DENSITY));
+        face_kg.push(bottom_kg);
+        let face_kg = &face_kg[..nz];
         let sent = |z: usize| {
-            let down = face_kg(z).max(0.0);
+            let down = face_kg[z].max(0.0);
             let up = if z > 0 {
-                (-face_kg(z - 1)).max(0.0)
+                (-face_kg[z - 1]).max(0.0)
             } else {
                 0.0
             };
             down + up
         };
-        for (f, m) in moves.iter_mut().enumerate().take(nz) {
-            let kg = face_kg(f);
+        for (f, (m, &kg)) in moves.iter_mut().zip(face_kg).enumerate() {
             let from = if kg > 0.0 { f } else { f + 1 };
             *m = if kg != 0.0 && from < nz {
                 let held = start[from].max(sent(from));
@@ -988,11 +987,10 @@ impl SoilGrid {
             };
         }
         let mut leached = GramsN(0.0);
-        for (f, &m) in moves.iter().enumerate().take(nz) {
+        for (f, (&m, &kg)) in moves.iter().zip(face_kg).enumerate() {
             if m.0 <= 0.0 {
                 continue;
             }
-            let kg = face_kg(f);
             let (from, to) = if kg > 0.0 { (f, f + 1) } else { (f + 1, f) };
             no3[from] -= m;
             if to < nz {
