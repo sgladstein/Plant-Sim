@@ -63,12 +63,17 @@ that holds the two levels' outcomes together.
    `validate --fidelity simplified`.
 7. **The bias check** reads the mean signed seed-yield gap over the scenarios, and
    fails when it is beyond ±2% **and** beyond twice its standard error from the
-   seeds' paired gaps. The spec's plain ±2% can't be read on four seeds: over twelve
+   seeds' paired gaps. At four seeds the two pots set that error (2.53% today), so in
+   practice the gate trips beyond about ±5%; the plots and wheat stand, which `Auto`
+   runs simplified, sit within ±1.6% on their own. The spec's plain ±2% can't be read on four seeds: over twelve
    seeds the pot's paired seed gap averages +0.1% with a seed-to-seed spread of 17%
    (the drought pots −1.3% and 17%), because a level switch reshuffles pod set, so a
    four-seed bias has a standard error of about 3%.
 8. New goldens `single_pot_simplified` and `fidelity_switch`; plot_30_beans' golden now
    runs simplified (its `Auto` level).
+9. **The three challenges lock at Detailed** (`fidelity: Some(Locked(Detailed))`), so a
+   score never depends on how the player watched; they are single pots, so it costs
+   nothing (code review).
 
 ### Tried and not kept
 - **The spec's plain ±2% bias gate:** passes today (+1.7%) by chance; see 7.
@@ -82,8 +87,10 @@ that holds the two levels' outcomes together.
   the seeds' own spread. Water use agrees within 2.2% everywhere.
 - Soil conductance alone (four seeds, before the fidelity levels, every plant
   detailed): 71 of 96 checks pass, as at 0.25.0, every M0 gate passes, no verdict
-  flips. Seed per plant 7.49 → 8.09 g, mean seed 0.187 → 0.201 g, harvest index 0.422
-  → 0.455, pods 11.5 → 10.75; drought pods −76% → −70%, drought root:shoot +31% →
+  flips. On these four seeds seed per plant 7.49 → 8.09 g, mean seed 0.187 → 0.201 g,
+  harvest index 0.422 → 0.455, pods 11.5 → 10.75, but over eight seeds (7 to 14, code
+  review) the watered pot is unchanged (total mass 28.3 g both, seed 8.61 → 8.34 g,
+  inside a seed SE of about 0.6 g), so these are not a gain; drought pods −76% → −70%, drought root:shoot +31% →
   +26%, drought shoot mass −67% → −62% (still a miss, target −26%), drought seed size
   +24% → +20%; heat seeds −31% → −34%; split_pot_foraging 1.248 → 1.254,
   nitrate_patch_proliferation +34% → +37%.
@@ -93,9 +100,11 @@ that holds the two levels' outcomes together.
 - Validation with every plant simplified (`validate --fidelity simplified`): 69 of 96,
   every M0 gate passes; pole_height_day60 also falls to 1.495 m against 1.5 m. Both
   moves sit at a band edge and inside the seeds' spread.
-- Cost on this machine (release, per pot-day): single_pot detailed 7.3 to 7.6 ms
-  against 6.5 to 7.2 ms at 0.25.0 (the soil term's conductivity), simplified 5.4 to
-  6.4 ms; plot_30_beans, now simplified, 15.8 to 16.1 ms against 16.4 to 16.8 ms.
+- Cost (release, per pot-day; code review's idle container, after #142): single_pot
+  detailed 5.7 to 5.9 ms against 5.3 on main (+8 to 11%, the soil term's
+  conductivity), simplified 4.4 to 4.7 ms; plot_30_beans (30 days), now simplified,
+  13 to 14 ms, unchanged. On this busier machine before #142: detailed 7.3 to 7.6 ms
+  against 6.5 to 7.2, simplified 5.4 to 6.4.
   Callgrind: the simplified pot runs 13% fewer instructions, and its water step is
   about 12% of the total, almost all retention-curve powers (the hourly simplified
   step reads only each cell's potential, skipping the conductivity). The pot is still
@@ -111,7 +120,10 @@ that holds the two levels' outcomes together.
   night (10%, was 18%: the dry soil's own conductance now limits it); predawn leaf
   potential −0.037 to −0.075 MPa against soil −0.033, daily low −0.68 to −0.82; the
   wilting pot reaches −2.50 MPa at zero turgor and recovers to full turgor.
-- Open: the simplified level's summary lags a day (roots grown and cells dried since
+- Open: leaves in a dry pot follow the soil to about −34 MPa and none dies of drying
+  out (model to-do); `Auto` counts only the scenario's starting sowings, so a garden
+  filled by player sowing runs detailed; the soil cylinder reads only this plant's
+  root density; the simplified level's summary lags a day (roots grown and cells dried since
   midnight are not seen until the next day); `K_comp` = `K_rs` is untuned (the report
   passes without tuning); the viewer's zoom and speed rule (ps-app) is the viewer
   thread's; nitrogen keeps one level (R7). Soil water still moves between cells by the

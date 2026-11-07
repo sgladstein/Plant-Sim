@@ -11,4 +11,6 @@ Challenge(
   rules: (allowed: [Water, Harvest], water_budget: Some(6.0)),
   medals: (bronze: 5.0, silver: 7.0, gold: 8.5),
   seasons: 8,
+  // Scored at the detailed water network, whatever the viewer shows (decision 0045).
+  fidelity: Some(Locked(Detailed)),
 )

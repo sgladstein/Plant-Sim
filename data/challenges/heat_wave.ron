@@ -10,4 +10,6 @@ Challenge(
   rules: (allowed: [Sow, Harvest], sow_window_days: Some((0, 40)), max_sowings: Some(1), sow_species: Some("bush_bean")),
   medals: (bronze: 5.0, silver: 7.5, gold: 9.5),
   seasons: 8,
+  // Scored at the detailed water network, whatever the viewer shows (decision 0045).
+  fidelity: Some(Locked(Detailed)),
 )

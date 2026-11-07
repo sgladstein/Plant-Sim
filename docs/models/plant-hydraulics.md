@@ -174,8 +174,11 @@ stomata closing through a drought before the soil reaches its wilting point.
 - No water storage in the plant (no capacitance): potentials follow transpiration
   within the hour, with no buffering by stem or leaf water.
 - No cavitation or xylem vulnerability: `K_leaf` and `K_x` don't fall as the potential
-  drops, so a very dry plant follows the soil down (to several MPa in an air-dry pot)
-  instead of disconnecting.
+  drops, so a very dry plant follows the soil down instead of disconnecting: in the
+  drought pot leaves reach about −34 MPa (the soil itself goes to −88 MPa air-dry in
+  loam). No leaf dies from drying out; a leaf at zero turgor keeps its organs and
+  recovers fully once watered (on the to-do list: death after some hours below a
+  lethal potential, or hydraulic failure).
 - No stomatal memory after severe stress: real bean stomata take up to 8 days to reopen
   after −1.6 to −2.5 MPa (Trujillo 2013); here they reopen in the hour the potential
   recovers.
@@ -187,6 +190,10 @@ stomata closing through a drought before the soil reaches its wilting point.
 - The soil term reads each cell's mean water content; the soil right at a root dries
   first, so a real rhizosphere limits sooner. Mucilage and root hairs, which keep it
   wetter, are not modelled either.
+- The soil cylinder's half spacing reads only this plant's root density in the cell
+  (it keeps plants independent within the hour). Where two plants' roots share a cell
+  the true spacing is smaller and the soil conducts more per metre of root; the
+  dependence is logarithmic (doubling the density changes it by about 10%).
 - The split pot's wet-to-dry root ratio fell from 1.50 to 1.25 at 0.25.0, and not
   through redistribution: the soil term cut the water given to the dry half and left
   the ratio at 1.25. The likelier cause is compensation: as the dry half's potential
