@@ -5,11 +5,11 @@ Challenge(
   id: "thirsty_summer",
   title: "Thirsty summer",
   brief: "One bean, one pot, a rain shelter and 6 litres of water for the whole summer. Grow as many pods as you can.",
-  hint: "A bean drinks most in full bloom, about days 42 to 70, and a dry hour then drops flowers. Save the can for those four weeks: water given before or after mostly dries off the soil surface.",
+  hint: "A bean needs water most while its flowers open, about days 40 to 62, and a dry hour then drops them. Save the can for those three weeks: water given earlier dries off the bare soil, and water given later sets no pods.",
   scenario: "challenges/thirsty_summer",
   score: (metric: PeakSum("pods"), label: "pods", higher_is_better: true),
   rules: (allowed: [Water, Harvest], water_budget: Some(6.0)),
-  medals: (bronze: 3.0, silver: 4.5, gold: 5.5),
+  medals: (bronze: 4.0, silver: 6.5, gold: 8.5),
   seasons: 8,
   // Scored at the detailed water network, whatever the viewer shows (decision 0045).
   fidelity: Some(Locked(Detailed)),
