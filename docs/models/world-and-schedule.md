@@ -56,6 +56,18 @@ replayed exactly.
   action changes a pot's drainage from that hour (R5b, decision 0048), as a
   waterlogging experiment seals its pots and then drains them; it is refused for a
   plot, and the game counts it as its own action type, which no challenge allows.
+- Soil structure (R5c, decision 0049; soil-and-water card equation 13): a scenario's
+  `density_zones` set the bulk density of the cells whose centers lie in a zone to a
+  factor (0.6 to 1.4) of the texture's, after the nitrate patches: a plough pan
+  (`depth_cm: (15, 20)`, 1.2), a raised bed (`(0, 30)`, 0.85). A zone
+  (`SoilZone { soil, east_cm, north_cm, depth_cm }`) spans east and north offsets from
+  the soil's center (either may be left out for the whole width) and a depth range,
+  cm, with the low edge inside and the high edge outside. The actions `Dig(zone)`
+  (loosen to two thirds of the texture's density; it settles back with the water that
+  reaches it) and `Compact(zone)` (a trampled path, at least 1.15 times) change the
+  zone's cells from that hour; the game counts each as its own action type, which no
+  challenge allows yet. A soil without zones or digging has no structure and runs as
+  before.
 - Hash: for each serialized word `w_k` (k = 0, 1, …):
   `h ← s(h ⊕ s(w_k + k))`, final `s(h ⊕ n)`, with `s` the splitmix64 finalizer.
   Daily hash `H_d = hash(H_{d−1}, tick, soils, plants, actions and rows new since d−1)`,
@@ -83,6 +95,7 @@ replayed exactly.
 | in | supports (stakes, strings) | cm | the scenario (WP22) |
 | in | scenario events, heat wave, shade cloth, rain shelter | tick, kind; °C; - | the scenario's treatments (decisions 0015, 0018) |
 | in | actions | tick, kind | player, scripts, replay |
+| in | density zones (R5c) | cm, - | the scenario |
 | out | daily rows per plant, with the day's weather and soil water, and the soil's drained, run-off and evaporated water and leached, mineralized and denitrified nitrogen since the start (decisions 0047, 0048) | - | `ps-export` CSV (decision 0015) |
 | out | full-state hash per day | u64 | golden tests |
 | out | snapshot | RON | saves, the viewer (WP16) |

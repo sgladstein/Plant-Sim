@@ -713,6 +713,14 @@ pub struct Plant {
     /// yet (R5b).
     #[serde(default)]
     pub drowned: bool,
+    /// The flood that took an axis tip reached the collar: its soil was hypoxic at
+    /// most one axis death clock before the loss, or has been since. A flooded stem
+    /// base is what makes it root again (R5c, decision 0049).
+    #[serde(default)]
+    pub collar_flooded: bool,
+    /// The last daily step at which the soil at the collar was hypoxic (R5c).
+    #[serde(default)]
+    pub collar_hypoxic_at: Option<Hours>,
     /// Root length per soil cell, rebuilt daily.
     pub roots: RootCells,
     /// Each root organ's length per soil cell, rebuilt daily with [`Plant::roots`]: the
@@ -1035,6 +1043,8 @@ impl Plant {
             root_axes: Vec::new(),
             root_types_started: vec![false; n_roots],
             drowned: false,
+            collar_flooded: false,
+            collar_hypoxic_at: None,
             roots: RootCells::default(),
             root_spans: Vec::new(),
             water_potential: Vec::new(),
@@ -1595,7 +1605,9 @@ impl Plant {
         // 6. Light geometry, root cells, nitrogen, expansion records.
         self.positions = geometry::layout(&self.arena, &self.meta, self.collar_position);
         self.roots = geometry::root_cells(&self.arena, &self.positions, soil);
+        let before = std::mem::take(&mut self.root_spans);
         self.root_spans = geometry::root_spans(&self.arena, &self.positions, soil);
+        self.carry_exposure(&before, soil);
         self.water_summary = self.summarize_water(soil);
         self.set_root_clock(soil);
         Ok(())

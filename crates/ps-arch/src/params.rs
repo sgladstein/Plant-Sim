@@ -139,6 +139,20 @@ pub struct RootPlasticity {
     pub hydropatterning: bool,
     /// Weight of the available-water gradient in a tip's direction.
     pub hydrotropism: f64,
+    /// Penetration resistance at which a tip in unimpeded soil would elongate at half
+    /// its rate, `MPa` (R5c, decision 0049); 0 for no response.
+    #[serde(default)]
+    pub impedance_half: f64,
+    /// Widening of a root formed in soil harder than its texture's own, per `MPa` of the
+    /// difference.
+    #[serde(default)]
+    pub impeded_thickening: f64,
+    /// Most a root widens, a factor on its diameter.
+    #[serde(default)]
+    pub impeded_thickening_max: f64,
+    /// Extra lateral density behind a slowed tip, per unit of the slowing.
+    #[serde(default)]
+    pub impeded_branching: f64,
 }
 
 impl Default for RootPlasticity {
@@ -151,7 +165,42 @@ impl Default for RootPlasticity {
             proliferation_water: 0.0,
             hydropatterning: false,
             hydrotropism: 0.0,
+            impedance_half: 0.0,
+            impeded_thickening: 0.0,
+            impeded_thickening_max: 1.0,
+            impeded_branching: 0.0,
         }
+    }
+}
+
+impl RootPlasticity {
+    /// A tip's elongation factor from its cell's strength (R5c, decision 0049): with
+    /// `g(Q) = 1 + (Q / Q_half)²`, `g(Q_ref) / g(Q)`, at most `g(Q_fc)`. A tip in
+    /// unimpeded soil grows at `1 / g(Q)` of its potential rate (halved at `Q_half`;
+    /// Bengough et al. 2011 found 0.8 to 2 `MPa`, and the square cuts it by 94% at 4 `MPa`
+    /// with `Q_half` 1 `MPa`, Materechera et al. 1991's 88 to 97%). The species' rates
+    /// were measured in ordinary soil, the reference, so a tip there keeps its rate in
+    /// any soil water (the dry-soil factor carries the rest), and none grows faster
+    /// than in loose soil at field capacity: `g(Q_fc)`, 1.25 times at 1 `MPa`.
+    #[must_use]
+    pub fn impedance(&self, s: ps_soil::Strength) -> f64 {
+        if self.impedance_half <= 0.0 {
+            return 1.0;
+        }
+        let g = |q: f64| {
+            let x = q / self.impedance_half;
+            1.0 + x * x
+        };
+        let cap = g(ps_soil::structure::STRENGTH_AT_FIELD_CAPACITY.0);
+        (g(s.reference.0) / g(s.resistance.0)).min(cap)
+    }
+
+    /// The diameter factor of a root formed in a cell of this strength (R5c): `1 + c
+    /// (Q − Q_ref)` above the reference, at most the species' most.
+    #[must_use]
+    pub fn thickening(&self, s: ps_soil::Strength) -> f64 {
+        let excess = (s.resistance.0 - s.reference.0).max(0.0);
+        (1.0 + self.impeded_thickening * excess).min(self.impeded_thickening_max.max(1.0))
     }
 }
 
@@ -471,6 +520,10 @@ impl HerbParams {
                 proliferation_water: c.root_proliferation_water.value,
                 hydropatterning: c.hydropatterning.value > 0.5,
                 hydrotropism: c.hydrotropism_weight.value,
+                impedance_half: c.root_impedance_half.value,
+                impeded_thickening: c.root_impedance_thickening.value,
+                impeded_thickening_max: c.root_impedance_max_thickening.value,
+                impeded_branching: c.root_impedance_branching.value,
             },
             waterlogging: Waterlogging {
                 radial_factor: c.hypoxia_radial_factor.value,

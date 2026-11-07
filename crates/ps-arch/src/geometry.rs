@@ -9,7 +9,7 @@
 use ps_graph::{OrganArena, OrganId, OrganKind};
 use ps_light::LeafPoint;
 use ps_soil::{Cell, RootCells, SoilGrid};
-use ps_units::{M2, Meters};
+use ps_units::{DeficitHours, M2, Meters};
 
 use crate::{Meta, Role, RootSpan};
 
@@ -264,6 +264,8 @@ pub fn root_spans(arena: &OrganArena, pos: &[(V3, V3)], soil: &SoilGrid) -> Vec<
                     organ: id.0,
                     cell: c,
                     length: Meters(total / nf),
+                    exposure: DeficitHours(0.0),
+                    seen: DeficitHours(0.0),
                 });
             }
         }

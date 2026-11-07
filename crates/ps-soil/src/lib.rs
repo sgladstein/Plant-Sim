@@ -44,10 +44,12 @@ use ps_units::{Celsius, GramsN, KPa, KgWater, Meters, Millimeters, WPerM2};
 pub mod flow;
 pub mod nitrogen;
 pub mod retention;
+pub mod structure;
 pub use nitrogen::{NitrogenForm, NitrogenLedger, NitrogenRequest, NitrogenUptake, SoilNitrogen};
 pub use retention::Retention;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
+pub use structure::{SoilClass, Strength};
 
 /// Latent heat of vaporization, J kg⁻¹ (at about 20 °C).
 pub const LATENT_HEAT_J_PER_KG: f64 = 2.45e6;
@@ -418,6 +420,10 @@ pub struct SoilGrid {
     /// (R5b): full-deficit hours.
     #[serde(default)]
     hypoxic_hours: Vec<f64>,
+    /// Bulk density per cell, once any was set (R5c); `None` is the texture's
+    /// everywhere.
+    #[serde(default)]
+    structure: Option<structure::Structure>,
 }
 
 /// Oxygen deficit at air-filled porosity `a`, 0 to 1 (R5b).
@@ -448,6 +454,8 @@ struct ColumnWork {
     moves: Vec<GramsN>,
     /// Each face's net downward water over the hour, kg, the base's last.
     face_kg: Vec<f64>,
+    /// The column's cells' classes, top first (R5c).
+    classes: Vec<u16>,
 }
 
 impl ColumnWork {
@@ -458,6 +466,7 @@ impl ColumnWork {
             start: vec![0.0; nz],
             moves: vec![GramsN(0.0); nz + 1],
             face_kg: Vec::with_capacity(nz),
+            classes: Vec::with_capacity(nz),
         }
     }
 }
@@ -568,6 +577,7 @@ impl SoilGrid {
             pond: vec![KgWater(0.0); nx * ny],
             saucer: KgWater(0.0),
             hypoxic_hours: vec![0.0; n],
+            structure: None,
         };
         g.fill_to(texture.hydraulics().field_capacity);
         Ok(g)
@@ -718,7 +728,15 @@ impl SoilGrid {
     /// least 0.
     #[must_use]
     pub fn air_porosity(&self, i: usize) -> f64 {
-        (self.texture.hydraulics().saturation - self.theta(i)).max(0.0)
+        (self.class(i).hydraulics.saturation - self.theta(i)).max(0.0)
+    }
+
+    /// The texture's saturation when every cell has it (a grid without structure), so
+    /// a loop over cells skips the class lookup.
+    fn uniform_saturation(&self) -> Option<f64> {
+        self.structure
+            .is_none()
+            .then(|| self.texture.hydraulics().saturation)
     }
 
     /// Oxygen deficit of cell `i` now, 0 to 1 (R5b): 0 at [`AERATION_CRITICAL`]
@@ -756,16 +774,19 @@ impl SoilGrid {
         if self.hypoxic_hours.len() != n {
             self.hypoxic_hours = vec![0.0; n];
         }
-        let sat = self.texture.hydraulics().saturation;
         let v = self.cell_volume() * WATER_DENSITY;
-        for (i, h) in self.hypoxic_hours.iter_mut().enumerate() {
+        let uniform = self.uniform_saturation();
+        let mut hours = std::mem::take(&mut self.hypoxic_hours);
+        for (i, h) in hours.iter_mut().enumerate() {
             let d = if self.active[i] {
+                let sat = uniform.unwrap_or_else(|| self.class(i).hydraulics.saturation);
                 deficit_of(sat - self.water[i].0 / v)
             } else {
                 0.0
             };
             *h = if d > 0.0 { *h + d } else { 0.0 };
         }
+        self.hypoxic_hours = hours;
     }
 
     /// Soil temperature of a layer.
@@ -848,15 +869,16 @@ impl SoilGrid {
         };
         let hy = self.texture.hydraulics();
         let fc = self.capacity(hy.field_capacity);
-        let sat = self.capacity(hy.saturation);
-        // At most the saturated conductivity's depth soaks in each hour (R5a).
-        let rate = KgWater(hy.saturated_conductivity * 3600.0 * area * WATER_DENSITY);
+        let uniform = self.uniform_saturation();
         let pond_cap = KgWater(self.pond_capacity().0 * area);
         let layer = self.nx * self.ny;
         if self.pond.len() != layer {
             self.pond = vec![KgWater(0.0); layer];
         }
         let mut added = vec![KgWater(0.0); self.nz];
+        let mut room: Vec<f64> = Vec::new();
+        // Water reaching each column's surface, mm, for settling (R5c).
+        let mut reached = vec![0.0; if uniform.is_some() { 0 } else { layer }];
         for y in 0..self.ny {
             for x in 0..self.nx {
                 let col = y * self.nx + x;
@@ -865,19 +887,65 @@ impl SoilGrid {
                 }
                 let per_column = everywhere + extra(x);
                 ledger.applied += per_column;
+                if let Some(r) = reached.get_mut(col) {
+                    *r = per_column.0 / area;
+                }
+                // At most the top cell's saturated conductivity's depth soaks in each
+                // hour (R5a; the cell's class, R5c).
+                let ks = uniform.map_or_else(
+                    || self.class(col).hydraulics.saturated_conductivity,
+                    |_| hy.saturated_conductivity,
+                );
+                let rate = KgWater(ks * 3600.0 * area * WATER_DENSITY);
                 let waiting = per_column + self.pond[col];
                 let mut left = waiting.min(rate);
                 let held = waiting - left;
                 added.fill(KgWater(0.0));
+                // Where densities differ, no more passes into a cell in an hour than its
+                // saturated conductivity lets through; the rest waits on the surface (a
+                // dense layer perches the water, R5c).
+                if uniform.is_none() {
+                    room.clear();
+                    room.extend((0..self.nz).map(|z| {
+                        let ks = self
+                            .class(col + z * layer)
+                            .hydraulics
+                            .saturated_conductivity;
+                        if z == 0 {
+                            f64::INFINITY
+                        } else {
+                            ks * 3600.0 * area * WATER_DENSITY
+                        }
+                    }));
+                }
                 // Fill to field capacity top-down, then to saturation top-down.
-                for limit in [fc, sat] {
+                for pass in 0..2 {
+                    // The least water that may still pass into this cell and those above it.
+                    let mut may = f64::INFINITY;
                     for (z, a) in added.iter_mut().enumerate() {
                         if left.0 <= 0.0 {
                             break;
                         }
                         let i = col + z * layer;
-                        let room = (limit - self.water[i] - *a).max(KgWater(0.0));
-                        let add = room.min(left);
+                        let limit = if pass == 0 {
+                            fc
+                        } else {
+                            self.capacity(
+                                uniform.unwrap_or_else(|| self.class(i).hydraulics.saturation),
+                            )
+                        };
+                        let fits = (limit - self.water[i] - *a).max(KgWater(0.0));
+                        let mut add = fits.min(left);
+                        if let Some(r) = room.get(z).filter(|_| uniform.is_none()) {
+                            may = may.min(*r);
+                            add = add.min(KgWater(may.max(0.0)));
+                            if add.0 > 0.0 {
+                                for r in &mut room[1..=z] {
+                                    *r -= add.0;
+                                }
+                                may -= add.0;
+                            }
+                        }
                         *a += add;
                         left -= add;
                     }
@@ -888,6 +956,7 @@ impl SoilGrid {
                 ledger.runoff += (pond - pond_cap).max(KgWater(0.0));
             }
         }
+        self.settle(&reached);
     }
 
     /// Water soaking in passes through the cells above the one that keeps it, and
@@ -1017,17 +1086,30 @@ impl SoilGrid {
         let layer = self.nx * self.ny;
         let mass = self.cell_volume() * WATER_DENSITY;
         let area = self.cell.0 * self.cell.0;
-        let column = flow::Column {
-            dz: self.cell.0,
-            table: flow::FlowTable::for_texture(self.texture),
-        };
         let ColumnWork {
             scratch,
             theta,
             start,
             moves,
             face_kg,
+            classes,
         } = work;
+        let tables = match &self.structure {
+            None => flow::Tables::Uniform(flow::FlowTable::for_texture(self.texture)),
+            Some(s) => {
+                let (of_cell, all) = s.cell_classes(self.texture);
+                classes.clear();
+                classes.extend((0..nz).map(|z| of_cell[col + z * layer]));
+                flow::Tables::PerCell {
+                    of_cell: classes,
+                    classes: all,
+                }
+            }
+        };
+        let column = flow::Column {
+            dz: self.cell.0,
+            tables,
+        };
         for z in 0..nz {
             start[z] = self.water[col + z * layer].0;
             theta[z] = start[z] / mass;
@@ -1241,7 +1323,8 @@ impl SoilGrid {
         (w / k, n / k)
     }
 
-    /// The grid's retention curve ([`Texture::retention`]).
+    /// The texture's retention curve ([`Texture::retention`]); a cell's own, which
+    /// differs where its density does (R5c), is [`SoilGrid::retention_at`].
     #[must_use]
     pub fn retention(&self) -> Retention {
         self.texture.retention()
@@ -1250,7 +1333,7 @@ impl SoilGrid {
     /// Water potential of a cell (R3a), `None` outside the pot.
     #[must_use]
     pub fn water_potential(&self, i: usize) -> Option<KPa> {
-        self.active[i].then(|| self.retention().psi(self.theta(i)))
+        self.active[i].then(|| self.retention_at(i).psi(self.theta(i)))
     }
 
     /// Each layer's water potential, top first: the potential of the layer's mean water
@@ -1258,17 +1341,35 @@ impl SoilGrid {
     /// mean of the cells' potentials where roots have dried some cells, since the curve
     /// is steep when dry; [`SoilGrid::water_potential`] gives a cell's own.
     #[must_use]
+    ///
+    /// Where a layer's cells differ in density (R5c), its potential is that of its mean
+    /// relative saturation on the curve of its mean density.
     pub fn layer_water_potentials(&self) -> Vec<KPa> {
         let r = self.retention();
         let per_layer = self.nx * self.ny;
         (0..self.nz)
             .map(|z| {
                 let (mut theta, mut k) = (0.0_f64, 0.0_f64);
-                for i in (z * per_layer..(z + 1) * per_layer).filter(|&i| self.active[i]) {
-                    theta += self.theta(i);
+                let cells = z * per_layer..(z + 1) * per_layer;
+                if self.structure.is_none() {
+                    for i in cells.filter(|&i| self.active[i]) {
+                        theta += self.theta(i);
+                        k += 1.0;
+                    }
+                    return r.psi(theta / k.max(1.0));
+                }
+                let (mut rel, mut density) = (0.0_f64, 0.0_f64);
+                for i in cells.filter(|&i| self.active[i]) {
+                    rel += self.theta(i) / self.class(i).hydraulics.saturation;
+                    density += self.bulk_density(i).0;
                     k += 1.0;
                 }
-                r.psi(theta / k.max(1.0))
+                let k = k.max(1.0);
+                let class = structure::soil_class(
+                    self.texture,
+                    structure::level_of(self.texture, density / k),
+                );
+                class.retention.psi(rel / k * class.retention.saturation)
             })
             .collect()
     }
@@ -1443,6 +1544,7 @@ impl SoilGrid {
             f(p.to_bits());
         }
         f(self.saucer.to_bits());
+        self.visit_structure_bits(&mut f);
     }
 }
 

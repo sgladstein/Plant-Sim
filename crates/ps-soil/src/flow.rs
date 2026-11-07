@@ -23,8 +23,9 @@
 //!
 //! Model card: docs/models/soil-and-water.md, "Water flow".
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
+use crate::structure::SoilClass;
 use crate::{Retention, Texture};
 
 /// Kilopascals per metre of water head (`ρ g`, g = 9.80665 m s⁻²).
@@ -162,13 +163,37 @@ impl FlowTable {
     }
 }
 
+/// Each cell's table: one for the whole column, or one per cell from its class (R5c).
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum Tables<'a> {
+    /// Every cell has the texture's own table.
+    Uniform(&'a FlowTable),
+    /// Cell `z`'s table is that of `classes[of_cell[z]]`.
+    PerCell {
+        /// Each cell's class, top first.
+        of_cell: &'a [u16],
+        /// The classes.
+        classes: &'a [Arc<SoilClass>],
+    },
+}
+
+impl Tables<'_> {
+    /// Cell `z`'s table.
+    fn at(&self, z: usize) -> &FlowTable {
+        match self {
+            Tables::Uniform(t) => t,
+            Tables::PerCell { of_cell, classes } => &classes[usize::from(of_cell[z])].table,
+        }
+    }
+}
+
 /// Per-column constants.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Column<'a> {
     /// Cell height, m.
     pub dz: f64,
-    /// The texture's head, slope and conductivity.
-    pub table: &'a FlowTable,
+    /// The cells' head, slope and conductivity.
+    pub tables: Tables<'a>,
 }
 
 /// What a column's hour moved. The net downward water across each face over the hour
@@ -196,6 +221,9 @@ pub(crate) struct Scratch {
     sup: Vec<f64>,
     rhs: Vec<f64>,
     faces: Vec<f64>,
+    wettest: Vec<f64>,
+    /// Each interior face's conductivity, m s⁻¹.
+    kf: Vec<f64>,
 }
 
 impl Scratch {
@@ -231,7 +259,11 @@ impl Column<'_> {
         // top: the water backs up as it would against a full column.
         #[allow(clippy::cast_precision_loss)] // a column has a few dozen cells
         let height = (nz + 1) as f64 * self.dz;
-        let wettest = self.table.retention.saturation + SPECIFIC_STORAGE_PER_M * height;
+        s.wettest.clear();
+        s.wettest.extend(
+            (0..nz)
+                .map(|z| self.tables.at(z).retention.saturation + SPECIFIC_STORAGE_PER_M * height),
+        );
         let mut k = 1_u32;
         loop {
             theta.copy_from_slice(&s.start);
@@ -257,7 +289,7 @@ impl Column<'_> {
                     limit = (limit + q_bottom).max(0.0);
                 }
                 worst = worst.max(change);
-                backed += back_up(theta, wettest, self.dz, &mut s.faces);
+                backed += back_up(theta, &s.wettest, self.dz, &mut s.faces);
                 if change > MAX_THETA_STEP && k < MAX_SUBSTEPS {
                     ok = false;
                     break;
@@ -287,9 +319,19 @@ impl Column<'_> {
     /// the water out of the base (m, negative in).
     fn step(&self, theta: &mut [f64], dt: f64, bottom: Bottom, s: &mut Scratch) -> (f64, f64) {
         let cells = s.h.iter_mut().zip(s.c.iter_mut().zip(s.k.iter_mut()));
-        for (&t, (h, (c, k))) in theta.iter().zip(cells) {
-            (*h, *c, *k) = self.table.terms(t);
+        match self.tables {
+            Tables::Uniform(table) => {
+                for (&t, (h, (c, k))) in theta.iter().zip(cells) {
+                    (*h, *c, *k) = table.terms(t);
+                }
+            }
+            tables @ Tables::PerCell { .. } => {
+                for (z, (&t, (h, (c, k)))) in theta.iter().zip(cells).enumerate() {
+                    (*h, *c, *k) = tables.at(z).terms(t);
+                }
+            }
         }
+        self.face_conductivities(s);
         let n = theta.len() - 1;
         let half = 0.5 * self.dz;
         let seeping = s.h[n] > -half;
@@ -302,7 +344,7 @@ impl Column<'_> {
             }
             Bottom::Seepage | Bottom::Closed => {}
             Bottom::Head { head, .. } => {
-                let kb = 0.5 * (s.k[n] + self.table.ks);
+                let kb = 0.5 * (s.k[n] + self.tables.at(n).ks);
                 s.diag[n] += kb / half;
                 s.rhs[n] += kb * head / half - kb;
             }
@@ -316,7 +358,7 @@ impl Column<'_> {
             Bottom::Seepage if seeping => (s.k[n] * (h_n / half + 1.0)).max(0.0),
             Bottom::Seepage | Bottom::Closed => 0.0,
             Bottom::Head { head, limit } => {
-                let kb = 0.5 * (s.k[n] + self.table.ks);
+                let kb = 0.5 * (s.k[n] + self.tables.at(n).ks);
                 let q = kb * ((h_n - head) / half + 1.0);
                 if -q * dt > limit {
                     // A saucer gives no more than it holds: the base takes in exactly
@@ -334,13 +376,37 @@ impl Column<'_> {
         self.apply(theta, dt, q_bottom, s)
     }
 
+    /// Each interior face's conductivity from its two cells': their mean in one class;
+    /// between classes (R5c), the harmonic mean of their saturated conductivities
+    /// times the mean of their relative conductivities, so a dense layer limits what
+    /// passes it as layers in series do, while a wetting front within a class moves as
+    /// before.
+    fn face_conductivities(&self, s: &mut Scratch) {
+        let k = &s.k;
+        s.kf.clear();
+        match self.tables {
+            Tables::Uniform(_) => s.kf.extend(k.windows(2).map(|w| 0.5 * (w[0] + w[1]))),
+            tables @ Tables::PerCell { .. } => {
+                s.kf.extend((0..k.len().saturating_sub(1)).map(|f| {
+                    let (a, b) = (tables.at(f), tables.at(f + 1));
+                    if std::ptr::eq(a, b) {
+                        0.5 * (k[f] + k[f + 1])
+                    } else {
+                        let ks = 2.0 * a.ks * b.ks / (a.ks + b.ks);
+                        ks * 0.5 * (k[f] / a.ks + k[f + 1] / b.ks)
+                    }
+                }));
+            }
+        }
+    }
+
     /// The system for the interior faces from the scratch's heads, slopes and
-    /// conductivities, with no flow at the base.
+    /// face conductivities, with no flow at the base.
     fn assemble(&self, dt: f64, s: &mut Scratch) {
         let nz = s.h.len();
         let dz = self.dz;
         // Slices of one length, so the face loop needs no bounds checks.
-        let (k, sub, sup) = (&s.k[..nz], &mut s.sub[..nz], &mut s.sup[..nz]);
+        let (kfs, sub, sup) = (&s.kf[..nz - 1], &mut s.sub[..nz], &mut s.sup[..nz]);
         let (diag, rhs) = (&mut s.diag[..nz], &mut s.rhs[..nz]);
         let cells = diag.iter_mut().zip(rhs.iter_mut());
         for ((d, r), (&c, &h)) in cells.zip(s.c.iter().zip(&s.h)) {
@@ -348,8 +414,7 @@ impl Column<'_> {
             *d = storage;
             *r = storage * h;
         }
-        for f in 0..nz - 1 {
-            let kf = 0.5 * (k[f] + k[f + 1]);
+        for (f, &kf) in kfs.iter().enumerate() {
             let g = kf / dz;
             diag[f] += g;
             sup[f] = -g;
@@ -366,12 +431,12 @@ impl Column<'_> {
     fn apply(&self, theta: &mut [f64], dt: f64, q_bottom: f64, s: &mut Scratch) -> (f64, f64) {
         let n = theta.len() - 1;
         let dz = self.dz;
-        let (k, h, faces) = (&s.k[..=n], &s.rhs[..=n], &mut s.faces[..n]);
+        let (kfs, h, faces) = (&s.kf[..n], &s.rhs[..=n], &mut s.faces[..n]);
         let mut change = 0.0_f64;
         let mut above = 0.0;
         for (i, t) in theta.iter_mut().enumerate() {
             let below = if i < n {
-                let kf = 0.5 * (k[i] + k[i + 1]);
+                let kf = kfs[i];
                 let q = kf * ((h[i] - h[i + 1]) / dz + 1.0);
                 faces[i] += q * dt;
                 q
@@ -387,21 +452,21 @@ impl Column<'_> {
     }
 }
 
-/// Pushes each cell's water above `wettest` into the cell above, bottom to top, and
+/// Pushes each cell's water above its `wettest` into the cell above, bottom to top, and
 /// returns what leaves the top cell, m of water. Each push is booked on its face as
 /// upward water.
-fn back_up(theta: &mut [f64], wettest: f64, dz: f64, faces: &mut [f64]) -> f64 {
+fn back_up(theta: &mut [f64], wettest: &[f64], dz: f64, faces: &mut [f64]) -> f64 {
     for i in (1..theta.len()).rev() {
-        let excess = theta[i] - wettest;
+        let excess = theta[i] - wettest[i];
         if excess > 0.0 {
-            theta[i] = wettest;
+            theta[i] = wettest[i];
             theta[i - 1] += excess;
             faces[i - 1] -= excess * dz;
         }
     }
-    let excess = theta[0] - wettest;
+    let excess = theta[0] - wettest[0];
     if excess > 0.0 {
-        theta[0] = wettest;
+        theta[0] = wettest[0];
         excess * dz
     } else {
         0.0

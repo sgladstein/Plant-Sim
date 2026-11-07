@@ -38,7 +38,8 @@ negative below ground); organs report the pressure part `ψ_p`.
    roots (Gardner 1960), `r_b = 1 / √(π RLD)` with `RLD` this plant's root length per
    volume of the cell, at least `2r`. `K(θ) = K_s · K_rel(θ)` is Mualem's conductivity
    on the R3a curve with R5a's air entry (soil-and-water card, equation 11; decision
-   0046), so in loam at a pot's root density the soil conducts about 1,100 times what
+   0046), on each cell's own density class where the soil has structure (R5c, decision
+   0049: a dense cell conducts less and holds its water at another potential), so in loam at a pot's root density the soil conducts about 1,100 times what
    a young root does at field capacity, as much near −0.53 MPa, and a fourteenth at
    the wilting point: a root in dry soil neither takes nor loses much water. (Before
    the air entry, R3c's curve gave 240 times, −0.3 MPa and a sixtieth.) (R3b used a factor falling from 1 at the wilting point to 0
@@ -157,7 +158,7 @@ Species file constants (schema 18). Wheat takes the bean's values: no wheat sour
 | `turgor_full` (`ψ_0`) | −0.2 | MPa | R3b spec §4.4 |
 | Stomatal factor steps | 50 | per unit | decision 0044 (class-table sharing) |
 | `hydraulic_compensation` (`c`, `K_comp / K_rs`) | 1 | - | ~ Couvreur et al. 2012; the fidelity report's knob |
-| Soil `K_s` (loam, sand, clay) | 24.96, 712.8, 4.8 | cm d⁻¹ | Carsel and Parrish 1988 class means (soil code, soil-and-water card) |
+| Soil `K_s` (loam, sand, clay) | 24.96, 712.8, 4.8 | cm d⁻¹ | Carsel and Parrish 1988 class means (soil code, soil-and-water card); in a soil with structure each cell's class's (R5c) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |

@@ -176,6 +176,53 @@ pub struct NitratePatch {
     pub no3_factor: f64,
 }
 
+/// A box of soil (R5c, decision 0049): the active cells whose centers lie from
+/// `east_cm.0` to `east_cm.1` east and `north_cm.0` to `north_cm.1` north of the soil's
+/// center (its whole width where `None`), and from `depth_cm.0` to `depth_cm.1` below
+/// the surface.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SoilZone {
+    /// Soil id.
+    pub soil: u32,
+    /// West and east edge, cm east of the soil's center; the whole width if absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub east_cm: Option<(f64, f64)>,
+    /// South and north edge, cm north of the soil's center; the whole length if absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub north_cm: Option<(f64, f64)>,
+    /// Top and bottom, cm below the surface.
+    pub depth_cm: (f64, f64),
+}
+
+impl SoilZone {
+    /// Checks the edges: finite, each pair in order, depths from 0 down.
+    ///
+    /// # Errors
+    /// What is wrong, for the caller to report.
+    pub fn check(&self) -> Result<(), String> {
+        let pair = |p: (f64, f64)| p.0.is_finite() && p.1.is_finite() && p.0 < p.1;
+        let flat = [self.east_cm, self.north_cm]
+            .into_iter()
+            .flatten()
+            .all(pair);
+        if !flat || !pair(self.depth_cm) || self.depth_cm.0 < 0.0 {
+            return Err(format!("soil zone {self:?}"));
+        }
+        Ok(())
+    }
+}
+
+/// Soil of a set density from the start (R5c, decision 0049): a plough pan, a raised
+/// bed's loose soil. It keeps that density; digging loosens it, and it settles back to
+/// the texture's or to its own if looser.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DensityZone {
+    /// Where.
+    pub zone: SoilZone,
+    /// Bulk density as a share of the texture's, 0.6 to 1.4.
+    pub factor: f64,
+}
+
 /// Which genotype a sown seed has.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SeedChoice {
@@ -392,6 +439,10 @@ pub struct Scenario {
     /// Nitrate patches set at the start (R2b); none if absent.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nitrate_patches: Vec<NitratePatch>,
+    /// Soil of a set bulk density from the start (R5c): plough pans, raised beds;
+    /// none if absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub density_zones: Vec<DensityZone>,
     /// Ambient CO2, ppm.
     pub co2_ppm: f64,
     /// Seeds sown at tick 0.
@@ -623,6 +674,13 @@ impl Scenario {
                 return bad(format!("nitrate patch {p:?}"));
             }
         }
+        for d in &self.density_zones {
+            let (lo, hi) = ps_soil::structure::DENSITY_FACTOR_RANGE;
+            d.zone.check().map_err(WorldError::Scenario)?;
+            if !known(&d.zone.soil) || !(lo..=hi).contains(&d.factor) {
+                return bad(format!("density zone {d:?}"));
+            }
+        }
         if !(self.co2_ppm.is_finite() && self.co2_ppm > 0.0) {
             return bad(format!("CO2 {} ppm", self.co2_ppm));
         }
@@ -724,6 +782,13 @@ pub enum ActionKind {
         /// seed parent's.
         pollen: u32,
     },
+    /// Dig a box of soil (R5c, decision 0049): loosened to two thirds of the texture's
+    /// density, it settles back as rain and watering reach it; a pan dug through is
+    /// gone. Roots in it are left as they are.
+    Dig(SoilZone),
+    /// Trample or press a box of soil (R5c): a path, compacted to 1.15 times the
+    /// texture's density, where it stays.
+    Compact(SoilZone),
     /// Run these plants' water network at a level from the next hour (R3c, decision
     /// 0045): the viewer's zoom and speed rule writes it, so a replay is exact. An
     /// empty list sets every plant. Refused under [`Fidelity::Locked`].

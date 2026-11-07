@@ -1,7 +1,7 @@
 // Bush bean archetype (Phaseolus vulgaris, determinate type I). Design plan §3.16, §6.1.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 19,
+  schema: 20,
   id: "bush_bean",
   name: "Bush bean archetype",
   growth_form: Herb,
@@ -116,6 +116,10 @@ Species(
     hypoxia_n_uptake_factor: (value: 0.2, unit: "-", source: "~ R5b spec §4: a hypoxic root takes up little nitrogen, a guess"),
     hypoxia_fine_root_death: (value: 48.0, unit: "h", source: "~ R5b spec §4: fine roots of a flooding-sensitive legume die within about two days of hypoxia (common bean is among the most flooding-sensitive crops, Soltani et al. 2017), a guess"),
     hypoxia_root_death: (value: 120.0, unit: "h", source: "~ R5b spec §4: axes and laterals outlast fine roots, a guess"),
+    root_impedance_half: (value: 1.0, unit: "MPa", source: "~ R5c spec §5 (decision 0049): root elongation is halved at penetrometer resistances of 0.8 MPa (cotton) to 2 MPa (maize, peanut) in repacked soil without water stress (Bengough et al. 2011); bean, a dicot, set at the spec's 1 MPa"),
+    root_impedance_thickening: (value: 0.33, unit: "1/MPa", source: "wheat seminal roots 17 to 20% wider in sand at 0.75 MPa than at 0.19 MPa (Ge et al. 2019, Table 3), about 0.33 per MPa; R5c spec §5 (decision 0049); no bean data"),
+    root_impedance_max_thickening: (value: 2.0, unit: "-", source: "~ R5c spec §5 (decision 0049): impeded roots up to about twice as thick (Bengough et al. 2011 review [K, to verify])"),
+    root_impedance_branching: (value: 1.0, unit: "-", source: "~ R5c spec §5 (decision 0049): laterals form more densely behind an impeded tip (Goss 1977, barley [K, to verify]); up to twice as dense behind a stopped tip, a guess"),
     stem_density: (value: 150000.0, unit: "g/m3", source: "~"),
     root_density: (value: 94000.0, unit: "g/m3", source: "OpenSimRoot bean root tissue density 0.094 g/cm3 (research review item 16)"),
     bulk_density: (value: 300000.0, unit: "g/m3", source: "~"),

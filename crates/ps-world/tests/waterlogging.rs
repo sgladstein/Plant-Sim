@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ps_world::{Catalog, DayRow, Fidelity, Scenario, World};
+use ps_world::{ActionKind, Catalog, DayRow, Fidelity, PotDrainage, Scenario, SoilSpec, World};
 
 fn data() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data")
@@ -23,11 +23,18 @@ fn rows(name: &str) -> Vec<DayRow> {
 
 /// The plant's daily rows over the scenario, at a water-network level if given.
 fn rows_at(name: &str, fidelity: Option<Fidelity>) -> Vec<DayRow> {
+    rows_with(name, |s| {
+        if let Some(f) = fidelity {
+            s.fidelity = f;
+        }
+    })
+}
+
+/// The plant's daily rows over the scenario as `edit` leaves it.
+fn rows_with(name: &str, edit: impl FnOnce(&mut Scenario)) -> Vec<DayRow> {
     let text = std::fs::read_to_string(data().join(format!("scenarios/{name}.ron"))).unwrap();
     let mut scenario = Scenario::from_ron(&text).unwrap();
-    if let Some(f) = fidelity {
-        scenario.fidelity = f;
-    }
+    edit(&mut scenario);
     let days = u64::from(scenario.duration_days);
     let catalog = Catalog::load(&data(), &scenario).unwrap();
     let mut w = World::new(scenario, catalog).unwrap();
@@ -122,4 +129,47 @@ fn a_simplified_waterlogged_pot_wilts_like_the_detailed_one() {
         println!("day {d}: lowest leaf ψ detailed {a:.3}, simplified {b:.3} MPa");
         assert!((a - b).abs() < 0.1, "day {d}: {a} against {b}");
     }
+}
+
+/// The waterlogged pot in sand, sealed as in `m2/waterlogged_pot` and with its holes
+/// open throughout (Code review of #150). Sand drains through holes, so there the
+/// done-when's "the same plant in a pot with holes does not" holds as written: the
+/// sealed pot loses most of its fine roots and wilts, the pot with holes keeps its fine
+/// roots and its leaves. (A 24 cm loam pot stays below 10% air at its base after a soak
+/// even with holes, decision 0048.)
+#[test]
+fn in_sand_a_pot_with_holes_drains_and_keeps_its_roots() {
+    let sand = |s: &mut Scenario| {
+        if let Some(SoilSpec::Pot { texture, .. }) = s.soils.first_mut() {
+            *texture = ps_soil::Texture::Sand;
+        }
+    };
+    let sealed = rows_with("m2/waterlogged_pot", sand);
+    let holes = rows_with("m2/waterlogged_pot", |s| {
+        sand(s);
+        if let Some(SoilSpec::Pot { drainage, .. }) = s.soils.first_mut() {
+            *drainage = PotDrainage::Holes;
+        }
+        s.events
+            .retain(|e| !matches!(e.kind, ActionKind::SetDrainage { .. }));
+    });
+    let fine = |r: &[DayRow], d| day(r, d).report.fine_root_length;
+    let low = |r: &[DayRow]| {
+        (45..=49)
+            .map(|d| day(r, d).report.leaf_psi_min)
+            .fold(f64::MAX, f64::min)
+    };
+    println!(
+        "sand, fine roots day 44 → 49: sealed {:.2} → {:.2} m, holes {:.2} → {:.2} m; lowest leaf ψ {:.2} and {:.2} MPa",
+        fine(&sealed, 44),
+        fine(&sealed, 49),
+        fine(&holes, 44),
+        fine(&holes, 49),
+        low(&sealed),
+        low(&holes)
+    );
+    assert!(fine(&sealed, 49) < 0.5 * fine(&holes, 49));
+    assert!(fine(&holes, 49) > fine(&holes, 44));
+    assert!(low(&sealed) < TURGOR_LOSS);
+    assert!(low(&holes) > TURGOR_LOSS);
 }

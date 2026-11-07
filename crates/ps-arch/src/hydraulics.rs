@@ -16,7 +16,7 @@ use ps_graph::{OrganId, OrganKind};
 use ps_physio::hydraulics::{self, Edge, GRAVITY_MPA_PER_M, KG_PER_HOUR_PER_M3_PER_S, NodeTerms};
 use ps_soil::SoilGrid;
 use ps_species::RootOrigin;
-use ps_units::{KgPerHourMPa, KgWater, MPa, Meters};
+use ps_units::{DeficitHours, KgPerHourMPa, KgWater, MPa, Meters};
 use serde::{Deserialize, Serialize};
 
 use crate::Plant;
@@ -30,6 +30,21 @@ pub struct RootSpan {
     pub cell: usize,
     /// Root length in that cell (all the roots a cohort stands for).
     pub length: Meters,
+    /// The cell's oxygen deficit summed over the hours this root has been in it, since
+    /// the cell last had air: the root's own waterlogging clock (R5b's death rule,
+    /// counted from when the root reached the cell, decision 0049).
+    #[serde(default, skip_serializing_if = "unset")]
+    pub exposure: DeficitHours,
+    /// The cell's own count when [`RootSpan::exposure`] was last brought up to date.
+    #[serde(default, skip_serializing_if = "unset")]
+    pub seen: DeficitHours,
+}
+
+/// Whether a span's clock field is 0, so spans in soil that never went short of air
+/// serialize as before.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn unset(v: &DeficitHours) -> bool {
+    v.0.to_bits() == 0
 }
 
 /// What a plant's network asks of each soil cell this hour, for the soil's joint
@@ -130,11 +145,21 @@ pub fn rhizosphere_conductance(conductivity: f64, root_radius: f64, root_density
 /// center) in megapascals, and its soil conductivity `K(θ) / ρ g` (m² s⁻¹ MPa⁻¹; R3c),
 /// in the order given.
 fn cell_terms(soil: &SoilGrid, cells: impl Iterator<Item = usize>) -> Vec<(f64, f64, f64)> {
-    let retention = soil.retention();
-    let k_sat = soil.texture().hydraulics().saturated_conductivity / GRAVITY_MPA_PER_M;
+    let uniform = (!soil.has_structure()).then(|| {
+        let k_sat = soil.texture().hydraulics().saturated_conductivity / GRAVITY_MPA_PER_M;
+        (soil.retention(), k_sat)
+    });
     let edge = soil.cell_size().0;
     cells
         .map(|c| {
+            // Each cell's own curve and conductivity where densities differ (R5c).
+            let (retention, k_sat) = uniform.unwrap_or_else(|| {
+                let class = soil.class(c);
+                (
+                    class.retention,
+                    class.hydraulics.saturated_conductivity / GRAVITY_MPA_PER_M,
+                )
+            });
             let (psi, k_rel) = retention.psi_and_conductivity(soil.theta(c));
             let psi = psi.to_mpa().0;
             #[allow(clippy::cast_precision_loss)] // a layer index
@@ -147,10 +172,11 @@ fn cell_terms(soil: &SoilGrid, cells: impl Iterator<Item = usize>) -> Vec<(f64, 
 /// [`cell_terms`] without the conductivity, for the simplified level's hour (two
 /// powers a cell instead of three; the same potentials).
 fn cell_potentials(soil: &SoilGrid, cells: impl Iterator<Item = usize>) -> Vec<(f64, f64)> {
-    let retention = soil.retention();
+    let uniform = (!soil.has_structure()).then(|| soil.retention());
     let edge = soil.cell_size().0;
     cells
         .map(|c| {
+            let retention = uniform.unwrap_or_else(|| soil.retention_at(c));
             let psi = retention.psi(soil.theta(c)).to_mpa().0;
             #[allow(clippy::cast_precision_loss)] // a layer index
             let z = -(soil.cell_of(c).z as f64 + 0.5) * edge;

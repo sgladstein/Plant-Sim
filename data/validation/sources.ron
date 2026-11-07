@@ -331,6 +331,22 @@ Sources(
       cultivar: "Any bush bean",
       conditions: "Acceptance criterion inferred from waterlogging physiology, not a measurement",
     ),
+    "plan_r5c_compaction": Source(
+      citation: "Plant-Sim realism plan R5c (docs/research/realism-plan/r5-soil-extras.md section 5): a plot with a compacted layer at 15 cm shows fewer and thicker roots below it and more above it; a raised bed (loose 30 cm) grows deeper roots than flat compacted soil; digging a strip mid-run changes root growth only there.",
+      doi: None,
+      url: "https://github.com/sgladstein/Plant-Sim/blob/main/docs/research/realism-plan/r5-soil-extras.md",
+      licence: "Project document",
+      cultivar: "Any bush bean",
+      conditions: "Acceptance criterion inferred from root responses to soil strength, not a measurement",
+    ),
+    "bengough2011": Source(
+      citation: "Bengough A.G., McKenzie B.M., Hallett P.D. and Valentine T.A. (2011) Root elongation, water stress, and mechanical impedance: a review of limiting stresses and beneficial root tip traits. Journal of Experimental Botany 62(1): 59-68.",
+      doi: Some("10.1093/jxb/erq350"),
+      url: "https://doi.org/10.1093/jxb/erq350",
+      licence: "publisher (abstract read through PubMed)",
+      cultivar: "Cotton, maize, peanut and others (review)",
+      conditions: "Repacked soils without water stress: root elongation is typically halved at penetrometer resistances of 0.8 to 2 MPa; 2 MPa is often taken as a major limitation",
+    ),
     "haverroth2024": Source(
       citation: "Haverroth E.J. et al. (2024) Shoot hydraulic impairments induced by root waterlogging: parallels and contrasts with drought. Plant Physiology 197(1): kiae336.",
       doi: Some("10.1093/plphys/kiae336"),

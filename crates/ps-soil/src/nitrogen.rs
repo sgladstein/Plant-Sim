@@ -335,6 +335,7 @@ impl SoilGrid {
     /// nitrification, which needs oxygen, with what is left of it (R5b).
     pub(crate) fn transform_nitrogen(&mut self) {
         let hy = self.texture.hydraulics();
+        let uniform = self.structure.is_none();
         let v = self.cell_volume() * crate::WATER_DENSITY;
         let layer = self.nx * self.ny;
         for z in 0..self.nz {
@@ -347,8 +348,12 @@ impl SoilGrid {
                     continue;
                 }
                 let theta = self.water[i].0 / v;
-                let f =
-                    ft * water_factor(theta, hy.wilting_point, hy.field_capacity, hy.saturation);
+                let sat = if uniform {
+                    hy.saturation
+                } else {
+                    self.class(i).hydraulics.saturation
+                };
+                let f = ft * water_factor(theta, hy.wilting_point, hy.field_capacity, sat);
                 let m = self.organic_n[i] * (MINERALIZATION_RATE * f / 24.0);
                 self.organic_n[i] -= m;
                 self.nh4[i] += m;

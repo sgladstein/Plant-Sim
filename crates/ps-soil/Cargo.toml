@@ -16,6 +16,7 @@ rayon.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+ron.workspace = true
 
 [lints]
 workspace = true

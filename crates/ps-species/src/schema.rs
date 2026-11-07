@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 19;
+pub const SCHEMA: u32 = 20;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -286,6 +286,16 @@ param_group!(
         hypoxia_fine_root_death: "h",
         /// Hours short of air after which an axis segment or lateral dies (R5b).
         hypoxia_root_death: "h",
+        /// Penetration resistance at which a root tip in unimpeded soil would elongate
+        /// at half its rate (R5c, decision 0049; schema 20); 0 for no response.
+        root_impedance_half: "MPa",
+        /// Widening of a root formed in soil harder than its texture's own, per `MPa` of
+        /// the difference (R5c).
+        root_impedance_thickening: "1/MPa",
+        /// Most a root widens in hard soil, a factor on its diameter (R5c).
+        root_impedance_max_thickening: "-",
+        /// Extra lateral density behind a slowed tip, per unit of the slowing (R5c).
+        root_impedance_branching: "-",
         /// Stem tissue density.
         stem_density: "g/m3",
         /// Root tissue density.

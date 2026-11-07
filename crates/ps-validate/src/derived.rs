@@ -27,6 +27,7 @@
 //! | `mean_internode_cm` | mean length of living stem internodes at the end, cm |
 //! | `root_length_west_east_ratio` | root length west of the soil's center / east of it, at the end (R2b split pot) |
 //! | `root_length_patch_m` | lateral and fine-root length in the soil's first nitrate patch at the end, m (R2b) |
+//! | `root_length_above_<D>cm_m`, `root_length_below_<D>cm_m` | root length in the cells whose centers lie above `D` cm deep, or at or below it, at the end, m (R5c) |
 //! | `day_of_<Stage>` or `day_of(<Stage>)` | first day at or past the stage, days after sowing |
 
 use ps_arch::Role;
@@ -255,10 +256,24 @@ pub fn mean_internode_cm(state: &WorldState, plant: u32) -> Result<f64, String> 
     ratio(lengths.iter().sum(), n, "the stem internode count")
 }
 
+/// A root-depth variable's depth and side: `root_length_above_<D>cm_m` gives
+/// `(D cm in m, true)`, `root_length_below_<D>cm_m` `(D cm in m, false)` (R5c).
+#[must_use]
+pub fn root_depth_split(variable: &str) -> Option<(f64, bool)> {
+    let (rest, above) = if let Some(r) = variable.strip_prefix("root_length_above_") {
+        (r, true)
+    } else {
+        (variable.strip_prefix("root_length_below_")?, false)
+    };
+    let cm: f64 = rest.strip_suffix("cm_m")?.parse().ok()?;
+    Some((0.01 * cm, above))
+}
+
 /// Where `plant`'s roots are at the end (R2b): `root_length_west_east_ratio`, the root
 /// length in the columns west of its soil's center over that east of it (a split pot's
-/// watered half over its dry half), or `root_length_patch_m`, the lateral and fine-root
-/// length in the cells of its soil's first nitrate patch, m.
+/// watered half over its dry half), `root_length_patch_m`, the lateral and fine-root
+/// length in the cells of its soil's first nitrate patch, m, or the root length above
+/// or below a depth ([`root_depth_split`], R5c), m.
 ///
 /// # Errors
 /// If the plant is missing, its soil has no patch, or the east half has no roots.
@@ -289,6 +304,16 @@ pub fn root_length_where(state: &WorldState, plant: u32, variable: &str) -> Resu
             .cells()
             .iter()
             .filter(|(i, _)| inside.binary_search(i).is_ok())
+            .map(|(_, l)| l.0)
+            .sum());
+    }
+    if let Some((depth, above)) = root_depth_split(variable) {
+        let dz = grid.cell_size().0;
+        #[allow(clippy::cast_precision_loss)] // layer counts are small
+        let shallow = |i: usize| (grid.cell_of(i).z as f64 + 0.5) * dz < depth;
+        return Ok(cells
+            .iter()
+            .filter(|&&(i, _)| shallow(i) == above)
             .map(|(_, l)| l.0)
             .sum());
     }

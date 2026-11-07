@@ -375,15 +375,27 @@ quantity!(
     "kg/m/h"
 );
 quantity!(
-    /// Water potential in megapascals (negative under suction; R3b).
+    /// Pressure in megapascals: a water potential (negative under suction; R3b) or a
+    /// soil's penetration resistance (R5c).
     MPa,
     "MPa"
+);
+quantity!(
+    /// Dry bulk density of soil, kg per m³ (R5c).
+    KgPerM3,
+    "kg/m3"
 );
 quantity!(
     /// Hydraulic conductance, kg of water per hour per megapascal of water potential
     /// difference (R3b).
     KgPerHourMPa,
     "kg/h/MPa"
+);
+quantity!(
+    /// A soil cell's oxygen deficit (0 to 1) summed over hours, full-deficit hours: the
+    /// waterlogging clock roots die by (R5b, decision 0048).
+    DeficitHours,
+    "h"
 );
 quantity!(
     /// Angle in degrees.

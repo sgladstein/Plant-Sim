@@ -786,7 +786,9 @@ impl Species {
     /// Root plasticity (R2b, decision 0043): the water thresholds, floor and
     /// hydrotropism weight are shares, 0 to 1; the proliferation weights 0 to 5; the
     /// hydropatterning flag 0 or 1. Waterlogging (R5b, decision 0048): the two hypoxic
-    /// factors are shares, the death times 0 to a million hours.
+    /// factors are shares, the death times 0 to a million hours. Impedance (R5c,
+    /// decision 0049): the half-rate resistance 0 to 100 `MPa`, the widening 0 to 10 per
+    /// `MPa`, the most widening 0 to 5 (below 1 reads as 1), the branching 0 to 5.
     fn validate_root_plasticity(&self) -> Result<(), SpeciesError> {
         let c = &self.constants;
         for (key, v, max) in [
@@ -820,6 +822,22 @@ impl Species {
                 1e6,
             ),
             ("hypoxia_root_death", c.hypoxia_root_death.value, 1e6),
+            ("root_impedance_half", c.root_impedance_half.value, 100.0),
+            (
+                "root_impedance_thickening",
+                c.root_impedance_thickening.value,
+                10.0,
+            ),
+            (
+                "root_impedance_max_thickening",
+                c.root_impedance_max_thickening.value,
+                5.0,
+            ),
+            (
+                "root_impedance_branching",
+                c.root_impedance_branching.value,
+                5.0,
+            ),
         ] {
             // NaN fails too.
             if !(v >= 0.0 && v <= max) {
