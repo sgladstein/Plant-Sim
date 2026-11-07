@@ -100,7 +100,9 @@ decision 0041; schema 16: the root plasticity constants `root_dry_full`,
 (above 0, at most 1), `leaf_hydraulic_conductance`, `tuzet_sensitivity`,
 `tuzet_reference` (negative), `turgor_loss_point` and `turgor_full` (loss point below
 full, full at most 0), all positive where not said otherwise, replacing
-`ftsw_threshold`, `root_uptake_rate` and `root_uptake_max`, decision 0044);
+`ftsw_threshold`, `root_uptake_rate` and `root_uptake_max`, decision 0044); schema
+18: `hydraulic_compensation` (at least 0; the simplified water network's `K_comp` over
+`K_rs`, decision 0045);
 the expected units are in `crates/ps-species/src/schema.rs`. The loader rejects a wrong
 unit, an empty source, an unknown or missing key, a non-finite value, and a default
 outside its bounds.

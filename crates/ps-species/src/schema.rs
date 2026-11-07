@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 17;
+pub const SCHEMA: u32 = 18;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -274,6 +274,9 @@ param_group!(
         turgor_loss_point: "MPa",
         /// Water potential at full turgor for expansion (R3b).
         turgor_full: "MPa",
+        /// Couvreur's compensation conductance over the root system's, `K_comp / K_rs`,
+        /// for the simplified water level (R3c, decision 0045; schema 18).
+        hydraulic_compensation: "-",
         /// Stem tissue density.
         stem_density: "g/m3",
         /// Root tissue density.

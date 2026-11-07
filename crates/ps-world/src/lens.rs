@@ -59,6 +59,12 @@ pub struct PlantLens {
     /// The root zone's soil water potential, weighted by each root cell's radial
     /// conductance (R3b).
     pub root_zone_potential: MPa,
+    /// The plant's water-network level this hour (R3c): at the simplified level the
+    /// organ potentials are the day summary's estimates.
+    pub hydraulics_level: ps_arch::HydraulicsLevel,
+    /// Each soil layer's share of the plant's uptake in evenly wet soil, top first
+    /// (the day's standard uptake fractions; R3c).
+    pub uptake_by_layer: Vec<f64>,
 }
 
 /// One soil's lens values after the hour.

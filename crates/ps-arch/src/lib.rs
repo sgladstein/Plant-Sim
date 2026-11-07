@@ -45,7 +45,10 @@ use serde::{Deserialize, Serialize};
 
 pub use geometry::V3;
 pub use grass::GrassParams;
-pub use hydraulics::{RootSpan, STOMATAL_STEPS, WaterFlows, rhizosphere_factor, stomatal_step};
+pub use hydraulics::{
+    HydraulicsLevel, RootSpan, STOMATAL_STEPS, WaterFlows, WaterSummary, rhizosphere_conductance,
+    stomatal_step,
+};
 pub use nitrogen::{NitrogenDay, NitrogenParams, PlantNitrogen};
 pub use params::{HerbParams, RootParams, ShadeSignal, VariationParams, scatter};
 pub use vine::{Climb, ClimbingParams, Support, Twine};
@@ -587,6 +590,14 @@ pub struct DayReport {
     /// (R3b). How much water stress the plant carries through the night.
     #[serde(default = "one")]
     pub leaf_turgor_predawn: f64,
+    /// The root system's conductance from the soil to the collar, `K_rs`, kg h⁻¹
+    /// MPa⁻¹, from the day's water summary (R3c); 0 before roots link to the soil.
+    #[serde(default)]
+    pub root_conductance: f64,
+    /// Mean depth the roots take water from in evenly wet soil, m (the water summary's
+    /// uptake fractions; R3c).
+    #[serde(default)]
+    pub uptake_depth: f64,
 }
 
 /// What sets one plant apart from its siblings at sowing (decision 0027): the seed it
@@ -707,6 +718,13 @@ pub struct Plant {
     /// read it. Empty before the first solve.
     #[serde(default)]
     pub water_potential: Vec<ps_units::MPa>,
+    /// Which form of the water network the plant runs (R3c, decision 0045).
+    #[serde(default)]
+    pub hydraulics_level: HydraulicsLevel,
+    /// The day's summary of the water network, rebuilt with [`Plant::root_spans`] at
+    /// both levels: the simplified level's hourly uptake reads it (R3c).
+    #[serde(default)]
+    pub water_summary: WaterSummary,
     /// Organ base and tip positions, rebuilt daily.
     pub positions: Vec<(V3, V3)>,
     /// Hours the seed has spent moist and warm enough to germinate.
@@ -1013,6 +1031,8 @@ impl Plant {
             roots: RootCells::default(),
             root_spans: Vec::new(),
             water_potential: Vec::new(),
+            hydraulics_level: HydraulicsLevel::Detailed,
+            water_summary: WaterSummary::default(),
             positions: Vec::new(),
             germination_hours: 0,
             day: 0,
@@ -1568,6 +1588,7 @@ impl Plant {
         self.positions = geometry::layout(&self.arena, &self.meta, self.collar_position);
         self.roots = geometry::root_cells(&self.arena, &self.positions, soil);
         self.root_spans = geometry::root_spans(&self.arena, &self.positions, soil);
+        self.water_summary = self.summarize_water(soil);
         self.set_root_clock(soil);
         Ok(())
     }
@@ -2090,6 +2111,8 @@ impl Plant {
             soil_psi_predawn: self.today.soil_psi_predawn.unwrap_or(0.0),
             leaf_psi_min: self.today.leaf_psi_min,
             leaf_turgor_predawn: self.today.turgor_predawn.unwrap_or(1.0),
+            root_conductance: self.water_summary.k_rs,
+            uptake_depth: self.water_summary.depth,
         }
     }
 }

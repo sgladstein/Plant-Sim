@@ -884,6 +884,13 @@ impl Species {
         if f.is_nan() || f >= 0.0 {
             return Err(fail("tuzet_reference", format!("{f} must be negative")));
         }
+        let k = c.hydraulic_compensation.value;
+        if !(k >= 0.0 && k.is_finite()) {
+            return Err(fail(
+                "hydraulic_compensation",
+                format!("{k} must be finite and not negative"),
+            ));
+        }
         Ok(())
     }
 

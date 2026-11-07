@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use ps_world::{DayRow, WorldState};
 
 /// Columns of [`daily_csv`], in order.
-pub const DAILY_COLUMNS: [&str; 54] = [
+pub const DAILY_COLUMNS: [&str; 56] = [
     "day",
     "plant",
     "soil",
@@ -63,6 +63,8 @@ pub const DAILY_COLUMNS: [&str; 54] = [
     "soil_psi_predawn_mpa",
     "leaf_psi_min_mpa",
     "leaf_turgor_predawn",
+    "root_conductance_kg_h_mpa",
+    "uptake_depth_m",
 ];
 
 /// Columns of [`organs_csv`], in order.
@@ -115,7 +117,7 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
     // Writing to a String cannot fail.
     let _ = writeln!(
         out,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         row.day,
         row.plant,
         soil_id(state, row.plant),
@@ -170,6 +172,8 @@ fn daily_row(out: &mut String, state: &WorldState, row: &DayRow) {
         r.soil_psi_predawn,
         r.leaf_psi_min,
         r.leaf_turgor_predawn,
+        r.root_conductance,
+        r.uptake_depth,
     );
 }
 
@@ -304,6 +308,8 @@ pub fn daily_number(state: &WorldState, row: &DayRow, column: &str) -> Option<f6
         "soil_psi_predawn_mpa" => r.soil_psi_predawn,
         "leaf_psi_min_mpa" => r.leaf_psi_min,
         "leaf_turgor_predawn" => r.leaf_turgor_predawn,
+        "root_conductance_kg_h_mpa" => r.root_conductance,
+        "uptake_depth_m" => r.uptake_depth,
         _ => return None,
     })
 }

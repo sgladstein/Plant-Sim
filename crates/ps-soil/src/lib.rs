@@ -91,12 +91,16 @@ pub struct Hydraulics {
     pub air_dry: f64,
     /// Dry bulk density, kg m⁻³ (for nitrogen concentrations; WP24).
     pub bulk_density: f64,
+    /// Saturated hydraulic conductivity `K_s`, m s⁻¹: the scale of the soil's
+    /// conductance around a root (R3c, decision 0045).
+    pub saturated_conductivity: f64,
 }
 
 impl Texture {
     /// Hydraulic constants. Field capacity and wilting point from design plan §3.6;
     /// saturation, air-dry and bulk density are "~" (typical textbook values, Saxton and
-    /// Rawls 2006 ranges).
+    /// Rawls 2006 ranges); saturated conductivity is Carsel and Parrish's (1988) class
+    /// mean (loam 24.96, sand 712.8, clay 4.8 cm d⁻¹).
     #[must_use]
     pub const fn hydraulics(self) -> Hydraulics {
         match self {
@@ -106,6 +110,7 @@ impl Texture {
                 wilting_point: 0.12,
                 air_dry: 0.05,
                 bulk_density: 1300.0,
+                saturated_conductivity: 24.96 / 100.0 / 86_400.0,
             },
             Texture::Sand => Hydraulics {
                 saturation: 0.40,
@@ -113,6 +118,7 @@ impl Texture {
                 wilting_point: 0.05,
                 air_dry: 0.02,
                 bulk_density: 1550.0,
+                saturated_conductivity: 712.8 / 100.0 / 86_400.0,
             },
             Texture::Clay => Hydraulics {
                 saturation: 0.50,
@@ -120,6 +126,7 @@ impl Texture {
                 wilting_point: 0.22,
                 air_dry: 0.10,
                 bulk_density: 1250.0,
+                saturated_conductivity: 4.8 / 100.0 / 86_400.0,
             },
         }
     }

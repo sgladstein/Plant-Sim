@@ -23,14 +23,16 @@ use serde::{Deserialize, Serialize};
 
 pub use hash::hash_of;
 pub use lens::{LensData, PlantLens, SoilLens};
+pub use ps_arch::HydraulicsLevel;
 pub use scenario::{
-    Action, ActionKind, FieldVariation, Irrigation, NitratePatch, ObstacleSpec, SCENARIO_SCHEMA,
-    Scenario, SeedChoice, SoilSpec, Sowing, Start, SupportSpec, WeatherSource,
+    Action, ActionKind, Fidelity, FieldVariation, Irrigation, MAX_DETAILED, NitratePatch,
+    ObstacleSpec, SCENARIO_SCHEMA, Scenario, SeedChoice, SoilSpec, Sowing, Start, SupportSpec,
+    WeatherSource,
 };
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.25.0";
+pub const MODEL_VERSION: &str = "0.26.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -642,6 +644,8 @@ fn grow_soil(
                         organ_turgor: e.plant.organ_turgor(),
                         leaf_turgor: e.plant.leaf_water_status().map_or(1.0, |s| s.1),
                         root_zone_potential: e.plant.root_zone_potential(),
+                        hydraulics_level: e.plant.hydraulics_level,
+                        uptake_by_layer: e.plant.water_summary.layers.clone(),
                         ..PlantLens::default()
                     };
                     (h, l)
@@ -1016,6 +1020,18 @@ impl World {
                     return err(why);
                 }
             }
+            ActionKind::SetFidelity { plants, .. } => {
+                if let Fidelity::Locked(level) = self.state.scenario.fidelity {
+                    return err(format!("the water network is locked at {level:?} here"));
+                }
+                if now
+                    && let Some(p) = plants
+                        .iter()
+                        .find(|&&p| p as usize >= self.state.plants.len())
+                {
+                    return err(format!("unknown plant {p}"));
+                }
+            }
             ActionKind::PlaceObstacle(o) => {
                 if !soil_known(o.soil) {
                     return err(format!("unknown soil {}", o.soil));
@@ -1231,6 +1247,7 @@ impl World {
             Hours(tick),
         )?;
         let st = &self.state;
+        plant.hydraulics_level = st.scenario.fidelity.level(st.scenario.sowings.len());
         plant.supports = supports;
         plant.obstacles = st
             .scenario
@@ -1248,6 +1265,24 @@ impl World {
             seed_id,
             plant,
         });
+        Ok(())
+    }
+
+    /// Sets the water network's level of the listed plants, or of every plant for an
+    /// empty list (R3c); refused under a locked scenario.
+    fn set_fidelity(&mut self, plants: &[u32], level: HydraulicsLevel) -> Result<(), String> {
+        if let Fidelity::Locked(locked) = self.state.scenario.fidelity {
+            return Err(format!("the water network is locked at {locked:?} here"));
+        }
+        let n = self.state.plants.len();
+        if let Some(p) = plants.iter().find(|&&p| p as usize >= n) {
+            return Err(format!("unknown plant {p}"));
+        }
+        for p in &mut self.state.plants {
+            if plants.is_empty() || plants.contains(&p.id) {
+                p.plant.hydraulics_level = level;
+            }
+        }
         Ok(())
     }
 
@@ -1466,6 +1501,9 @@ impl World {
                     p.plant.supports.push(frame);
                 }
                 self.state.added_supports.push(sp);
+            }
+            ActionKind::SetFidelity { plants, level } => {
+                self.set_fidelity(&plants, level).map_err(err)?;
             }
         }
         Ok(())

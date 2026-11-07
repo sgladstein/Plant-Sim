@@ -117,7 +117,28 @@ impl Retention {
         if s >= 1.0 {
             return KPa(0.0);
         }
-        let excess = libm::pow(s, -self.n / (self.n - 1.0)) - 1.0;
+        self.psi_of(libm::pow(s, self.n / (self.n - 1.0)))
+    }
+
+    /// Water potential and Mualem's relative hydraulic conductivity at a volumetric
+    /// water content (R3c): `K / K_s = S^½ [1 − (1 − S^(1/m))^m]²` with `S = θ / θ_s`
+    /// (`θ_r = 0`), 1 at saturation. The potential is [`Retention::psi`]'s; the two share
+    /// `S^(1/m)`, so the pair costs three powers.
+    #[must_use]
+    pub fn psi_and_conductivity(&self, theta: f64) -> (KPa, f64) {
+        let s = (theta / self.saturation).clamp(MIN_RELATIVE_SATURATION, 1.0);
+        if s >= 1.0 {
+            return (KPa(0.0), 1.0);
+        }
+        let m = 1.0 - 1.0 / self.n;
+        let s_1m = libm::pow(s, self.n / (self.n - 1.0));
+        let shell = 1.0 - libm::pow(1.0 - s_1m, m);
+        (self.psi_of(s_1m), libm::sqrt(s) * shell * shell)
+    }
+
+    /// The potential at `S^(1/m)` for a relative saturation below 1.
+    fn psi_of(&self, s_1m: f64) -> KPa {
+        let excess = 1.0 / s_1m - 1.0;
         KPa(-self.suction_scale.0 * libm::pow(excess, 1.0 / self.n))
     }
 }
@@ -195,6 +216,36 @@ mod tests {
             for psi in [-0.5, -10.0, -33.0, -100.0, -1500.0, -1e4, -5e4] {
                 let back = r.psi(r.theta(KPa(psi))).0;
                 assert!(rel(back, psi) < 1e-9, "{t:?} {psi} came back {back}");
+            }
+        }
+    }
+
+    #[test]
+    fn conductivity_falls_steeply_and_shares_the_potential() {
+        // Mualem with the anchored curves: about 8e-5 of saturated at field capacity
+        // and 5e-9 at the wilting point in loam.
+        for (t, fc, wp) in [
+            (Texture::Loam, 7.9e-5, 5.3e-9),
+            (Texture::Sand, 4.9e-6, 1.5e-10),
+            (Texture::Clay, 9.4e-4, 1.24e-7),
+        ] {
+            let h = t.hydraulics();
+            let r = t.retention();
+            assert_eq!(r.psi_and_conductivity(h.saturation), (KPa(0.0), 1.0));
+            let (_, k_fc) = r.psi_and_conductivity(h.field_capacity);
+            let (_, k_wp) = r.psi_and_conductivity(h.wilting_point);
+            assert!(rel(k_fc, fc) < 0.02, "{t:?} field capacity {k_fc}");
+            assert!(rel(k_wp, wp) < 0.03, "{t:?} wilting point {k_wp}");
+            let mut last = 1.0;
+            for k in 1..=1000 {
+                let theta = h.saturation * (1.0 - f64::from(k) / 1000.0);
+                let (psi, kr) = r.psi_and_conductivity(theta);
+                assert_eq!(psi, r.psi(theta), "{t:?} at {theta}");
+                assert!(
+                    (kr < last || kr == 0.0) && kr >= 0.0,
+                    "{t:?} at {theta}: {kr}"
+                );
+                last = kr;
             }
         }
     }

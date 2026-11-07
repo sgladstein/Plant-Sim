@@ -10,8 +10,10 @@ night, and falling through the day as the leaves draw harder than the roots and 
 pass water on. When a leaf's potential falls far enough its stomata close, and its cells
 lose turgor: the leaf wilts and stops growing until water comes back. Roots in wet soil
 can feed the whole plant while the rest of the pot dries, and at night roots carry a
-little water from wet soil into dry soil (hydraulic redistribution). Realism plan R3b,
-decision 0044.
+little water from wet soil into dry soil (hydraulic redistribution). Dry soil itself
+conducts poorly, so a root in it can neither drink nor lose much. Realism plan R3b,
+decision 0044. In a big plot or at fast play each plant uses a cheaper summary of its
+network, made once a day, that gives about the same harvest (R3c, decision 0045).
 
 ## Equations
 The organs are the nodes of a tree; the organ tree's parent links are its axial edges.
@@ -20,12 +22,22 @@ Water potential `ψ` is in MPa. In the solve each node holds its total potential
 negative below ground); organs report the pressure part `ψ_p`.
 
 1. **Radial links.** Each root organ links to every soil cell it runs through (its spans,
-   built with the root cells each day, half-cell sampling as the root cells):
-   `k_r = Lp_r · 2π r L · f_dry(θ)` (kg h⁻¹ MPa⁻¹ after × 3.6e6), `r` the organ's radius
-   (m), `L` its length in the cell (all the roots a cohort stands for, m). `Lp_r`
-   falls linearly from the young to the thickened value with the organ's secondary
-   share of its structure. `f_dry = clamp((θ − θ_ad) / (θ_wp − θ_ad), 0, 1)`: the soil
-   next to the root stops conducting as it dries from the wilting point to air-dry.
+   built with the root cells each day, half-cell sampling as the root cells). The
+   link is the root's own radial conductance in series with the soil's around it
+   (R3c, decision 0045), per metre of root
+   `k_root = Lp_r · 2π r` and `k_soil = 2π K(θ) / (ρ g ln(r_b / r))` (m² s⁻¹ MPa⁻¹),
+   so `k_r = L · k_root k_soil / (k_root + k_soil)` (kg h⁻¹ MPa⁻¹ after × 3.6e6), `r`
+   the organ's radius (m), `L` its length in the cell (all the roots a cohort stands
+   for, m). `Lp_r` falls linearly from the young to the thickened value with the
+   organ's secondary share of its structure. The soil term is steady radial flow
+   through a cylinder of soil from the root's surface to half the distance between
+   roots (Gardner 1960), `r_b = 1 / √(π RLD)` with `RLD` this plant's root length per
+   volume of the cell, at least `2r`. `K(θ) = K_s · K_rel(θ)` is Mualem's conductivity
+   on the R3a curve (soil-and-water card), so in loam at a pot's root density the soil
+   conducts about 240 times what a young root does at field capacity, as much near
+   −0.3 MPa, and a sixtieth at the wilting point: a root in dry soil neither takes
+   nor loses much water. (R3b used a factor falling from 1 at the wilting point to 0
+   at air-dry instead; code review showed it left dry soil conducting as if wet.)
    Each soil cell is a fixed total potential for the hour, its R3a matric potential
    plus gravity at the cell's center.
 2. **Axial edges** (parent to child, the child's conductance, kg h⁻¹ MPa⁻¹):
@@ -84,8 +96,38 @@ negative below ground); organs report the pressure part `ψ_p`.
     thickening is the leaves' mean turgor at 04:00 to 05:00 (predawn): stems and roots
     thicken mostly at night, when their tissues rehydrate.
 
+### The simplified level (R3c, decision 0045)
+Each plant runs one of two levels, part of its state: **detailed** (equations 1 to 7
+every hour) or **simplified** (below). Every validation scenario and the viewer's
+plants in focus run detailed; plots of more than eight plants and fast play run
+simplified (world-and-schedule card). Both levels share equations 3 and 5 to 11.
+
+12. **Daily summary** (Couvreur et al. 2012), built at both levels with the root cells
+    each day: the network of equations 1 and 2 solved once with every root cell at the
+    same total potential (0) and 1 kg h⁻¹ of transpiration shared by leaf area (drawn
+    at the collar before there are leaves). It gives the root system's conductance
+    `K_rs = 1 / (−ψ_collar)` (the collar: the tap root's parent node), each root cell's
+    standard uptake fraction `SUF_c = q_c / Σ q` (they sum to 1), and each organ's drop
+    below the root zone per unit transpiration, `D_i = −ψ_i`.
+13. **Hourly uptake.** The root zone's effective potential is
+    `ψ_seq = Σ_c SUF_c ψ_c` (total potentials), and each cell gives
+    `U_c = E · SUF_c + K_comp · SUF_c · (ψ_c − ψ_seq)` with `E` the plant's
+    transpiration and `K_comp = c · K_rs` (`c` = `hydraulic_compensation`, 1): uptake
+    follows the roots where the soil is evenly wet and shifts toward wetter cells as
+    it dries. `Σ U_c = E`, so the joint uptake (equation 5) and the ledger are the
+    detailed level's.
+14. **Hourly potentials.** Every organ is at `ψ_seq − D_i · E`, a leaf at its parent's
+    `ψ_seq − D_parent · E − E_i / (K_leaf A_i)` (its own transpiration over its own
+    conductance), all less gravity. An organ born since the summary takes its
+    parent's drop. The root zone's potential is `Σ SUF_c ψ_c` (matric).
+15. **Switching.** A `SetFidelity` action (written by the viewer, or a scenario event)
+    sets the level of some or all plants from the next hour. Neither level stores water
+    in the plant and the summary is rebuilt every day at both, so nothing converts and
+    the water ledger holds across the switch. A replay with the same actions gives the
+    same hash.
+
 ## Parameters
-Species file constants (schema 17). Wheat takes the bean's values: no wheat source yet.
+Species file constants (schema 18). Wheat takes the bean's values: no wheat source yet.
 
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
@@ -103,6 +145,8 @@ Species file constants (schema 17). Wheat takes the bean's values: no wheat sour
 | `turgor_loss_point` (`ψ_tlp`) | −0.9 | MPa | Zlatev and Stoyanov 2005, well watered, −0.6 to −1.3; Haverroth 2025 −0.83 |
 | `turgor_full` (`ψ_0`) | −0.2 | MPa | R3b spec §4.4 |
 | Stomatal factor steps | 50 | per unit | decision 0044 (class-table sharing) |
+| `hydraulic_compensation` (`c`, `K_comp / K_rs`) | 1 | - | ~ Couvreur et al. 2012; the fidelity report's knob |
+| Soil `K_s` (loam, sand, clay) | 24.96, 712.8, 4.8 | cm d⁻¹ | Carsel and Parrish 1988 class means (soil code, soil-and-water card) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -116,6 +160,7 @@ Species file constants (schema 17). Wheat takes the bean's values: no wheat sour
 | out | stomatal factor | - | gas exchange (next hour) |
 | out | organ turgor, the leaves' mean turgor | - | expansion clock, thickening; lens (wilting) |
 | out | root-zone potential; predawn leaf and soil potential, daily low leaf potential | MPa | lens, daily CSV |
+| out | `K_rs`, mean depth of uptake (daily); uptake share by layer, level (lens) | kg h⁻¹ MPa⁻¹, m, -, - | daily CSV (`root_conductance_kg_h_mpa`, `uptake_depth_m`), lens |
 
 ## Encoded or emergent
 Encoded: the conductances, the Tuzet and turgor curves, the one-hour lag, stored growth.
@@ -129,23 +174,32 @@ stomata closing through a drought before the soil reaches its wilting point.
 - No water storage in the plant (no capacitance): potentials follow transpiration
   within the hour, with no buffering by stem or leaf water.
 - No cavitation or xylem vulnerability: `K_leaf` and `K_x` don't fall as the potential
-  drops, so a very dry plant follows the soil down (to several MPa in an air-dry pot)
-  instead of disconnecting.
+  drops, so a very dry plant follows the soil down instead of disconnecting: in the
+  drought pot leaves reach about −34 MPa (the soil itself goes to −88 MPa air-dry in
+  loam). No leaf dies from drying out; a leaf at zero turgor keeps its organs and
+  recovers fully once watered (on the to-do list: death after some hours below a
+  lethal potential, or hydraulic failure).
 - No stomatal memory after severe stress: real bean stomata take up to 8 days to reopen
   after −1.6 to −2.5 MPa (Trujillo 2013); here they reopen in the hour the potential
   recovers.
-- Radial conductance is the same in both directions (no rectification), and the soil
-  around a root conducts in full down to the wilting point (no soil conductance in
-  series with the root's), so roots in dry soil leak water at the rate they would take
-  it up: in the split pot about 18% of what the roots take goes back into drier soil at
-  night. Real roots pass water outward less readily and dry soil conducts far less than
-  a root, so this is on the high side (R3c's first change).
+- Radial conductance is the same in both directions (no rectification): roots pass
+  water into drier soil as readily as they take it up, limited only by the dry soil's
+  own conductance (equation 1). In the split pot about 10% of what the roots take
+  (0.337 of 3.259 kg) goes back into drier soil at night (18% at 0.25.0, before the
+  soil term).
+- The soil term reads each cell's mean water content; the soil right at a root dries
+  first, so a real rhizosphere limits sooner. Mucilage and root hairs, which keep it
+  wetter, are not modelled either.
+- The soil cylinder's half spacing reads only this plant's root density in the cell
+  (it keeps plants independent within the hour). Where two plants' roots share a cell
+  the true spacing is smaller and the soil conducts more per metre of root; the
+  dependence is logarithmic (doubling the density changes it by about 10%).
 - The split pot's wet-to-dry root ratio fell from 1.50 to 1.25 at 0.25.0, and not
-  through redistribution: in a review test a soil conductance in series cut the water
-  given to the dry half by 58% and left the ratio at 1.25. The likelier cause is
-  compensation: as the dry half's potential falls, uptake moves to the wet half, so the
-  dry half dries more slowly than under the old split by root length, and R2b's
-  dry-soil rules, which read relative available water, act less.
+  through redistribution: the soil term cut the water given to the dry half and left
+  the ratio at 1.25. The likelier cause is compensation: as the dry half's potential
+  falls, uptake moves to the wet half, so the dry half dries more slowly than under
+  the old split by root length, and R2b's dry-soil rules, which read relative
+  available water, act less.
 - Drought delays expansion but never cuts an organ's final size through turgor: the
   expansion clock runs at the turgor, so a leaf held at turgor 0 for days still reaches
   its full size once watered. Drought cuts size only through carbon and nitrogen.
@@ -156,8 +210,10 @@ stomata closing through a drought before the soil reaches its wilting point.
   stem takes about 0.18 MPa at noon, against 0.5 in its roots and up to 0.5 in a
   leaf. `K_s` is not tuned.
 - Wheat's values are the bean's.
-- The cost is a network solve per plant per hour; R3c's simplified level is the
-  answer for large plots and fast-forward.
+- The detailed level costs a network solve per plant per hour. The simplified level's
+  summary lags up to a day: roots grown and cells dried since the day's rebuild are
+  seen the next day; its compensation `K_comp = K_rs` is Couvreur's default, untuned
+  (the fidelity report passes without tuning).
 
 ## Validation
 - `ps_physio::hydraulics::tests`: `tuzet_is_one_at_zero_and_half_near_the_reference`,
@@ -165,7 +221,16 @@ stomata closing through a drought before the soil reaches its wilting point.
   `two_nodes_match_the_series_resistances`, `flows_balance_and_dry_soil_takes_water_back`
   (redistribution), `no_flow_means_soil_potential_everywhere`,
   `a_tree_without_roots_has_no_solution`.
-- `ps_arch::tests::rhizosphere_and_stomatal_steps`.
+- `ps_arch::tests::rhizosphere_and_stomatal_steps` (the soil term against a young
+  root: more than 100 times at field capacity, 0.5 to 2 times at −0.3 MPa, 0.005 to
+  0.05 at the wilting point), `ps_soil::retention::tests::conductivity_falls_steeply_and_shares_the_potential`.
+- `ps-world/tests/fidelity.rs`: `Auto` runs a pot detailed and the 30-bean plot
+  simplified; a simplified pot is within 10% of the detailed one's mass at day 30 with
+  its ledger closing; `SetFidelity` switches are logged and replay to the same hash; a
+  locked scenario and an unknown plant refuse them. `ps_game` tests: a switch is no rule
+  break, and a challenge's lock reaches its scenario.
+- `ps-cli fidelity` (CI): the two levels' outcomes on six scenarios and a switch run
+  (decision 0045), and `validate --fidelity simplified`.
 - `ps-arch/tests/hydraulics.rs` (bush bean, 24 cm loam pot, watered nightly):
   `leaf_water_potential_follows_the_day`: on the brightest third of days 35 to 60,
   predawn leaf potential within 0.2 MPa of the root zone's and the daily low between

@@ -142,6 +142,13 @@ fn every_challenge_pins_this_model() {
             ps_world::MODEL_VERSION,
             "{id}: re-pin and re-sweep the medals (docs/game/challenges.md)"
         );
+        // R3c (decision 0045): the score must not depend on how the player watched, so
+        // the viewer's level switches are refused.
+        assert_eq!(
+            sc.fidelity,
+            ps_world::Fidelity::Locked(ps_world::HydraulicsLevel::Detailed),
+            "{id}"
+        );
     }
 }
 

@@ -177,6 +177,7 @@ impl BenchPlan {
             heat_wave: None,
             events: Vec::new(),
             variation: ps_world::FieldVariation::default(),
+            fidelity: ps_world::Fidelity::Auto,
         };
         for (i, &id) in self.seeds.iter().enumerate() {
             let seed = library

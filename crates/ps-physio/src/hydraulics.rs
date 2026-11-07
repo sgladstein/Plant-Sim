@@ -49,6 +49,9 @@ pub struct HydraulicParams {
     pub turgor_loss: MPa,
     /// Water potential at full turgor for expansion, `ψ_0`.
     pub turgor_full: MPa,
+    /// Couvreur's compensation conductance over the root system's, `K_comp / K_rs`
+    /// (the simplified level, R3c).
+    pub compensation: f64,
 }
 
 impl HydraulicParams {
@@ -70,6 +73,7 @@ impl HydraulicParams {
             tuzet_reference: MPa(-1.0),
             turgor_loss: MPa(-0.9),
             turgor_full: MPa(-0.2),
+            compensation: 1.0,
         }
     }
 
