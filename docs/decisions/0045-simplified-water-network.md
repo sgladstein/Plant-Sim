@@ -100,11 +100,12 @@ that holds the two levels' outcomes together.
   about 12% of the total, almost all retention-curve powers (the hourly simplified
   step reads only each cell's potential, skipping the conductivity). The pot is still
   over the ~4 ms budget; that is the Performance thread's next target.
-- Challenges, swept on world seeds 7 to 14: no medal moves. Thirsty summer's bloom
-  schedules average 6.4 to 8.5 pods (5 / 7 / 9), the fixture's (every 4 days from
-  day 40) 8.4 and 8 on seed 7, spread daily 2.6, none 2.1; the heat wave sown on days 28
-  and 32 averages 10.8 and 11.1 (8 / 10 / 12), sown by day 16 at most 6.5; hungry soil
-  split doses average 7.0 to 7.5 g (5.5 / 7 / 8.5), all on day 45 3.4, none 0.7.
+- Challenges, re-swept on the 8-season mean (world seeds 7 to 14, PR #143's scoring):
+  thirsty summer's bloom schedules gain one to two pods (6.4 to 9.5; daily from day 40
+  7.5, the fixture 8.4; spread daily 2.6, none 2.1), so its medals rise from 4 / 6 / 7.5
+  to 5 / 7 / 8.5, gold just under the best plan found (every 5 days from day 42, 9.5).
+  The heat wave (sown on day 28 10.8, day 32 11.1, by day 8 at most 4.9) and hungry
+  soil (one dose on day 20 8.1, splits 7.0 to 7.6, all on day 45 3.4) keep theirs.
 - R3b's done-whens still hold: in the split pot the wet half gives 0.928 kg and the dry
   half 0.143 kg (87% wet), and 0.337 of 3.259 kg taken up goes back into dry soil at
   night (10%, was 18%: the dry soil's own conductance now limits it); predawn leaf

@@ -42,26 +42,31 @@ about 2 s in a release build.
 
 ## The first three challenges
 
-Medal thresholds come from strategy sweeps of the 8-season mean (world seeds 7 to 14)
-on model 0.25.0 (R3b). Single-seed sweeps on 0.23.0 to 0.25.0 are in the git history of
-this file; the review's eight-seed sweep is in the project files
-(reviews/wp32-challenges-137-review.md). Even the mean of 8 moves from one strategy to its neighbour (by about a pod in the heat
-wave, whose seasons spread about 3 pods), so thresholds sit where a sound strategy lands.
+Medal thresholds come from strategy sweeps of the 8-season mean (world seeds 7 to 14),
+on model 0.25.0 (R3b) and again on 0.26.0 (R3c, decision 0045), where thirsty summer's
+medals rose a pod or more (5 / 7 / 8.5, from 4 / 6 / 7.5) and the others held.
+Single-seed sweeps on 0.23.0 to 0.25.0 are in the git history of this file; the
+review's eight-seed sweep is in the project files (reviews/wp32-challenges-137-review.md
+and reviews/wp32-seasons-143-review.md). Even the mean of 8 moves from one strategy to
+its neighbour (by about a pod in the heat wave, whose seasons spread about 3 pods), so
+thresholds sit where a sound strategy lands, with gold just under the best plan found.
 
-| Challenge | Setting | Player controls | Sweep, mean of 8 seasons (0.25.0) | Medals (B / S / G) |
+| Challenge | Setting | Player controls | Sweep, mean of 8 seasons (0.26.0) | Medals (B / S / G) |
 | --- | --- | --- | --- | --- |
-| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | no water 1.9 pods; 6 L spread daily over the season 1.6; days 30 to 85 every 1 to 7 days 4.2 to 5.0; days 40 to 75 or 45 to 75 4.8 to 7.3 (every 4 days from day 40, the fixture, 7.3); days 42 to 70 every 1 to 4 days 7.1 to 8.5 | 4 / 6 / 7.5 pods |
-| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 6 (blooms into the heat) 3.3 to 3.5 pods; days 8 to 16 4.8 to 6.4; days 18 to 24 6.8 to 8.6; days 26 to 40 7.8 to 11.0 (day 28 10.4) | 5 / 7.5 / 9.5 pods |
-| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none 0.7 g seed; all on day 45 3.2; all on day 35 5.2; all at sowing 6.5; one dose between days 15 and 25 7.4; two or three doses from day 10 to 45 7.2 to 8.1 (days 15, 25 and 35 8.0; days 18, 28 and 38 8.1) | 5 / 7 / 7.9 g seed |
+| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | no water 2.1 pods; 6 L spread daily over the season 2.6; from day 35 or day 40, every 1 to 7 days, 6.4 to 8.5 (daily from day 40 7.5; every 4 days from day 40, the fixture, 8.4); days 42 to 70 every 2 to 5 days 7.9 to 9.5 (every 2 days 9.0, every 5 days 9.5) | 5 / 7 / 8.5 pods (0.25.0: 4 / 6 / 7.5) |
+| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 8 (blooms into the heat) 2.9 to 4.9 pods; days 12 and 16 5.3 and 6.5; days 20 to 26 7.8 to 9.0; days 28 to 40 8.4 to 11.1 (day 28, the fixture, 10.8; day 32 11.1) | 5 / 7.5 / 9.5 pods, unchanged |
+| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none 0.7 g seed; all on day 45 3.4; all on day 35 5.6; all at sowing 6.3; one dose on day 15, 20 or 25 7.5, 8.1 and 7.1; two or three doses from day 10 to 45 7.0 to 7.6 (days 15, 30 and 45, the fixture, 7.1; days 15, 25 and 35 7.6) | 5 / 7 / 7.9 g seed, unchanged |
 
 On the mean the lessons hold: water in bloom beats water spread thin by about five pods,
 sowing after day 25 beats blooming into the heat by six, and feeding before and through
 early bloom beats feeding late by four grams.
 
-Daily watering in bloom is no longer the best thirsty plan on 0.25.0 (bronze, 5.4 pods
-for days 40 to 75): pod abortion still reads the root zone's lowest FTSW of the day,
-which under any bloom schedule sits at 0.25 to 0.45 most afternoons against the 0.5
-threshold (decision 0044), so larger doses every 3 or 4 days do better.
+On 0.25.0 daily watering in bloom earned only bronze (5.4 pods for days 40 to 75): pod
+abortion still reads the root zone's lowest FTSW of the day, which under any bloom
+schedule sits at 0.25 to 0.45 most afternoons against the 0.5 threshold (decision 0044),
+so larger doses every 3 or 4 days did better. On 0.26.0 most bloom schedules gain one to
+two pods (daily from day 40 5.4 to 7.5, every 2 days from day 42 6.9 to 9.0, the
+fixture 7.3 to 8.4), and larger, less frequent doses still lead.
 
 The tests in `crates/ps-game/tests/challenges.rs` replay a good and a poor strategy for
 each challenge (tests/fixtures/challenges) and check the good one beats the poor one and

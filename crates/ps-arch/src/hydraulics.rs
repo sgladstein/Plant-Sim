@@ -340,13 +340,13 @@ impl Plant {
         let n = self.arena.len();
         self.leaf_water.resize(n, KgWater(0.0));
         let demand = KgWater(self.leaf_water.iter().map(|w| w.0).sum());
+        let edges = self.axial_edges();
         let cells = self.roots.cells();
         let soil_terms = cell_terms(soil, cells.iter().map(|c| c.0));
         let (mut nodes, links) = self.radial_links(soil, cells, &soil_terms);
         for (i, w) in self.leaf_water.iter().enumerate() {
             nodes[i].sink = *w;
         }
-        let edges = self.axial_edges();
         // The root zone's soil potential, weighted by radial conductance: what the
         // leaves read at night, and the fallback.
         let (mut kw, mut ksum) = (0.0, 0.0);
@@ -432,6 +432,7 @@ impl Plant {
     /// leaves). Called with the root cells' rebuild, at both levels.
     pub(crate) fn summarize_water(&mut self, soil: &SoilGrid) -> WaterSummary {
         let n = self.arena.len();
+        let edges = self.axial_edges();
         let cells = self.roots.cells();
         let mut terms = cell_terms(soil, cells.iter().map(|c| c.0));
         for t in &mut terms {
@@ -458,7 +459,6 @@ impl Plant {
         } else {
             nodes[collar].sink = KgWater(1.0);
         }
-        let edges = self.axial_edges();
         let Some(total) = hydraulics::solve_tree(&nodes, &edges) else {
             return WaterSummary::default();
         };
