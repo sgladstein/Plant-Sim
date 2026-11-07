@@ -436,6 +436,7 @@ impl Plant {
             .max(GramsN(0.0)),
             roots: &self.roots,
             capacity_per_length: self.params.nitrogen.uptake_capacity,
+            hypoxic_factor: self.params.waterlogging.n_uptake_factor,
         }
     }
 

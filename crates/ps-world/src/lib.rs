@@ -32,7 +32,7 @@ pub use scenario::{
 
 /// Model version: bumped on any change to an equation, a default parameter or the
 /// step order (CLAUDE.md). Saves record it; replays from another version warn.
-pub const MODEL_VERSION: &str = "0.28.0";
+pub const MODEL_VERSION: &str = "0.29.0";
 
 /// Most fertilizer one action may add, g N per m² (100 g m⁻² is 1000 kg N ha⁻¹, several
 /// times a heavy season's dose; WP24 review).
@@ -226,6 +226,10 @@ pub struct DayEnv {
     /// Humus nitrogen mineralized in the plant's soil since the start, g N.
     #[serde(default)]
     pub mineralized_n_total_g: f64,
+    /// Nitrate lost to the air from the plant's soil's hypoxic cells since the start,
+    /// g N (R5b).
+    #[serde(default)]
+    pub denitrified_n_total_g: f64,
 }
 
 /// Seeds picked by one harvest action (WP25): the seed library is a list of these.
@@ -973,6 +977,8 @@ impl World {
     /// Checks an action against the world now; `now` adds the checks that need the
     /// current state (a pruned organ must exist and be alive). Rejected actions never
     /// reach the log.
+    // One arm per action kind.
+    #[allow(clippy::too_many_lines)]
     fn check(&self, tick: u64, kind: &ActionKind, now: bool) -> Result<(), WorldError> {
         let err = |why: String| Err(WorldError::Action { tick, why });
         let soil_known = |soil: u32| self.soil_index(soil).is_some();
@@ -1007,6 +1013,11 @@ impl World {
             ActionKind::SetIrrigation { soil, .. } => {
                 if !soil_known(*soil) {
                     return err(format!("unknown soil {soil}"));
+                }
+            }
+            ActionKind::SetDrainage { soil, drainage } => {
+                if let Err(why) = self.check_drainage(*soil, *drainage) {
+                    return err(why);
                 }
             }
             ActionKind::Fertilize { soil, g_per_m2, .. } => {
@@ -1362,6 +1373,25 @@ impl World {
         })
     }
 
+    /// A drainage change applies to a pot (R5b), and a saucer is 0 to 100 mm deep.
+    fn check_drainage(&self, soil: u32, drainage: PotDrainage) -> Result<(), String> {
+        let pot = self
+            .state
+            .scenario
+            .soils
+            .iter()
+            .any(|s| s.id() == soil && matches!(s, SoilSpec::Pot { .. }));
+        if !pot {
+            return Err(format!("soil {soil} is not a pot"));
+        }
+        if let PotDrainage::Saucer { depth_mm } = drainage
+            && !(depth_mm.is_finite() && (0.0..=100.0).contains(&depth_mm))
+        {
+            return Err(format!("saucer depth {depth_mm} mm; 0 to 100"));
+        }
+        Ok(())
+    }
+
     /// Checks a hand-pollination against the world now (WP29): the flower is open and
     /// not yet crossed, and the pollen plant has an open flower and a genome that
     /// crosses with the seed parent's.
@@ -1467,6 +1497,12 @@ impl World {
                     .soil_index(soil)
                     .ok_or_else(|| err(format!("unknown soil {soil}")))?;
                 self.state.soils[i].irrigation = irrigation;
+            }
+            ActionKind::SetDrainage { soil, drainage } => {
+                let i = self
+                    .soil_index(soil)
+                    .ok_or_else(|| err(format!("unknown soil {soil}")))?;
+                self.state.soils[i].grid.set_drainage(drainage.grid());
             }
             ActionKind::Fertilize {
                 soil,
@@ -1798,6 +1834,7 @@ impl World {
                 evaporated_total_kg: entry.ledger.evaporated.0,
                 leached_n_total_g: soil.nitrogen_ledger().leached.0,
                 mineralized_n_total_g: soil.nitrogen_ledger().mineralized.0,
+                denitrified_n_total_g: soil.nitrogen_ledger().denitrified.0,
             };
             let plant = self.state.plants[p].id;
             self.state.history.push(DayRow {

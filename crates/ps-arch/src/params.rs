@@ -155,6 +155,34 @@ impl Default for RootPlasticity {
     }
 }
 
+/// How roots answer waterlogged soil (R5b, decision 0048): with a cell's hypoxia `h`
+/// ([`ps_soil::SoilGrid::hypoxia`]) tips slow by `1 − h`, no laterals form while `h` is
+/// at least a half, radial conductance and nitrogen uptake fall toward their factors,
+/// and roots die after enough full-deficit hours ([`ps_soil::SoilGrid::hypoxic_hours`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Waterlogging {
+    /// Share of its radial conductance a root keeps in a fully hypoxic cell.
+    pub radial_factor: f64,
+    /// Share of its nitrogen uptake capacity a root keeps in a fully hypoxic cell.
+    pub n_uptake_factor: f64,
+    /// Full-deficit hours after which a fine-root cohort dies.
+    pub fine_root_hours: u32,
+    /// Full-deficit hours after which an axis segment or lateral dies.
+    pub root_hours: u32,
+}
+
+impl Default for Waterlogging {
+    /// No response: roots take no notice of air.
+    fn default() -> Self {
+        Self {
+            radial_factor: 1.0,
+            n_uptake_factor: 1.0,
+            fine_root_hours: u32::MAX,
+            root_hours: u32::MAX,
+        }
+    }
+}
+
 /// Everything the herb module reads, in model units.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::struct_field_names)]
@@ -239,6 +267,9 @@ pub struct HerbParams {
     /// How roots answer the soil around them (R2b, decision 0043).
     #[serde(default)]
     pub root_plasticity: RootPlasticity,
+    /// How roots answer waterlogged soil (R5b, decision 0048).
+    #[serde(default)]
+    pub waterlogging: Waterlogging,
     /// Base daily bud activation probability.
     pub bud_activation: f64,
     /// Reserve concentration of a fully fed bud, g C per g DM.
@@ -440,6 +471,12 @@ impl HerbParams {
                 proliferation_water: c.root_proliferation_water.value,
                 hydropatterning: c.hydropatterning.value > 0.5,
                 hydrotropism: c.hydrotropism_weight.value,
+            },
+            waterlogging: Waterlogging {
+                radial_factor: c.hypoxia_radial_factor.value,
+                n_uptake_factor: c.hypoxia_n_uptake_factor.value,
+                fine_root_hours: round(c.hypoxia_fine_root_death.value),
+                root_hours: round(c.hypoxia_root_death.value),
             },
             bud_activation: t.bud_activation,
             bud_reserve_reference: c.bud_reserve_reference.value,

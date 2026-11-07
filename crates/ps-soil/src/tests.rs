@@ -597,3 +597,60 @@ fn lateral_fraction_scales_as_a_diffusivity() {
     // Capped for stability in fine grids.
     assert!((at(0.005) - 0.25).abs() < 1e-15);
 }
+
+/// R5b (decision 0048): a cell's oxygen deficit rises linearly from 0 at 10% air to 1
+/// at 2%; its hypoxic hours sum the deficit and it is hypoxic once they reach 6, then
+/// as hypoxic as it is short of air. A cell with air enough starts again from 0.
+#[test]
+fn a_saturated_cell_turns_hypoxic_after_hours_and_recovers_when_it_drains() {
+    let sat = Texture::Loam.hydraulics().saturation;
+    let mut g = closed(Texture::Loam, 3);
+    g.fill_to(sat - 0.06);
+    assert!((g.oxygen_deficit(0) - 0.5).abs() < 1e-12);
+    g.fill_to(sat - AERATION_CRITICAL);
+    assert!(g.oxygen_deficit(0).abs() < 1e-12);
+    g.fill_to(sat);
+    for h in 1..=8 {
+        let l = g.step_hour(&dry_hour());
+        assert!(l.relative_residual() < 1e-9);
+        let full = f64::from(h);
+        assert!(
+            (g.hypoxic_hours(2) - full).abs() < 1e-9,
+            "{}",
+            g.hypoxic_hours(2)
+        );
+        let expected = if full >= HYPOXIA_ONSET_HOURS {
+            1.0
+        } else {
+            0.0
+        };
+        assert!((g.hypoxia(2) - expected).abs() < 1e-12, "hour {h}");
+    }
+    g.fill_to(Texture::Loam.hydraulics().field_capacity);
+    g.step_hour(&dry_hour());
+    assert!(g.hypoxic_hours(2).abs() < 1e-12);
+    assert!(g.hypoxia(2).abs() < 1e-12);
+}
+
+/// R5b: water standing on the soil evaporates first, at the full rate; the soil under
+/// it loses nothing while it lasts, and every hour closes.
+#[test]
+fn standing_water_evaporates_before_the_soil() {
+    let sat = Texture::Clay.hydraulics().saturation;
+    let mut g = closed(Texture::Clay, 3);
+    g.fill_to(sat);
+    let mut l = WaterLedger::default();
+    g.infiltrate(Millimeters(2.0), None, &mut l);
+    let soil = g.total_water();
+    let hour = SoilHour {
+        surface_radiation: WPerM2(800.0),
+        ..dry_hour()
+    };
+    let l = g.step_hour(&hour);
+    assert!(l.relative_residual() < 1e-9);
+    // 0.588 mm of the 2 mm pond goes, the soil keeps its water.
+    let mm = |kg: KgWater| kg.0 / 4e-4;
+    assert!((mm(l.evaporated) - 0.5 * 800.0 * 3600.0 / 2.45e6).abs() < 1e-9);
+    assert!((mm(g.ponded_water()) - (2.0 - mm(l.evaporated))).abs() < 1e-9);
+    assert!((g.total_water() - soil).0.abs() < 1e-12);
+}

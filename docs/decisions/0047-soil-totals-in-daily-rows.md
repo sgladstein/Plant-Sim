@@ -51,4 +51,4 @@ model; garden nitrogen arrived with WP24.
 - The single pot, watered to field capacity each morning, drains nothing and
   evaporates 6.2 kg in 60 days.
 - WP8's done-when is read at 300 ppm: in garden nitrogen a lone pot plant now sets
-  fewer pods than §3.16's band (mean 9.0 over eight seeds), as the world pot would.
+  fewer pods than §3.16's band (mean 9.0 over eight seeds).

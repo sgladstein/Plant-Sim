@@ -22,73 +22,102 @@ use crate::{ArchError, PRIMORDIUM, Plant, Role, RootAxis, Spawn, curve};
 const GOLDEN_ANGLE: f64 = 2.399_963_229_728_653;
 /// Standard deviation of the random component added to a root direction per segment.
 const TROPISM_NOISE: f64 = 0.15;
+/// Hypoxia of a parent's cell at which its laterals wait for air (R5b, decision 0048;
+/// "~": half the oxygen deficit, 6% air-filled porosity).
+const LATERAL_HYPOXIA: f64 = 0.5;
 
 impl Plant {
     /// Daily step 3, root part: axes of each seed-borne root type appear once thermal
-    /// time since germination passes the type's emergence time.
+    /// time since germination passes the type's emergence time. A plant that lost an
+    /// axis tip to waterlogged soil grows a new set of hypocotyl-borne roots once the soil
+    /// at its collar is no longer half hypoxic (R5b, decision 0048: adventitious roots,
+    /// the bean's and wheat's answer to waterlogging).
     pub(crate) fn root_initiation(&mut self, now: Hours, soil: &SoilGrid) -> Result<(), ArchError> {
         if self.phenology.stage < ps_physio::Stage::Germinated {
             return Ok(());
         }
         let since = self.phenology.since_germination.0;
+        let regrow = self.drowned
+            && soil_cell(soil, self.collar_position)
+                .is_none_or(|c| soil.hypoxia(c) < LATERAL_HYPOXIA);
+        if regrow {
+            self.drowned = false;
+        }
         let mut whorl = 0u32;
         for t in 0..self.params.roots.len() {
             let rp = self.params.roots[t].clone();
             if rp.origin == RootOrigin::Basal {
                 whorl += 1;
             }
-            if self.root_types_started[t] || rp.order > 0 || since < rp.emergence.0 {
+            if rp.order > 0 {
+                continue;
+            }
+            let again = regrow && rp.origin == RootOrigin::Hypocotyl && self.root_types_started[t];
+            if !again && (self.root_types_started[t] || since < rp.emergence.0) {
                 continue;
             }
             self.root_types_started[t] = true;
-            let count = rp.count.max(1);
-            for k in 0..count {
-                let kf = f64::from(k);
-                let cf = f64::from(count);
-                let (parent, attach, dir, base) = match rp.origin {
-                    RootOrigin::Radicle | RootOrigin::Lateral => {
-                        (self.collar, 1.0, [0.0, 0.0, -1.0], self.collar_position)
-                    }
-                    RootOrigin::Basal => {
-                        let offset = if whorl.is_multiple_of(2) {
-                            core::f64::consts::PI / cf
-                        } else {
-                            0.0
-                        };
-                        let az = 2.0 * core::f64::consts::PI * kf / cf + offset;
-                        let elev = -(core::f64::consts::FRAC_PI_2 - rp.insertion.0);
-                        (
-                            self.collar,
-                            1.0,
-                            from_azimuth(az, elev),
-                            self.collar_position,
-                        )
-                    }
-                    RootOrigin::Hypocotyl => {
-                        let az = GOLDEN_ANGLE * kf;
-                        let elev = -(core::f64::consts::FRAC_PI_2 - rp.insertion.0);
-                        let total = self.depth.0 + self.params.hypocotyl_above.0;
-                        let buried = (self.depth.0 / total.max(1e-9)).clamp(0.0, 1.0);
-                        let attach = buried * (0.2 + 0.7 * (kf + 0.5) / cf);
-                        let base = add(self.collar_position, [0.0, 0.0, 1.0], attach * total);
-                        (self.hypocotyl, attach, from_azimuth(az, elev), base)
-                    }
-                };
-                let ax = RootAxis {
-                    kind: t,
-                    segments: Vec::new(),
-                    length: 0.0,
-                    direction: dir,
-                    multiplicity: 1.0,
-                    done: false,
-                    laterals: 0,
-                    end: base,
-                    base,
-                };
-                self.root_axes.push(ax);
-                let a = self.root_axes.len() - 1;
-                self.root_segment(a, parent, attach, dir, DegreeDays(0.0), now, soil)?;
-            }
+            self.start_axes(t, whorl, now, soil)?;
+        }
+        Ok(())
+    }
+
+    /// The axes of seed-borne root type `t`, `whorl` the basal whorls counted so far.
+    fn start_axes(
+        &mut self,
+        t: usize,
+        whorl: u32,
+        now: Hours,
+        soil: &SoilGrid,
+    ) -> Result<(), ArchError> {
+        let rp = self.params.roots[t].clone();
+        let count = rp.count.max(1);
+        for k in 0..count {
+            let kf = f64::from(k);
+            let cf = f64::from(count);
+            let (parent, attach, dir, base) = match rp.origin {
+                RootOrigin::Radicle | RootOrigin::Lateral => {
+                    (self.collar, 1.0, [0.0, 0.0, -1.0], self.collar_position)
+                }
+                RootOrigin::Basal => {
+                    let offset = if whorl.is_multiple_of(2) {
+                        core::f64::consts::PI / cf
+                    } else {
+                        0.0
+                    };
+                    let az = 2.0 * core::f64::consts::PI * kf / cf + offset;
+                    let elev = -(core::f64::consts::FRAC_PI_2 - rp.insertion.0);
+                    (
+                        self.collar,
+                        1.0,
+                        from_azimuth(az, elev),
+                        self.collar_position,
+                    )
+                }
+                RootOrigin::Hypocotyl => {
+                    let az = GOLDEN_ANGLE * kf;
+                    let elev = -(core::f64::consts::FRAC_PI_2 - rp.insertion.0);
+                    let total = self.depth.0 + self.params.hypocotyl_above.0;
+                    let buried = (self.depth.0 / total.max(1e-9)).clamp(0.0, 1.0);
+                    let attach = buried * (0.2 + 0.7 * (kf + 0.5) / cf);
+                    let base = add(self.collar_position, [0.0, 0.0, 1.0], attach * total);
+                    (self.hypocotyl, attach, from_azimuth(az, elev), base)
+                }
+            };
+            let ax = RootAxis {
+                kind: t,
+                segments: Vec::new(),
+                length: 0.0,
+                direction: dir,
+                multiplicity: 1.0,
+                done: false,
+                laterals: 0,
+                end: base,
+                base,
+            };
+            self.root_axes.push(ax);
+            let a = self.root_axes.len() - 1;
+            self.root_segment(a, parent, attach, dir, DegreeDays(0.0), now, soil)?;
         }
         Ok(())
     }
@@ -325,7 +354,11 @@ impl Plant {
                 (self.arena.size[h].length.0 / self.meta[h].multiplicity.max(1.0)).max(1e-9);
             let attach = ((mid - host_start) / host_len).clamp(0.0, 1.0);
             let mult = seg / parent_type.branch_spacing.0;
-            self.cohort(host, attach, lt, k, mult, now, soil, means)?;
+            if !self.cohort(host, attach, lt, k, mult, now, soil, means)? {
+                // Hypoxic soil: this stretch branches once it has air again (R5b).
+                self.root_axes[a].laterals -= 1;
+                return Ok(());
+            }
         }
     }
 
@@ -363,7 +396,11 @@ impl Plant {
             return Ok(());
         }
         let mult = m1 * branched / spacing;
-        self.cohort(host, 0.5 * branched / len1, ft, k, mult, now, soil, means)
+        if !self.cohort(host, 0.5 * branched / len1, ft, k, mult, now, soil, means)? {
+            // Hypoxic soil: the fine roots form once it has air again (R5b).
+            self.root_axes[a].laterals = 0;
+        }
+        Ok(())
     }
 
     /// One lateral cohort of type `lt` on root organ `host` at `attach` (a fraction of
@@ -371,6 +408,8 @@ impl Plant {
     /// `mult` roots, aimed by the golden angle `k`. Where the parent's cell is drier
     /// than the xerobranching threshold none forms; where it is richer in nitrate or
     /// water than the root zone (`means`) the cohort stands for more roots (R2b).
+    /// Where the parent's cell is at least half hypoxic none forms yet, and `false`
+    /// asks the caller to try again another day (R5b).
     #[allow(clippy::too_many_arguments)]
     fn cohort(
         &mut self,
@@ -382,7 +421,7 @@ impl Plant {
         now: Hours,
         soil: &SoilGrid,
         means: Option<(f64, f64)>,
-    ) -> Result<(), ArchError> {
+    ) -> Result<bool, ArchError> {
         let lp = self.params.roots[lt].clone();
         let h = host.index();
         let host_len = (self.arena.size[h].length.0 / self.meta[h].multiplicity.max(1.0)).max(1e-9);
@@ -400,9 +439,17 @@ impl Plant {
         let host_base = self.positions.get(h).map_or(self.collar_position, |p| p.0);
         let base = add(host_base, host_dir, attach * host_len);
         let plastic = &self.params.root_plasticity;
+        let cell = soil_cell(soil, base);
+        // No laterals from a parent in soil at least half hypoxic until it has air
+        // again (R5b).
+        if self.params.waterlogging.fine_root_hours < u32::MAX
+            && cell.is_some_and(|c| soil.hypoxia(c) >= LATERAL_HYPOXIA)
+        {
+            return Ok(false);
+        }
         // Xerobranching: no laterals from a parent in dry soil, and none later.
-        if soil_cell(soil, base).is_some_and(|c| soil.cell_ftsw(c) < plastic.xerobranching) {
-            return Ok(());
+        if cell.is_some_and(|c| soil.cell_ftsw(c) < plastic.xerobranching) {
+            return Ok(true);
         }
         let len = lp.max_length.0;
         // The cohort reaches its potential plus the primordium it starts as.
@@ -448,7 +495,7 @@ impl Plant {
                     .filter(|d| inside(*d))
             });
         let Some(d) = found else {
-            return Ok(());
+            return Ok(true);
         };
         dir = d;
         // Proliferation: the cohort is one straight organ, so it stands for more roots by
@@ -479,7 +526,7 @@ impl Plant {
             end: add(base, dir, reach),
             base,
         });
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -515,14 +562,80 @@ impl Plant {
         Some((sw.max(w / l), sn.max(n / l)))
     }
 
+    /// Daily step 4 (R5b, decision 0048): a root organ dies when more than half its
+    /// length lies in cells whose hypoxic hours have reached the species' death time,
+    /// fine-root cohorts (order 2) sooner than lateral cohorts and the tip segments of
+    /// axes. It is shed as any dead organ, with what it carries; an axis whose tip died
+    /// grows no further, and its older segments live on. A lateral that loses its fine
+    /// roots grows new ones once its cell has air again, and a plant that loses an axis
+    /// tip roots again from its hypocotyl ([`Plant::root_initiation`]).
+    pub(crate) fn drown_roots(&mut self, now: Hours, soil: &SoilGrid) -> Result<(), ArchError> {
+        let w = self.params.waterlogging;
+        if w.fine_root_hours == u32::MAX && w.root_hours == u32::MAX {
+            return Ok(());
+        }
+        let n = self.arena.len();
+        // Of an axis only the tip segment dies: the older, thicker parts live on.
+        let mut tip = vec![false; n];
+        for ax in &self.root_axes {
+            if let Some(&(id, _)) = ax.segments.last()
+                && let Some(t) = tip.get_mut(id.index())
+            {
+                *t = true;
+            }
+        }
+        let (mut total, mut drowned) = (vec![0.0_f64; n], vec![0.0_f64; n]);
+        for sp in &self.root_spans {
+            let o = sp.organ as usize;
+            if o >= n || sp.cell >= soil.len() || (self.arena.axis_order[o] == 0 && !tip[o]) {
+                continue;
+            }
+            let limit = if self.arena.axis_order[o] >= 2 {
+                w.fine_root_hours
+            } else {
+                w.root_hours
+            };
+            total[o] += sp.length.0;
+            if soil.hypoxic_hours(sp.cell) >= f64::from(limit) {
+                drowned[o] += sp.length.0;
+            }
+        }
+        for o in 0..n {
+            if self.arena.alive[o] && total[o] > 0.0 && drowned[o] > 0.5 * total[o] {
+                let id = OrganId(u32::try_from(o).unwrap_or(u32::MAX));
+                let order = self.arena.axis_order[o];
+                let parent = self.arena.parent[o];
+                self.shed_organ(id, now)?;
+                if order == 0 {
+                    // An axis tip lost: the hypocotyl roots again once it has air.
+                    self.drowned = true;
+                } else if order >= 2 {
+                    // A fine-root cohort lost: its lateral, if alive, makes another
+                    // once its cell has air.
+                    if let Some(ax) = self
+                        .root_axes
+                        .iter_mut()
+                        .find(|ax| ax.segments.first().map(|s| s.0) == parent && ax.laterals > 0)
+                    {
+                        ax.laterals = 0;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Each growing root organ's expansion clock factor for the coming day (R2b): the
     /// relative available water `θ` of its tip's cell over `dry_full`, at most 1 and at
-    /// least `dry_floor`. Cleared when nothing is slowed.
+    /// least `dry_floor`, times `1 − h` with `h` that cell's hypoxia for a species that
+    /// answers waterlogging (R5b). Cleared when nothing is slowed.
     pub(crate) fn set_root_clock(&mut self, soil: &SoilGrid) {
         let rp = &self.params.root_plasticity;
         let (full, floor) = (rp.dry_full, rp.dry_floor);
+        let dry = floor < 1.0 && full > 0.0;
+        let wet = self.params.waterlogging.fine_root_hours < u32::MAX;
         self.root_clock.clear();
-        if floor >= 1.0 || full <= 0.0 {
+        if !dry && !wet {
             return;
         }
         let mut clock = vec![1.0; self.arena.len()];
@@ -535,7 +648,16 @@ impl Plant {
             let Some(c) = self.positions.get(i).and_then(|p| soil_cell(soil, p.1)) else {
                 continue;
             };
-            let f = (soil.cell_ftsw(c) / full).clamp(0.0, 1.0).max(floor);
+            let f_dry = if dry {
+                (soil.cell_ftsw(c) / full).clamp(0.0, 1.0).max(floor)
+            } else {
+                1.0
+            };
+            let f = if wet {
+                f_dry * (1.0 - soil.hypoxia(c))
+            } else {
+                f_dry
+            };
             clock[i] = f;
             slowed |= f < 1.0;
         }

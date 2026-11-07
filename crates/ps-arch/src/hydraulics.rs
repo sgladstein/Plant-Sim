@@ -72,7 +72,17 @@ pub struct WaterSummary {
     /// Each organ's drop in total potential below the root zone's per kg h⁻¹ of the
     /// plant's transpiration (megapascals per kg h⁻¹), by organ index.
     pub drop: Vec<f64>,
+    /// Each root cell's hypoxia when the summary was made (R5b, decision 0048), in the
+    /// order of the plant's root cells. The simplified level makes a new summary within
+    /// the day once one of them has moved by more than [`HYPOXIA_REFRESH`].
+    #[serde(default)]
+    pub hypoxia: Vec<f64>,
 }
+
+/// How far a root cell's hypoxia may move from the summary's before the simplified
+/// level makes a new summary within the day (R5b, decision 0048). Waterlogged soil can
+/// drain, or turn hypoxic, within hours, which the daily summary would miss.
+pub const HYPOXIA_REFRESH: f64 = 0.05;
 
 /// Conductance given to edges that carry no flow (buds, flowers, pods, seeds,
 /// cotyledons, nodules, tendrils), and the floor of every edge, kg h⁻¹ MPa⁻¹: only
@@ -280,6 +290,8 @@ impl Plant {
     /// `(organ, cell slot, conductance)`, and each organ's summed terms. Each link is
     /// the root's radial conductance in series with the soil's around it (R3c), the
     /// soil's from the cell's conductivity and this plant's root length density there.
+    /// In a hypoxic cell the root's own conductance falls toward the species' radial
+    /// factor with the cell's hypoxia (R5b).
     fn radial_links(
         &self,
         soil: &SoilGrid,
@@ -303,7 +315,9 @@ impl Plant {
                 lp_of[o] = self.radial_conductivity(o);
             }
             let r = self.arena.size[o].radius.0;
-            let root = lp_of[o] * 2.0 * core::f64::consts::PI * r;
+            // A hypoxic cell closes the root's aquaporins (R5b).
+            let air = 1.0 - soil.hypoxia(s.cell) * (1.0 - self.params.waterlogging.radial_factor);
+            let root = lp_of[o] * 2.0 * core::f64::consts::PI * r * air;
             let around = rhizosphere_conductance(soil_terms[j].2, r, cells[j].1.0 / volume);
             let k = if root + around > 0.0 {
                 root * around / (root + around) * s.length.0 * KG_PER_HOUR_PER_M3_PER_S
@@ -429,8 +443,34 @@ impl Plant {
     /// The day's summary of the water network for the simplified level (R3c): one
     /// solve with every root cell at the same total potential (0) and 1 kg h⁻¹ of
     /// transpiration shared by leaf area (or drawn at the collar before there are
-    /// leaves). Called with the root cells' rebuild, at both levels.
+    /// leaves). Called with the root cells' rebuild, at both levels, and by the
+    /// simplified level within the day when the root cells' hypoxia moves (R5b).
     pub(crate) fn summarize_water(&mut self, soil: &SoilGrid) -> WaterSummary {
+        let hypoxia = self
+            .roots
+            .cells()
+            .iter()
+            .map(|c| soil.hypoxia(c.0))
+            .collect();
+        WaterSummary {
+            hypoxia,
+            ..self.summarize_network(soil)
+        }
+    }
+
+    /// Whether a root cell's hypoxia has moved by more than [`HYPOXIA_REFRESH`] since
+    /// the summary was made (R5b).
+    fn summary_is_stale(&self, soil: &SoilGrid) -> bool {
+        let cells = self.roots.cells();
+        let then = &self.water_summary.hypoxia;
+        then.len() == cells.len()
+            && cells
+                .iter()
+                .zip(then)
+                .any(|(c, h)| (soil.hypoxia(c.0) - h).abs() > HYPOXIA_REFRESH)
+    }
+
+    fn summarize_network(&mut self, soil: &SoilGrid) -> WaterSummary {
         let n = self.arena.len();
         let edges = self.axial_edges();
         let cells = self.roots.cells();
@@ -495,6 +535,7 @@ impl Plant {
             layers,
             depth,
             drop: total.iter().map(|t| -t.0).collect(),
+            hypoxia: Vec::new(),
         }
     }
 
@@ -504,6 +545,9 @@ impl Plant {
     /// per unit transpiration times `E`, and each leaf at its parent's potential less
     /// its own transpiration over its own conductance.
     fn water_flows_simplified(&mut self, soil: &SoilGrid) -> WaterFlows {
+        if self.summary_is_stale(soil) {
+            self.water_summary = self.summarize_water(soil);
+        }
         let n = self.arena.len();
         self.leaf_water.resize(n, KgWater(0.0));
         let demand = KgWater(self.leaf_water.iter().map(|w| w.0).sum());

@@ -785,7 +785,8 @@ impl Species {
 
     /// Root plasticity (R2b, decision 0043): the water thresholds, floor and
     /// hydrotropism weight are shares, 0 to 1; the proliferation weights 0 to 5; the
-    /// hydropatterning flag 0 or 1.
+    /// hydropatterning flag 0 or 1. Waterlogging (R5b, decision 0048): the two hypoxic
+    /// factors are shares, the death times 0 to a million hours.
     fn validate_root_plasticity(&self) -> Result<(), SpeciesError> {
         let c = &self.constants;
         for (key, v, max) in [
@@ -807,6 +808,18 @@ impl Species {
                 5.0,
             ),
             ("hydrotropism_weight", c.hydrotropism_weight.value, 1.0),
+            ("hypoxia_radial_factor", c.hypoxia_radial_factor.value, 1.0),
+            (
+                "hypoxia_n_uptake_factor",
+                c.hypoxia_n_uptake_factor.value,
+                1.0,
+            ),
+            (
+                "hypoxia_fine_root_death",
+                c.hypoxia_fine_root_death.value,
+                1e6,
+            ),
+            ("hypoxia_root_death", c.hypoxia_root_death.value, 1e6),
         ] {
             // NaN fails too.
             if !(v >= 0.0 && v <= max) {

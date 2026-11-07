@@ -114,6 +114,22 @@ initiation, senescence, root elongation, then light and root-cell rebuild.
     otherwise the rule above.
   - *Hydrotropism:* an axis tip's direction gains `w_h ĝ`, `ĝ` the unit gradient of `θ`
     over the six neighbors of its cell (zero where they are equal), `w_h` 0.05.
+- **Waterlogging (R5b, decision 0048).** Roots read each cell's hypoxia `h` (0 to 1)
+  and hypoxic hours `H` (soil-and-water card equation 12); a species with no
+  waterlogging keys takes no notice.
+  - *Tips slow:* a growing root organ's clock factor is `f_w (1 − h)` for its tip's cell.
+  - *Laterals wait:* no lateral or fine-root cohort forms where the parent's cell has
+    `h ≥ 0.5` (6% air); the stretch branches once it has air again.
+  - *Roots die:* a root organ with more than half its length in cells whose `H` has
+    reached its death time is shed with what it carries: fine-root cohorts (order 2)
+    at `hypoxia_fine_root_death`, lateral cohorts and the tip segment of an axis at
+    `hypoxia_root_death` (beans 48 and 120 h, wheat 72 and 180). An axis's older
+    segments do not die, and an axis whose tip died grows no further.
+  - *Recovery:* a lateral whose fine roots died grows new ones once its cell has
+    `h < 0.5`; a plant that lost an axis tip grows a new set of its hypocotyl-borne
+    roots (wheat: crown roots) once the soil at its collar has `h < 0.5`, the
+    adventitious roots beans and wheat make after waterlogging. Dead laterals are not
+    replaced.
 - **Sink feedback on gross assimilation:** `A' = f(C) (A + Rd) − Rd`,
   `f(C) = clamp(1 − (C − 0.10)/0.20, 0, 1)` (provisional; see gas-exchange).
 - **Leaf death:** at thermal age `expanded + lifespan`, after 5 days below light index
@@ -155,6 +171,9 @@ All values, units and sources are in `data/species/bush_bean.ron`. The main ones
 | xerobranching_threshold | 0.1 | - | "~" Orman-Ligeza 2018 (barley) |
 | root_proliferation_nitrate, root_proliferation_water | 1.0, 0.5 | - | "~" Drew 1975; Zhang 1999 and Linkohr 2002 (Arabidopsis, 1.5 to 4 times); water a guess |
 | hydropatterning, hydrotropism_weight | 1 (on), 0.05 | -, - | Bao 2014; "~" Dietrich 2017 |
+| hypoxia_fine_root_death, hypoxia_root_death (beans) | 48, 120 | full-deficit h | "~" R5b spec §4 |
+| hypoxia_fine_root_death, hypoxia_root_death (wheat) | 72, 180 | full-deficit h | "~" (wheat tolerates waterlogging better than bean) |
+| Lateral wait hypoxia | 0.5 | - | "~" code constant (6% air-filled porosity) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -225,6 +244,13 @@ shade, and where roots end up.
   leaves to maturity; an N-limited plot drops about 16 of 23 in seed fill.
 - At maturity all leaves drop at once.
 - Branches carry no axillary buds or racemes except their terminal one.
+- Waterlogged roots (R5b) have no aerenchyma and no oxygen from the shoot, and the
+  death times are guesses: a bean in a sealed pot soaked for four days at flowering
+  loses all its fine roots by the third day and its laterals and axis tips on the
+  sixth, and has grown back from 5.9 to 9.6 m of root 25 days later (the control
+  211 m). Dead laterals are not replaced, so recovery runs through new
+  hypocotyl-borne roots, which find little carbon in pod fill. Roots that die stay
+  where they were in the soil's root cells until the day's layout.
 
 ## Validation
 - `tests/ninety_days.rs::ninety_day_counts_are_in_the_bean_ranges` (WP8 done-when,
@@ -248,6 +274,10 @@ shade, and where roots end up.
 - `ps_arch::roots::tests::*` (R2b): proliferation follows nitrate above the mean and is
   1 in uniform soil, a cohort's factor is the share of its path in rich soil, the water
   gradient points to the wet side and is zero in uniform soil.
+- `ps-world/tests/waterlogging.rs` (R5b done-when, decision 0048): m2/waterlogged_pot
+  against its control loses most of its fine roots in four wet days, wilts at midday
+  (leaf ψ below the turgor loss point while FTSW is 1), denitrifies, and roots again
+  slowly once its holes are opened.
 - `tests/root_plasticity.rs` (R2b, world seed 7, 40 days): a split pot roots more in
   its watered half with the rules than without; laterals in a nitrate patch on the tap
   root's path outgrow those in the same cube of plain soil by more than 1.2 times.
@@ -297,3 +327,9 @@ shade, and where roots end up.
   223-235.
 - Zhang, H., Jennings, A., Barlow, P. W., Forde, B. G. (1999). Dual pathways for
   regulation of root branching by nitrate. PNAS 96: 6529-6534.
+- Soltani, A., et al. (2017). Genetic architecture of flooding tolerance in the dry bean
+  Middle-American diversity panel. Front. Plant Sci. 8: 1183 (common bean severely
+  susceptible to flooding; R5b).
+- Soltani, A., et al. (2018). Genetic analysis of flooding tolerance in an Andean
+  diversity panel of dry bean. Front. Plant Sci. 9: 767 (adventitious roots and
+  survival under flooding; R5b).

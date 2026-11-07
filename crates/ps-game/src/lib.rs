@@ -151,6 +151,8 @@ pub enum ActionType {
     Water,
     /// Change the automatic watering.
     Irrigation,
+    /// Change how a pot drains (R5b).
+    Drainage,
     /// Change the shade cloth.
     Shade,
     /// Prune.
@@ -178,6 +180,7 @@ impl ActionType {
             ActionKind::Sow(_) => Self::Sow,
             ActionKind::Water { .. } => Self::Water,
             ActionKind::SetIrrigation { .. } => Self::Irrigation,
+            ActionKind::SetDrainage { .. } => Self::Drainage,
             ActionKind::SetRadiationFraction { .. } => Self::Shade,
             ActionKind::Prune { .. } => Self::Prune,
             ActionKind::Harvest { .. } => Self::Harvest,

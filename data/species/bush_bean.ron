@@ -1,7 +1,7 @@
 // Bush bean archetype (Phaseolus vulgaris, determinate type I). Design plan §3.16, §6.1.
 // Every number has a unit and a source; "~" means a guess to validate (WP12 tunes these).
 Species(
-  schema: 18,
+  schema: 19,
   id: "bush_bean",
   name: "Bush bean archetype",
   growth_form: Herb,
@@ -112,6 +112,10 @@ Species(
     turgor_loss_point: (value: -0.9, unit: "MPa", source: "Zlatev and Stoyanov 2005, well watered, -0.6 to -1.3; Haverroth 2025 -0.83 (R3 numbers [F])"),
     turgor_full: (value: -0.2, unit: "MPa", source: "R3b spec §4.4 (Zlatev and Stoyanov 2005; Haverroth 2025 [F])"),
     hydraulic_compensation: (value: 1.0, unit: "-", source: "~ Couvreur et al. 2012 compensation conductance over K_rs; the R3 numbers note keeps K_comp a parameter defaulting to K_rs, the knob for the fidelity report's hard cases"),
+    hypoxia_radial_factor: (value: 0.3, unit: "-", source: "~ R5b spec §4 (decision 0048): anoxia closes root aquaporins within hours (Tournaire-Roux et al. 2003, Arabidopsis), and waterlogged common bean leaves dehydrate within hours (Schildwacht 1989; Haverroth et al. 2024); the share a guess"),
+    hypoxia_n_uptake_factor: (value: 0.2, unit: "-", source: "~ R5b spec §4: a hypoxic root takes up little nitrogen, a guess"),
+    hypoxia_fine_root_death: (value: 48.0, unit: "h", source: "~ R5b spec §4: fine roots of a flooding-sensitive legume die within about two days of hypoxia (common bean is among the most flooding-sensitive crops, Soltani et al. 2017), a guess"),
+    hypoxia_root_death: (value: 120.0, unit: "h", source: "~ R5b spec §4: axes and laterals outlast fine roots, a guess"),
     stem_density: (value: 150000.0, unit: "g/m3", source: "~"),
     root_density: (value: 94000.0, unit: "g/m3", source: "OpenSimRoot bean root tissue density 0.094 g/cm3 (research review item 16)"),
     bulk_density: (value: 300000.0, unit: "g/m3", source: "~"),
