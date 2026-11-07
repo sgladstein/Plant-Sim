@@ -2,7 +2,7 @@
 // Every number has a unit and a source; "~" means a guess to validate. Bean-only
 // constants the grass module does not read say so in their source.
 Species(
-  schema: 18,
+  schema: 19,
   id: "spring_wheat",
   name: "Spring wheat",
   growth_form: Grass,
@@ -113,6 +113,10 @@ Species(
     turgor_loss_point: (value: -0.9, unit: "MPa", source: "Zlatev and Stoyanov 2005, well watered, -0.6 to -1.3; Haverroth 2025 -0.83 (R3 numbers [F]) (the bean values: no wheat source yet)"),
     turgor_full: (value: -0.2, unit: "MPa", source: "R3b spec §4.4 (Zlatev and Stoyanov 2005; Haverroth 2025 [F]) (the bean values: no wheat source yet)"),
     hydraulic_compensation: (value: 1.0, unit: "-", source: "~ Couvreur et al. 2012 compensation conductance over K_rs; the R3 numbers note keeps K_comp a parameter defaulting to K_rs, the knob for the fidelity report's hard cases"),
+    hypoxia_radial_factor: (value: 0.3, unit: "-", source: "~ R5b spec §4 (decision 0048): anoxia closes root aquaporins within hours (Tournaire-Roux et al. 2003, Arabidopsis); the share a guess, as for bean"),
+    hypoxia_n_uptake_factor: (value: 0.2, unit: "-", source: "~ R5b spec §4: a hypoxic root takes up little nitrogen, a guess, as for bean"),
+    hypoxia_fine_root_death: (value: 72.0, unit: "h", source: "~ R5b spec §4: wheat tolerates waterlogging somewhat better than bean, so its roots last half as long again, a guess"),
+    hypoxia_root_death: (value: 180.0, unit: "h", source: "~ R5b spec §4: wheat's axes outlast bean's by half again, a guess"),
     stem_density: (value: 150000.0, unit: "g/m3", source: "~"),
     root_density: (value: 94000.0, unit: "g/m3", source: "OpenSimRoot bean root tissue density 0.094 g/cm3 (research review item 16)"),
     bulk_density: (value: 300000.0, unit: "g/m3", source: "~"),

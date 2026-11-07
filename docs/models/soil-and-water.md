@@ -65,8 +65,10 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
    with `a = min(0.25, 0.1 (0.02 m / Δx)²)`, a diffusivity of 4e-5 m² h⁻¹ (decision 0019):
    0.1 in 2 cm pot cells, 0.016 in 5 cm plot cells. A watertight divider (a split
    pot's, R2b) removes the pairs across columns `nx/2 − 1` and `nx/2`.
-4. **Evaporation** (top layer): `E = 0.5 · R_soil · 3600 / λ · Δx² · clamp((W − W_ad)/(W_fc − W_ad), 0, 1)`,
-   at most `W − W_ad`; `λ = 2.45 MJ/kg`.
+4. **Evaporation**: water standing on a column evaporates first, at the full rate
+   `E_p = 0.5 · R_soil · 3600 / λ · Δx²`, at most the pond (R5b, decision 0048); the top
+   cell then gives `(E_p − E_pond) · clamp((W − W_ad)/(W_fc − W_ad), 0, 1)`, at most
+   `W − W_ad`; `λ = 2.45 MJ/kg`.
 5. **Soil temperature** of layer at depth `z`: `T = T̄₂₄ + e^{−z/D} (T_air(t − 24z/(2πD)) − T̄₂₄)`.
 6. **FTSW** over root-occupied cells: `Σ L_i (W_i − W_wp) / Σ L_i (W_fc − W_wp)` in [0, 1];
    1 with no roots.
@@ -116,6 +118,17 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
     pores larger than the air entry allows, which with `n` near 1.2 had cut `K` to a
     sixth of `K_s` within 3 cm of saturation.
 
+12. **Aeration** (R5b, decision 0048; after evaporation each hour). A cell's air-filled
+    porosity is `a = θ_s − θ`, and its oxygen deficit
+    `d = clamp((a_c − a) / (a_c − a_0), 0, 1)`: 0 at `a_c` = 0.10 m³ m⁻³ or more (the
+    classic limit for root function, Grable and Siemer 1968), 1 at `a_0` = 0.02 or
+    less (CROPGRO's minimum pore space for roots, `PORMIN`, in its dry bean and soybean
+    files). Its hypoxic hours `H` add `d` each hour and go back to 0 in an hour with
+    `d = 0`. The cell is hypoxic once `H ≥ 6` (the oxygen left in wet soil is used up
+    within hours; "~"), and its hypoxia is then `h = d`, else 0. Roots read `h` and
+    `H` (herb-architecture and plant-hydraulics cards); nitrogen reads `h` (nitrogen
+    card).
+
 ## Parameters
 | Name | Value | Unit | Source |
 | --- | --- | --- | --- |
@@ -140,6 +153,9 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | Flow table steps | 4,096 | - | numerical (from half the air-dry content to saturation) |
 | Pond store, plot | 5 | mm | ~ (R5a spec §3.2) |
 | Pond store, pot | 25 | mm | ~ (the space below a pot's rim) |
+| Aeration limit `a_c` | 0.10 | m3/m3 | Grable and Siemer 1968 ("~", R5b spec §4) |
+| Anoxic air-filled porosity `a_0` | 0.02 | m3/m3 | CROPGRO `PORMIN`, dry bean and soybean species files (R5b) |
+| Hypoxia onset | 6 | full-deficit hours | ~ (R5b) |
 
 ## Inputs and outputs
 | Direction | Quantity | Unit | From / to |
@@ -155,6 +171,8 @@ Per cell of volume `V` (cubic, edge `Δx`), water mass `W` (kg); capacities
 | out | water ledger (its storage counts ponded and saucer water) | kg | world ledger |
 | out | ponded water, saucer water | mm | lens (R5a) |
 | in | pot drainage: holes, none, saucer depth | - | scenario (R5a) |
+| out | hypoxia and hypoxic hours per cell | -, h | roots, nitrogen (R5b) |
+| in | a pot's drainage changed by `SetDrainage` | - | actions (R5b) |
 
 ## Encoded or emergent
 Encoded: all of the above. Emergent at plant level: drought stress timing, which
@@ -184,7 +202,13 @@ evaporation ever reads high (R5a review). A saucer feeds its pot's columns in in
 order, so when it is nearly empty the low-index columns drink first. No hysteresis. Air-dry soil reads far
 below any plant's reach (loam about −88 MPa, sand −36, clay −178), since the curve has
 no residual content to level off at; that only matters for the dry surface layer.
-Evaporation ignores humidity and wind; ponded and saucer water do not evaporate. In a plot the
+Evaporation ignores humidity and wind; saucer water does not evaporate, and ponded water
+evaporates only where nothing shades the soil (R5b). Aeration reads only the
+air-filled porosity: no oxygen diffusion, no respiration that uses the oxygen faster in
+warm soil, and the same limits in every texture, although a clay's fine pores hold
+less air at the same suction. A soaked garden-loam pot with holes stays under 10% air
+for days after heavy rain (its perched table), as real field soil in a container
+does; potting mixes, which keep 15 to 25% air when drained, are not modelled (R5b). In a plot the
 surface radiation is one value for the whole plot, so the gaps between rows dry no
 faster than the soil under the canopy (decision 0019). A root's radial conductance is
 linear in its length in a cell, with no resistance in the soil between roots beyond the
@@ -237,3 +261,5 @@ cell by gravity, in amounts far below the next hour's drainage.
 - Godwin, D. C., Jones, C. A. (1991). Nitrogen dynamics in soil-plant systems. In Hanks, J., Ritchie, J. T. (eds.), Modeling Plant and Soil Systems, Agronomy Monograph 31, 287–321 (nitrate carried by water as a mixing cell).
 - Veihmeyer, F. J., Hendrickson, A. H. (1931). The moisture equivalent as a measure of the field capacity of soils. Soil Sci. 32, 181–193 (field capacity after 2 to 3 days of drainage).
 - Allen, R. G., et al. (1998). FAO-56 (latent heat; Priestley–Taylor scale for the evaporation coefficient).
+- Grable, A. R., Siemer, E. G. (1968). Effects of bulk density, aggregate size, and soil water suction on oxygen diffusion, redox potentials, and elongation of corn roots. Soil Sci. Soc. Am. J. 32, 180–186 (about 10% air-filled porosity for root function; R5b).
+- Boote, K. J., Jones, J. W., Hoogenboom, G. CROPGRO species files `BNGRO048.SPE` and `SBGRO048.SPE` (DSSAT CSM, `PORMIN` 0.02, the minimum pore space for roots; R5b).

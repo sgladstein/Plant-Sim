@@ -52,7 +52,10 @@ replayed exactly.
 - Pot drainage (R5a, decision 0046; soil-and-water card equation 2): a scenario pot's
   `drainage` is `Holes` (the default: water leaves only through saturated soil at the
   base), `NoHoles`, or `Saucer(depth_mm: d)` (0 to 100 mm: holes over a saucer that
-  feeds the pot back). Plots always drain freely.
+  feeds the pot back). Plots always drain freely. The `SetDrainage { soil, drainage }`
+  action changes a pot's drainage from that hour (R5b, decision 0048), as a
+  waterlogging experiment seals its pots and then drains them; it is refused for a
+  plot, and the game counts it as its own action type, which no challenge allows.
 - Hash: for each serialized word `w_k` (k = 0, 1, …):
   `h ← s(h ⊕ s(w_k + k))`, final `s(h ⊕ n)`, with `s` the splitmix64 finalizer.
   Daily hash `H_d = hash(H_{d−1}, tick, soils, plants, actions and rows new since d−1)`,
@@ -80,7 +83,7 @@ replayed exactly.
 | in | supports (stakes, strings) | cm | the scenario (WP22) |
 | in | scenario events, heat wave, shade cloth, rain shelter | tick, kind; °C; - | the scenario's treatments (decisions 0015, 0018) |
 | in | actions | tick, kind | player, scripts, replay |
-| out | daily rows per plant, with the day's weather and soil water, and the soil's drained, run-off and evaporated water and leached and mineralized nitrogen since the start (decision 0047) | - | `ps-export` CSV (decision 0015) |
+| out | daily rows per plant, with the day's weather and soil water, and the soil's drained, run-off and evaporated water and leached, mineralized and denitrified nitrogen since the start (decisions 0047, 0048) | - | `ps-export` CSV (decision 0015) |
 | out | full-state hash per day | u64 | golden tests |
 | out | snapshot | RON | saves, the viewer (WP16) |
 | out | lens data per hour (not state; WP26) | see below | `World::lens`, `ps_session::Snapshot::lens` |

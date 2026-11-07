@@ -168,6 +168,7 @@ fn nitrogen_uptake_is_limited_and_fair() {
         demand: GramsN(1e-4),
         roots: r,
         capacity_per_length: 6e-4,
+        hypoxic_factor: 1.0,
     };
     // A small demand is met exactly.
     let u = g.take_up_nitrogen(&[req(&a)]).unwrap();
@@ -257,4 +258,43 @@ fn soaking_in_carries_nitrate_down() {
     }
     assert!(g.no3(0).0 < 2e-4, "top {:?}", g.no3);
     assert!((g.total_nitrogen().0 - 1e-3).abs() < 1e-15);
+}
+
+/// R5b (decision 0048): a waterlogged cell loses nitrate to the air at
+/// `DENITRIFICATION_RATE · f_T` an hour once it is hypoxic, and stops nitrifying; the
+/// nitrogen ledger closes with the new line. A cell at field capacity loses none.
+#[test]
+fn a_waterlogged_cell_denitrifies_and_the_ledger_closes() {
+    let mut g = column(2, 30.0);
+    g.set_drainage(crate::Drainage::NoHoles);
+    g.fill_to(Texture::Loam.hydraulics().saturation);
+    let start = g.no3(1).0;
+    let mut nitrified = 0.0;
+    for h in 1..=48 {
+        g.step_hour(&hour(0.0, 30.0));
+        let l = g.nitrogen_ledger();
+        assert!(l.relative_residual(g.total_nitrogen()) < 1e-12, "{l:?}");
+        if h == 5 {
+            nitrified = l.nitrified.0;
+        }
+    }
+    let l = *g.nitrogen_ledger();
+    assert!(l.denitrified.0 > 0.0);
+    assert!(
+        (l.nitrified.0 - nitrified).abs() <= 1e-15 * nitrified.abs(),
+        "hypoxic soil nitrifies"
+    );
+    // 30 °C (f_T = 1): 42 hypoxic hours at 2% of the nitrate an hour, the first 6
+    // before the cell turned hypoxic.
+    let expected = start * libm::pow(1.0 - DENITRIFICATION_RATE, 43.0);
+    assert!(
+        (g.no3(1).0 / expected - 1.0).abs() < 0.05,
+        "{} {expected}",
+        g.no3(1).0
+    );
+    let mut fc = column(2, 30.0);
+    for _ in 0..48 {
+        fc.step_hour(&hour(0.0, 30.0));
+    }
+    assert!(fc.nitrogen_ledger().denitrified.0.abs() < 1e-15);
 }

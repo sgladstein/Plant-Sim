@@ -659,6 +659,8 @@ const fn plant_key(entity: u64) -> u64 {
 
 /// One plant: its organ graph and the growth-form state around it. Serializes
 /// completely for snapshots (the hourly scratch and the constant sky are rebuilt).
+// Each flag is an independent state of the plant's development, not an encoded mode.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Plant {
     /// Parameters.
@@ -707,6 +709,10 @@ pub struct Plant {
     pub root_axes: Vec<RootAxis>,
     /// Root types whose axes have appeared.
     pub root_types_started: Vec<bool>,
+    /// An axis tip was lost to waterlogged soil and the hypocotyl has not rooted again
+    /// yet (R5b).
+    #[serde(default)]
+    pub drowned: bool,
     /// Root length per soil cell, rebuilt daily.
     pub roots: RootCells,
     /// Each root organ's length per soil cell, rebuilt daily with [`Plant::roots`]: the
@@ -1028,6 +1034,7 @@ impl Plant {
             pods: Vec::new(),
             root_axes: Vec::new(),
             root_types_started: vec![false; n_roots],
+            drowned: false,
             roots: RootCells::default(),
             root_spans: Vec::new(),
             water_potential: Vec::new(),
@@ -1572,8 +1579,9 @@ impl Plant {
             // Stem pipe-model targets from the leaf area carried (R1a).
             self.pipe_targets();
         }
-        // 4. Senescence and shedding.
+        // 4. Senescence and shedding, and roots drowned in waterlogged soil (R5b).
         self.senescence(now)?;
+        self.drown_roots(now, soil)?;
         self.rot_pods(now)?;
         self.update_carbon_met();
         // 5. Root elongation and branching.

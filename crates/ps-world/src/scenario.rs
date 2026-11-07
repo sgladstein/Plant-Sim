@@ -677,6 +677,14 @@ pub enum ActionKind {
         /// New schedule.
         irrigation: Irrigation,
     },
+    /// Change how a pot drains (R5b, decision 0048): seal its holes, open them, or
+    /// stand it in a saucer, as a waterlogging experiment drains its pots. Pots only.
+    SetDrainage {
+        /// Soil id of a pot.
+        soil: u32,
+        /// The new drainage.
+        drainage: PotDrainage,
+    },
     /// Cut an organ and everything it carries off a plant.
     Prune {
         /// Plant id.

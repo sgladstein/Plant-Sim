@@ -19,7 +19,8 @@
 //! 3. lateral redistribution: 10% of the water difference to each horizontal neighbor
 //!    (none across a pot's divider); nitrate moves with that water at the concentration
 //!    of the cell it leaves, plus slow diffusion (R2b, decision 0043);
-//! 4. evaporation from the top layer only, reduced as it dries;
+//! 4. evaporation from water standing on the surface at the full rate, then from the
+//!    top layer only, reduced as it dries (R5b);
 //! 5. soil temperature by layer from lagged, damped air temperature;
 //! 6. nitrogen: mineralization and nitrification ([`nitrogen`]; nitrate also moves with
 //!    the vertical and lateral water of steps 2 and 3).
@@ -79,6 +80,18 @@ pub const PLOT_POND_MM: f64 = 5.0;
 pub const POT_POND_MM: f64 = 25.0;
 /// Relative conservation tolerance (CLAUDE.md).
 pub const CLOSURE_TOLERANCE: f64 = 1e-9;
+/// Air-filled porosity below which a cell's soil runs short of oxygen, m³ m⁻³ (R5b,
+/// decision 0048): the classic 10% for root function (Grable and Siemer 1968; "~").
+pub const AERATION_CRITICAL: f64 = 0.10;
+/// Air-filled porosity at which a cell's soil has no oxygen to spare, m³ m⁻³ (R5b,
+/// decision 0048): CROPGRO's minimum pore space for roots, `PORMIN`, in its dry bean
+/// and soybean species files. Between it and [`AERATION_CRITICAL`] the oxygen deficit
+/// rises linearly from 0 to 1.
+pub const AERATION_ANOXIC: f64 = 0.02;
+/// Full-deficit hours a cell gathers before it is hypoxic: the roots and microbes use
+/// up the oxygen left in the wet soil ("~", R5b; flooded soil loses its oxygen within
+/// about a day).
+pub const HYPOXIA_ONSET_HOURS: f64 = 6.0;
 
 /// Soil texture class.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -401,6 +414,15 @@ pub struct SoilGrid {
     /// Water standing in a saucer, kg.
     #[serde(default)]
     saucer: KgWater,
+    /// Each cell's oxygen deficit summed over the hours since it last had air enough
+    /// (R5b): full-deficit hours.
+    #[serde(default)]
+    hypoxic_hours: Vec<f64>,
+}
+
+/// Oxygen deficit at air-filled porosity `a`, 0 to 1 (R5b).
+fn deficit_of(a: f64) -> f64 {
+    ((AERATION_CRITICAL - a) / (AERATION_CRITICAL - AERATION_ANOXIC)).clamp(0.0, 1.0)
 }
 
 /// Water stress factor from FTSW: 1 above `threshold`, linear to 0 at FTSW 0 (§3.6).
@@ -545,6 +567,7 @@ impl SoilGrid {
             drainage: Drainage::Free,
             pond: vec![KgWater(0.0); nx * ny],
             saucer: KgWater(0.0),
+            hypoxic_hours: vec![0.0; n],
         };
         g.fill_to(texture.hydraulics().field_capacity);
         Ok(g)
@@ -691,6 +714,60 @@ impl SoilGrid {
         self.water[i].0 / (self.cell_volume() * WATER_DENSITY)
     }
 
+    /// Air-filled porosity of cell `i`, m³ m⁻³ (R5b): saturation less the water, at
+    /// least 0.
+    #[must_use]
+    pub fn air_porosity(&self, i: usize) -> f64 {
+        (self.texture.hydraulics().saturation - self.theta(i)).max(0.0)
+    }
+
+    /// Oxygen deficit of cell `i` now, 0 to 1 (R5b): 0 at [`AERATION_CRITICAL`]
+    /// air-filled porosity or more, 1 at [`AERATION_ANOXIC`] or less, linear between.
+    #[must_use]
+    pub fn oxygen_deficit(&self, i: usize) -> f64 {
+        if !self.is_active(i) {
+            return 0.0;
+        }
+        deficit_of(self.air_porosity(i))
+    }
+
+    /// Cell `i`'s oxygen deficit summed over the hours since it last had air enough,
+    /// full-deficit hours (R5b).
+    #[must_use]
+    pub fn hypoxic_hours(&self, i: usize) -> f64 {
+        self.hypoxic_hours.get(i).copied().unwrap_or(0.0)
+    }
+
+    /// How hypoxic cell `i` is, 0 to 1 (R5b): its oxygen deficit once it has gathered
+    /// [`HYPOXIA_ONSET_HOURS`], else 0. Roots and microbes read it.
+    #[must_use]
+    pub fn hypoxia(&self, i: usize) -> f64 {
+        if self.hypoxic_hours(i) >= HYPOXIA_ONSET_HOURS {
+            self.oxygen_deficit(i)
+        } else {
+            0.0
+        }
+    }
+
+    /// Adds each active cell's oxygen deficit to its hypoxic hours, and sets them to 0
+    /// again once it has air enough (R5b).
+    fn update_aeration(&mut self) {
+        let n = self.water.len();
+        if self.hypoxic_hours.len() != n {
+            self.hypoxic_hours = vec![0.0; n];
+        }
+        let sat = self.texture.hydraulics().saturation;
+        let v = self.cell_volume() * WATER_DENSITY;
+        for (i, h) in self.hypoxic_hours.iter_mut().enumerate() {
+            let d = if self.active[i] {
+                deficit_of(sat - self.water[i].0 / v)
+            } else {
+                0.0
+            };
+            *h = if d > 0.0 { *h + d } else { 0.0 };
+        }
+    }
+
     /// Soil temperature of a layer.
     #[must_use]
     pub fn layer_temperature(&self, z: usize) -> Celsius {
@@ -743,6 +820,7 @@ impl SoilGrid {
         self.flow_vertically(&mut ledger);
         self.redistribute_laterally();
         self.evaporate(h.surface_radiation, &mut ledger);
+        self.update_aeration();
         self.update_temperature(h.t_air);
         self.transform_nitrogen();
         self.assert_nitrogen_closes();
@@ -1089,8 +1167,16 @@ impl SoilGrid {
             if !self.active[i] {
                 continue;
             }
+            // Standing water goes first, at the full rate (R5b).
+            let ponded = self.pond.get(i).copied().unwrap_or(KgWater(0.0));
+            let from_pond = potential.min(ponded).max(KgWater(0.0));
+            if from_pond.0 > 0.0 {
+                self.pond[i] -= from_pond;
+                ledger.evaporated += from_pond;
+            }
             let reduction = ((self.water[i] - dry) / (fc - dry)).clamp(0.0, 1.0);
-            let e = (potential * reduction).min((self.water[i] - dry).max(KgWater(0.0)));
+            let e =
+                ((potential - from_pond) * reduction).min((self.water[i] - dry).max(KgWater(0.0)));
             self.water[i] -= e;
             ledger.evaporated += e;
         }

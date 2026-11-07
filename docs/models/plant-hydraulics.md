@@ -29,7 +29,11 @@ negative below ground); organs report the pressure part `ψ_p`.
    so `k_r = L · k_root k_soil / (k_root + k_soil)` (kg h⁻¹ MPa⁻¹ after × 3.6e6), `r`
    the organ's radius (m), `L` its length in the cell (all the roots a cohort stands
    for, m). `Lp_r` falls linearly from the young to the thickened value with the
-   organ's secondary share of its structure. The soil term is steady radial flow
+   organ's secondary share of its structure, and in a hypoxic cell (hypoxia `h`,
+   soil-and-water card equation 12) it is multiplied by `1 − h (1 − f_Lp)`, `f_Lp` the
+   species' `hypoxia_radial_factor` (0.3): anoxia closes root aquaporins within hours
+   (Tournaire-Roux et al. 2003), so a plant wilts in wet soil (R5b, decision 0048). The
+   soil term is steady radial flow
    through a cylinder of soil from the root's surface to half the distance between
    roots (Gardner 1960), `r_b = 1 / √(π RLD)` with `RLD` this plant's root length per
    volume of the cell, at least `2r`. `K(θ) = K_s · K_rel(θ)` is Mualem's conductivity
@@ -109,7 +113,12 @@ simplified (world-and-schedule card). Both levels share equations 3 and 5 to 11.
     at the collar before there are leaves). It gives the root system's conductance
     `K_rs = 1 / (−ψ_collar)` (the collar: the tap root's parent node), each root cell's
     standard uptake fraction `SUF_c = q_c / Σ q` (they sum to 1), and each organ's drop
-    below the root zone per unit transpiration, `D_i = −ψ_i`.
+    below the root zone per unit transpiration, `D_i = −ψ_i`. Waterlogged soil can
+    drain, or run short of air, within hours (R5b, decision 0048), so the simplified
+    level makes a new summary within the day once any root cell's hypoxia has moved
+    by more than 0.05 (`HYPOXIA_REFRESH`) from the summary's; without it a rained-on
+    pot's leaves fell 0.4 MPa lower than the detailed level's on the day its top
+    drained.
 13. **Hourly uptake.** The root zone's effective potential is
     `ψ_seq = Σ_c SUF_c ψ_c` (total potentials), and each cell gives
     `U_c = E · SUF_c + K_comp · SUF_c · (ψ_c − ψ_seq)` with `E` the plant's
@@ -134,6 +143,7 @@ Species file constants (schema 18). Wheat takes the bean's values: no wheat sour
 | --- | --- | --- | --- |
 | `root_radial_conductivity` (`Lp_r`, young and fine) | 2e-7 | m s⁻¹ MPa⁻¹ | Fiscus and Markhart 1979, whole bean root systems, 0.8 to 6e-7 |
 | `root_radial_conductivity_thickened` | 5e-8 | m s⁻¹ MPa⁻¹ | ~ suberized over young root about 0.39 in pine |
+| `hypoxia_radial_factor` (`f_Lp`, beans and wheat) | 0.3 | - | ~ R5b spec §4; Tournaire-Roux et al. 2003 (Arabidopsis, aquaporin gating) |
 | `root_axial_conductance_tip` (`K_tip`; laterals, fine roots) | 2e-11 | m⁴ s⁻¹ MPa⁻¹ | Barrios-Gómez 2012 tap-root apex metaxylem by Hagen–Poiseuille × 0.4 |
 | `root_axial_conductance_tap` (mature) | 2e-9 | m⁴ s⁻¹ MPa⁻¹ | Barrios-Gómez 2012 tap-root base metaxylem |
 | `root_axial_conductance_basal` (mature) | 1e-10 | m⁴ s⁻¹ MPa⁻¹ | Massas 2022, wild *P. vulgaris* basal root 8.9e-11 |
@@ -155,6 +165,7 @@ Species file constants (schema 18). Wheat takes the bean's values: no wheat sour
 | in | each leaf's transpiration this hour | kg | gas exchange, leaf energy balance |
 | in | root spans: (root organ, cell, length) | -, -, m | daily root rebuild (geometry) |
 | in | soil water content and potential per cell | m³ m⁻³, kPa | soil-and-water card (R3a) |
+| in | each cell's hypoxia | - | soil aeration (R5b) |
 | in | organ sizes, heights and secondary share | m, m, - | organ growth, thickening |
 | out | flow to or from each root cell | kg | soil joint uptake |
 | out | every organ's water potential | MPa | next hour's stomata and expansion; lens |
@@ -172,6 +183,12 @@ top falls below its base; wilting in a dry pot and the recovery after watering; 
 stomata closing through a drought before the soil reaches its wilting point.
 
 ## Known limits
+- A waterlogged plant wilts through its roots' conductance alone (R5b): leaf ψ falls
+  to about −1.2 to −1.4 MPa in a soaked sealed pot against −0.8 in the control, and
+  once its laterals die to −8 to −9 MPa. Haverroth et al. (2024) find bean leaf
+  hydraulic conductance falls within 24 h of waterlogging beyond what the leaves'
+  drying explains (probably a root signal); that and the leaf embolism that follows
+  are not modelled.
 - No water storage in the plant (no capacitance): potentials follow transpiration
   within the hour, with no buffering by stem or leaf water.
 - No cavitation or xylem vulnerability: `K_leaf` and `K_x` don't fall as the potential
@@ -213,7 +230,8 @@ stomata closing through a drought before the soil reaches its wilting point.
 - Wheat's values are the bean's.
 - The detailed level costs a network solve per plant per hour. The simplified level's
   summary lags up to a day: roots grown and cells dried since the day's rebuild are
-  seen the next day; its compensation `K_comp = K_rs` is Couvreur's default, untuned
+  seen the next day (a change in a root cell's hypoxia is seen within the hour,
+  equation 12); its compensation `K_comp = K_rs` is Couvreur's default, untuned
   (the fidelity report passes without tuning).
 
 ## Validation
@@ -230,6 +248,9 @@ stomata closing through a drought before the soil reaches its wilting point.
   its ledger closing; `SetFidelity` switches are logged and replay to the same hash; a
   locked scenario and an unknown plant refuse them. `ps_game` tests: a switch is no rule
   break, and a challenge's lock reaches its scenario.
+- `ps-world/tests/waterlogging.rs`: `a_simplified_waterlogged_pot_wilts_like_the_detailed_one`
+  (days 45 to 53 of m2/waterlogged_pot, lowest leaf ψ within 0.1 MPa of the detailed
+  level's each day; R5b, decision 0048).
 - `ps-cli fidelity` (CI): the two levels' outcomes on six scenarios and a switch run
   (decision 0045), and `validate --fidelity simplified`.
 - `ps-arch/tests/hydraulics.rs` (bush bean, 24 cm loam pot, watered nightly):
@@ -259,3 +280,6 @@ stomata closing through a drought before the soil reaches its wilting point.
   severe stress).
 - Baca Cabrera, J. C., Hirl, R. T., Zhu, J., Schäufele, R., Schnyder, H. (2020). Atmospheric CO2 and VPD alter the diel oscillation of leaf elongation in perennial ryegrass: compensation of hydraulic limitation by stored-growth. New Phytol. 227, 1776–1789. doi:10.1111/nph.16639.
 - Lu, Z., et al. (2022). Potassium regulates diel leaf growth of *Brassica napus* by coordinating the rhythmic carbon supply and water balance. J. Exp. Bot. 73, 3686–3698. doi:10.1093/jxb/erac060.
+- Tournaire-Roux, C., et al. (2003). Cytosolic pH regulates root water transport during anoxic stress through gating of aquaporins. Nature 425, 393–397. doi:10.1038/nature01853 (R5b).
+- Haverroth, E. J., et al. (2024). Shoot hydraulic impairments induced by root waterlogging: parallels and contrasts with drought. Plant Physiol. 197, kiae336. doi:10.1093/plphys/kiae336 (bean leaves dehydrate within hours of waterlogging; R5b).
+- Schildwacht, P. M. (1989). Is a decreased water potential after withholding oxygen to roots the cause of the decline of leaf-elongation rates in *Zea mays* L. and *Phaseolus vulgaris* L.? Planta 177, 178–184. doi:10.1007/BF00392806 (R5b).

@@ -26,6 +26,10 @@ pub const MINERALIZATION_RATE: f64 = 1.5e-4;
 /// Nitrification rate at 30 °C and optimal water, per day ("~"; 0.15 d⁻¹ at 20 °C,
 /// inside 0.1 to 0.2).
 pub const NITRIFICATION_RATE: f64 = 0.34;
+/// Denitrification rate of a hypoxic cell's nitrate at 30 °C, per hour ("~", R5b spec
+/// §4, decision 0048): about 0.2 a day at 20 °C, so a waterlogged soil loses most of
+/// its nitrate within a week.
+pub const DENITRIFICATION_RATE: f64 = 0.02;
 /// Residual nitrate roots cannot take, mg N per kg soil (CROPGRO NUPTAK).
 pub const NO3_FLOOR_PPM: f64 = 0.25;
 /// Residual ammonium roots cannot take, mg N per kg soil (CROPGRO NUPTAK).
@@ -93,6 +97,9 @@ pub struct NitrogenLedger {
     pub leached: GramsN,
     /// Taken up by roots.
     pub uptake: GramsN,
+    /// Nitrate lost to the air from hypoxic cells (R5b).
+    #[serde(default)]
+    pub denitrified: GramsN,
     /// Humus N mineralized to ammonium (internal; not part of the balance).
     pub mineralized: GramsN,
     /// Ammonium nitrified (internal; not part of the balance).
@@ -103,13 +110,14 @@ impl NitrogenLedger {
     /// `(stock − expected) / largest term`.
     #[must_use]
     pub fn relative_residual(&self, stock: GramsN) -> f64 {
-        let expected = self.start + self.added - self.leached - self.uptake;
+        let expected = self.start + self.added - self.leached - self.uptake - self.denitrified;
         let scale = [
             stock.0,
             self.start.0,
             self.added.0,
             self.leached.0,
             self.uptake.0,
+            self.denitrified.0,
         ]
         .into_iter()
         .fold(1e-12, f64::max);
@@ -127,6 +135,8 @@ pub struct NitrogenRequest<'a> {
     /// Uptake capacity per meter of root per day at high soil N, g N m⁻¹ d⁻¹, each
     /// form; the roots draw from the cells they occupy (R2a, decision 0037).
     pub capacity_per_length: f64,
+    /// Share of that capacity its roots keep in a fully hypoxic cell (R5b), 0 to 1.
+    pub hypoxic_factor: f64,
 }
 
 /// What one plant got from the joint nitrogen uptake.
@@ -320,7 +330,9 @@ impl SoilGrid {
         self.assert_nitrogen_closes();
     }
 
-    /// One hour of mineralization and nitrification at each layer's temperature.
+    /// One hour of mineralization, nitrification and, in hypoxic cells, denitrification
+    /// at each layer's temperature. Denitrification scales with the cell's hypoxia and
+    /// nitrification, which needs oxygen, with what is left of it (R5b).
     pub(crate) fn transform_nitrogen(&mut self) {
         let hy = self.texture.hydraulics();
         let v = self.cell_volume() * crate::WATER_DENSITY;
@@ -340,10 +352,16 @@ impl SoilGrid {
                 let m = self.organic_n[i] * (MINERALIZATION_RATE * f / 24.0);
                 self.organic_n[i] -= m;
                 self.nh4[i] += m;
-                let n = self.nh4[i] * (NITRIFICATION_RATE * f / 24.0).min(1.0);
+                self.n_ledger.mineralized += m;
+                let hypoxia = self.hypoxia(i);
+                if hypoxia > 0.0 {
+                    let d = self.no3[i] * (DENITRIFICATION_RATE * ft * hypoxia).min(1.0);
+                    self.no3[i] -= d;
+                    self.n_ledger.denitrified += d;
+                }
+                let n = self.nh4[i] * (NITRIFICATION_RATE * f * (1.0 - hypoxia) / 24.0).min(1.0);
                 self.nh4[i] -= n;
                 self.no3[i] += n;
-                self.n_ledger.mineralized += m;
                 self.n_ledger.nitrified += n;
             }
         }
@@ -363,8 +381,9 @@ impl SoilGrid {
     /// not matter.
     ///
     /// 1. A plant's potential in each root cell, per form, is
-    ///    `L · capacity · (1 − e^(−0.08 ppm)) · √f`, with `f` the cell's FTSW, and is
-    ///    never more than the form's nitrogen above its residual floor.
+    ///    `L · capacity · (1 − e^(−0.08 ppm)) · √f`, with `f` the cell's FTSW, times
+    ///    `1 − h (1 − hypoxic factor)` with `h` the cell's hypoxia (R5b), and is never
+    ///    more than the form's nitrogen above its residual floor.
     /// 2. It asks each cell for `min(demand, Σ potential) / Σ potential` of it.
     /// 3. Where the plants together ask a cell for more than it has above the floor,
     ///    every request there is scaled by the same factor.
@@ -399,7 +418,8 @@ impl SoilGrid {
                         return (0.0, 0.0);
                     }
                     let w = libm::sqrt(self.cell_ftsw(i));
-                    let cap = l.0 * p.capacity_per_length.max(0.0) * w;
+                    let air = 1.0 - self.hypoxia(i) * (1.0 - p.hypoxic_factor.clamp(0.0, 1.0));
+                    let cap = l.0 * p.capacity_per_length.max(0.0) * w * air;
                     let a3 = avail(&self.no3, i, floor_no3);
                     let a4 = avail(&self.nh4, i, floor_nh4);
                     (

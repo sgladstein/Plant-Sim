@@ -16,7 +16,10 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 **Soil, per cell, hourly after the water steps** (`SoilGrid::step_hour`):
 
 1. Mineralization `ΔNH₄ = k_min · f_T · f_W / 24 · N_humus`.
-2. Nitrification `ΔNO₃ = k_nit · f_T · f_W / 24 · NH₄`.
+2. Nitrification `ΔNO₃ = k_nit · f_T · f_W (1 − h) / 24 · NH₄`, `h` the cell's hypoxia
+   (soil-and-water card equation 12; R5b, decision 0048): nitrifiers need oxygen.
+   Denitrification, in a hypoxic cell, `ΔNO₃ = −k_dn · f_T · h · NO₃` an hour, booked as
+   the ledger's denitrified line (nitrate lost to the air).
 3. `f_T = min(1.2, (T/30 °C)²)` (T in °C, 0 below 0); `f_W` rises linearly from 0 at
    the wilting point to 1 halfway to field capacity, stays 1 up to field capacity, and
    falls linearly to 0.5 at saturation (APSIM SoilN shape).
@@ -40,8 +43,9 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 
 6. Each root cell takes up from itself only, by its own root length `L` (R2a, decision
    0037: the 4 cm reach and the 25× capacity that stood in for undrawn roots are gone).
-7. Per root cell and form: `P = L · cap · (1 − e^(−0.08 ppm)) · √FTSW`, at most
-   the cell's N above the floor (0.25 ppm NO₃, 0.5 ppm NH₄).
+7. Per root cell and form: `P = L · cap · (1 − e^(−0.08 ppm)) · √FTSW ·
+   (1 − h (1 − f_N))`, at most the cell's N above the floor (0.25 ppm NO₃, 0.5 ppm
+   NH₄); `f_N` the species' share kept in a fully hypoxic cell (R5b).
 8. Each plant asks `P · min(request, ΣP) / ΣP`. Where the asks to a cell exceed what it
    holds, all are scaled by the same factor.
 
@@ -97,6 +101,8 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 | --- | --- | --- | --- |
 | Mineralization rate at 30 °C | 1.5e-4 | 1/day | ~ APSIM SoilN humic pool |
 | Nitrification rate at 30 °C | 0.34 | 1/day | ~ (0.15 at 20 °C) |
+| Denitrification rate `k_dn` at 30 °C | 0.02 | 1/hour | ~ (R5b spec §4; about 0.2 a day at 20 °C) |
+| hypoxia_n_uptake_factor `f_N` (beans, wheat) | 0.2 | - | ~ (R5b spec §4) |
 | Uptake floors NO₃, NH₄ | 0.25, 0.5 | mg N/kg | CROPGRO NUPTAK |
 | Uptake response | 0.08 | per mg N/kg | CROPGRO NUPTAK |
 | Nitrate diffusion fraction at 2 cm | 5.1e-3 | per hour | Millington–Quirk at field capacity, `D₀ θ^{7/3}/φ²` with D₀ 1.9e-9 m² s⁻¹, θ 0.3, φ 0.45 (R2b, decision 0043) |
@@ -132,7 +138,8 @@ Code: `ps_soil::nitrogen` (soil), `ps_arch::nitrogen` (plant). Decision 0020.
 | out | expansion stress, growth gate | - | organ growth |
 | out | fixation carbon | g C | carbon ledger |
 | out | organ N | g N | maintenance respiration |
-| out | soil and plant N ledgers | g N | world ledger, daily CSV |
+| in | each cell's hypoxia | - | soil aeration (R5b) |
+| out | soil and plant N ledgers (denitrified line from R5b) | g N | world ledger, daily CSV |
 
 ## Encoded or emergent
 Encoded: the soil rates, the uptake law, the order of supply (pool, soil, mining,
@@ -169,8 +176,10 @@ Emergent:
 - Leaf aging still multiplies capacity next to leaf N (decision 0020).
 - Pod set does not read N. An N-short plant sets as many pods as a fed one and fills
   smaller seeds; real beans shed pods instead.
-- No denitrification, volatilization, immobilization or residue decay; litter N leaves
-  the system.
+- No volatilization, immobilization or residue decay; litter N leaves the system.
+  Denitrification (R5b) needs a hypoxic cell, so it reads only the air-filled porosity
+  and not the carbon microbes need; real soils also lose some nitrate in wet patches
+  above 10% air, which is not modelled.
 - An unfertilized 24 cm pot holds far less N per plant than a field, so it is N-limited
   (seed mass 0.17 g against 0.25 fed).
 - Seed N during seed fill can dilute to 0.02 g/g, which is a guess.
@@ -181,7 +190,8 @@ Emergent:
 
 ## Validation
 - `ps_soil::nitrogen::tests::*`: rates to 1e-9 relative, factor shapes, leaching closes
-  the ledger, nitrate moving with the water and diffusing slowly
+  the ledger, a waterlogged cell denitrifies at the stated rate and stops nitrifying
+  with the ledger closed (R5b), nitrate moving with the water and diffusing slowly
   (`nitrate_moves_with_the_water_and_diffuses_slowly`, `a_divider_stops_water_and_nitrate`,
   R2b; `soaking_in_carries_nitrate_down`, R5a), fertilizer in the top layer, uptake limited by root length, soil N and demand
   and fair between plants.

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::Param;
 
 /// Current species schema version.
-pub const SCHEMA: u32 = 18;
+pub const SCHEMA: u32 = 19;
 
 /// A parameter the schema knows: key, exact unit string, meaning.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -277,6 +277,15 @@ param_group!(
         /// Couvreur's compensation conductance over the root system's, `K_comp / K_rs`,
         /// for the simplified water level (R3c, decision 0045; schema 18).
         hydraulic_compensation: "-",
+        /// Share of its radial conductance a root keeps in hypoxic soil (R5b, decision
+        /// 0048; schema 19).
+        hypoxia_radial_factor: "-",
+        /// Share of its nitrogen uptake capacity a root keeps in hypoxic soil (R5b).
+        hypoxia_n_uptake_factor: "-",
+        /// Hours short of air after which a fine-root cohort dies (R5b).
+        hypoxia_fine_root_death: "h",
+        /// Hours short of air after which an axis segment or lateral dies (R5b).
+        hypoxia_root_death: "h",
         /// Stem tissue density.
         stem_density: "g/m3",
         /// Root tissue density.

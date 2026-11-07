@@ -328,5 +328,17 @@ ValidationResponses(
       tag: Encoded,
       note: "R2b (decision 0043): lateral and fine-root length in an 8 cm cube of soil on the tap root's path, 6 to 14 cm deep, with ten times the nitrate, against the same cube at the soil's own nitrate, day 45 (pot under a rain shelter). Arabidopsis: about 2x lateral elongation in a nitrate zone (Zhang 1999); mean lateral length 1.8 against 0.8 cm in a patch (Linkohr 2002); 1.5 to 4 expected. No legume number; a nodulated bean probably responds less (R2 numbers, research thread).",
     ),
+    Response(
+      id: "waterlogging_root_loss",
+      scenario: "m2/waterlogged_pot",
+      baseline: "m2/waterlogged_pot_control",
+      variable: "fine_root_length_m",
+      at: Day(49),
+      expect: RelChange(min: -1.0, max: -0.5),
+      sources: ["plan_r5b_waterlogging", "haverroth2024", "soltani2017"],
+      gate: Info,
+      tag: Encoded,
+      note: "R5b (decision 0048) done-when: a pot with sealed holes soaked on day 45 and kept wet for 4 days loses most of its fine roots, against the same plant in a pot with holes watered to field capacity. Fine-root death after 48 full-deficit hours is encoded (~); no bean measurement of fine-root loss was found. Common bean is among the crops most hurt by waterlogging (Soltani 2017).",
+    ),
   ],
 )

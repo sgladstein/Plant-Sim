@@ -47,7 +47,9 @@ on model 0.25.0 (R3b), again on 0.26.0 (R3c, decision 0045), where thirsty summe
 medals rose a pod or more (5 / 7 / 8.5, from 4 / 6 / 7.5) and the others held, and again
 on 0.27.0 (R5a, decision 0046), where thirsty summer's moved to 4 / 6.5 / 8.5 once its hint named the flowering weeks and
 hungry soil's rose to 6 / 8 / 9, then its gold came down to 8.75 so that any sound early
-feeding can reach it (the top four plans sat within 0.15 g of 9.0).
+feeding can reach it (the top four plans sat within 0.15 g of 9.0), and again on 0.29.0
+(R5b, decision 0048), where hungry soil's gold came down to 8.4 (one rainy season of the
+eight now waterlogs its pot).
 Single-seed sweeps on 0.23.0 to 0.25.0 are in the git history of this file; the
 review's eight-seed sweep is in the project files (reviews/wp32-challenges-137-review.md
 and reviews/wp32-seasons-143-review.md). Even the mean of 8 moves from one strategy to
@@ -57,11 +59,11 @@ Every challenge locks the water network at its detailed level (`fidelity:
 Some(Locked(Detailed))`, decision 0045), so the viewer's level switches never change a
 score.
 
-| Challenge | Setting | Player controls | Sweep, mean of 8 seasons (0.27.0) | Medals (B / S / G) |
+| Challenge | Setting | Player controls | Sweep, mean of 8 seasons (0.29.0) | Medals (B / S / G) |
 | --- | --- | --- | --- | --- |
-| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | no water 1.1 pods; 6 L spread daily over the season 1.1 to 1.9; see the window sweep below: days 35 to 80 2.2 to 4.2, days 42 to 70 4.0 to 6.0, days 40 to 62 8.0 to 11.0 (the fixture, every 3 days from day 40 to 61, 10.0) | 4 / 6.5 / 8.5 pods (0.26.0: 5 / 7 / 8.5) |
-| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 8 (blooms into the heat) 3.8 to 4.5 pods; days 12 and 16 4.9 and 8.1; days 20 to 26 8.4 to 11.8 (day 24 11.8); days 28 to 40 8.3 to 10.9 (day 28, the fixture, 10.4; day 32 8.6) | 5 / 7.5 / 9.5 pods, unchanged |
-| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none 1.6 g seed; all on day 45 5.0; all on day 35 6.8; all at sowing 8.2; one dose on day 15, 20 or 25 8.2, 9.0 and 8.2; two or three doses from day 10 to 45 7.8 to 9.0 (days 15, 30 and 45, the fixture, 9.0; days 18, 28 and 38 9.0) | 6 / 8 / 8.75 g seed (0.26.0: 5 / 7 / 7.9) |
+| Thirsty summer | one pot under a rain shelter, no irrigation, starts at field capacity | the can, 6 L for the season | no water 1.1 pods; 6 L spread daily over the season 1.1 to 1.9; see the window sweep below: days 35 to 80 2.1 to 4.2, days 42 to 70 4.0 to 6.1, days 40 to 62 8.0 to 11.0 (the fixture, every 3 days from day 40 to 61, 10.0) | 4 / 6.5 / 8.5 pods, unchanged since 0.27.0 |
+| Dodge the heat wave | heat wave days 55 to 61 (37 / 24 °C), watered daily | sowing day 0 to 40, one seed | sown days 0 to 8 (blooms into the heat) 3.1 to 4.5 pods; days 12 and 16 4.9 and 8.0; days 20 to 26 8.1 to 11.8 (day 24 11.8); days 28 to 40 8.4 to 11.3 (day 28, the fixture, 11.0; day 32 8.5) | 5 / 7.5 / 9.5 pods, unchanged |
+| Hungry soil | 5 ppm nitrate, no rhizobia, watered daily | 0.5 g N of fertilizer | none 1.5 g seed; all on day 45 4.8; all on day 35 6.7; all at sowing 7.5; one dose on day 15, 20 or 25 7.6, 8.5 and 7.9; two or three doses from day 10 to 45 7.9 to 8.7 (days 15, 30 and 45, the fixture, 8.6; days 18, 28 and 38 8.7) | 6 / 8 / 8.4 g seed (0.28.0: 6 / 8 / 8.75) |
 
 On the mean the lessons hold: water through the flowering weeks beats water spread thin by six to
 nine pods, sowing after day 20 beats blooming into the heat by four to seven, and feeding
@@ -78,7 +80,10 @@ from the flowers: every 2 days from day 42 at 07:00 scores 7.75 ending on day 68
 from about day 40, stop with the last flowers. Within the window the interval and hour
 still move a plan by up to 3 pods with no trend (days 44 to 62 every 2 days: 9.25 at
 07:00, 6.25 at 19:00). An 8 L can scores about the same as 6 L when it ends on day 62.
-The bloom fixture waters every 3 days from day 40 to day 61 (10.0, gold).
+The bloom fixture waters every 3 days from day 40 to day 61 (10.0, gold). On 0.29.0 the
+window ranges hold (days 35 to 80 2.1 to 4.2, days 42 to 70 4.0 to 6.1, days 42 to 62
+6.5 to 9.5, days 44 to 62 5.1 to 9.25, the others unchanged), single plans move by up
+to 0.6 pods, and the fixture still scores 10.0.
 
 On 0.27.0 (R5a) water rises to the pot's drying surface, so bare soil loses far more to
 evaporation: in the thirsty-summer fixture 2.4 of the 7.5 L the pot gives up over the
@@ -89,6 +94,15 @@ moved single plans by up to 1.2 pods on the 8-season mean, so its medals are the
 least certain of the three. Hungry-soil plans gained 1 to 2 g,
 probably because fertilizer put on the top layer now soaks down to the roots with the
 daily watering (not isolated).
+
+On 0.29.0 (R5b) roots run short of oxygen in waterlogged soil. The heat-wave and
+hungry-soil pots stand in the rain, and in one season of the eight (world seed 9) heavy
+rain leaves their garden loam short of air for days: the hungry-soil fixture's seed in
+that season falls from 8.7 to 5.5 g while the other seven are unchanged. Every
+hungry-soil plan lost 0.1 to 0.6 g on the mean (best 8.7, was 9.0), so its gold came
+down from 8.75 to 8.4, where the top five plans (8.4 to 8.7) still reach it.
+Heat-wave plans moved by up to 0.75 pods either way, and thirsty summer, under its
+rain shelter, by up to 0.6.
 
 On 0.25.0 daily watering in bloom earned only bronze (5.4 pods for days 40 to 75): pod
 abortion still reads the root zone's lowest FTSW of the day, which under any bloom
